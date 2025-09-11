@@ -177,7 +177,67 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
     }
     r_json_free(j);
     // sizes[] are available if needed later; currently unused
-    return (*vm_data && *vm_instr && *iso_data && *iso_instr) ? 0 : -1;
+    if (*vm_data && *vm_instr && *iso_data && *iso_instr) {
+        r_json_free(j);
+        return 0;
+    }
+    r_json_free(j);
+
+    // Fallback for Mach-O/iOS: scan sections for snapshot magic and infer vm/isolate data
+    char *sec = r_core_cmd_str(core, "iSj");
+    if (!sec) return -1;
+    RJson *js = r_json_parse(sec);
+    free(sec);
+    if (!js) return -1;
+    const uint32_t kMagic = 0xdcdcf5f5; // Snapshot::kMagicValue
+    ut64 found_addrs[8]; int found_cnt = 0;
+    for (size_t i = 0;; i++) {
+        const RJson *item = r_json_item(js, i);
+        if (!item) break;
+        ut64 vaddr = (ut64)r_json_get_num(item, "vaddr");
+        ut64 size = (ut64)r_json_get_num(item, "vsize");
+        if (!vaddr || !size) continue;
+        // Scan each section for magic value at 4-byte aligned offsets
+        const int chunk = 4096;
+        ut8 buf[chunk];
+        for (ut64 off = 0; off + 4 <= size; off += chunk - 16) {
+            ut64 addr = vaddr + off;
+            int toread = (int)((off + chunk <= size) ? chunk : (size - off));
+            if (toread <= 0) break;
+            if (r_io_read_at(core->io, addr, buf, toread) != toread) break;
+            for (int j2 = 0; j2 + 4 <= toread; j2 += 4) {
+                uint32_t val = *(uint32_t*)(buf + j2);
+                if (val == kMagic) {
+                    if (found_cnt < (int)(sizeof(found_addrs)/sizeof(found_addrs[0]))) {
+                        found_addrs[found_cnt++] = addr + j2;
+                    }
+                }
+            }
+            if (found_cnt >= 8) break;
+        }
+        if (found_cnt >= 8) break;
+    }
+    r_json_free(js);
+    if (found_cnt >= 1) {
+        // Heuristic: smaller snapshot is VM, larger is Isolate.
+        // Read length (int64 at +4) and compute size = length + magic_size.
+        ut64 vm_addr = 0, iso_addr = 0;
+        ut64 vm_len = (ut64)-1, iso_len = 0;
+        for (int i = 0; i < found_cnt; i++) {
+            ut8 hdr[16];
+            if (r_io_read_at(core->io, found_addrs[i] + 4, hdr, sizeof(hdr)) != sizeof(hdr)) continue;
+            uint64_t len = *(uint64_t*)(hdr + 0) + 4; // large_length() adds magic size
+            if (len < vm_len) { vm_len = len; vm_addr = found_addrs[i]; }
+            if (len > iso_len) { iso_len = len; iso_addr = found_addrs[i]; }
+        }
+        if (vm_addr && iso_addr) {
+            *vm_data = vm_addr;
+            *iso_data = iso_addr;
+            // instructions images are not discoverable by magic; keep 0 here.
+            return 0; // partial success (data blobs found)
+        }
+    }
+    return -1;
 }
 
 static bool read_at(RCore *core, ut64 addr, ut8 *buf, int len) {

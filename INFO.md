@@ -53,7 +53,7 @@ How It Works (High-level)
      - Function → Code relationships
    - Emits each function via callback with name, address, and size.
 
-Usage in radare2 sessions
+Usage in radare2 sessions (Android ELF and iOS Mach-O)
 - After running `blutter_r2`, execute the script in radare2 to load names:
   - `radare2 -q r2flutter/arm64-v8a/libapp.so -c "e bin.cache=true; . r2flutter/out/addNames.r2"`
 - You’ll see `method.*` flags and comments across the binary.
@@ -83,7 +83,7 @@ Gotchas / Notes
 - Architecture: The sample targets arm64 (AArch64). Extend offsets generation and decoding paths as needed for x64/aarch32.
 
 Troubleshooting
-- “Dart snapshots not found”: Ensure `r2_core_bin_load` is called (r2flutter does this), and try `e bin.cache=true` in your r2 session. The binary must have the 4 symbols exported.
+- “Dart snapshots not found”: Ensure `r2_core_bin_load` is called (r2flutter does this), and try `e bin.cache=true` in your r2 session. The binary must have the 4 symbols exported. On iOS/Mach-O with stripped symbols, r2flutter falls back to scanning sections (`iSj`) for the snapshot magic (0xdcdcf5f5) to locate VM/Isolate snapshot DATA blobs.
 - “No layout for snapshot hash …”: Run `./scripts/gen_offsets.sh <libdir>` to populate `r2flutter/offsets.json`. Re-run the tool.
 - Missing names/sizes: Verify `offsets.json` is present, and that the decoder has cluster coverage for your Dart version; if not, enhance offsets and update the decoder.
 
@@ -91,4 +91,3 @@ Roadmap / Extending
 - Add more snapshot-hash entries (stable channels and popular Flutter engine versions).
 - Auto-fetch VM sources for a given hash/version, precompute richer layout JSON (beyond compressed pointer + tag), and store it in-tree.
 - Expand architecture coverage and add minimal tests to validate decoding of ObjectPool/Code/Function/String relationships.
-
