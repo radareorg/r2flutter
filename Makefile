@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -O2 -I/usr/local/include/libr -I../radare2/libr/include $
 LDFLAGS = $(shell pkg-config --libs r_core)
 
 TARGET = blutter_r2
-SOURCES = main.c dart_app.c dart_dumper.c
+SOURCES = main.c dart_app.c dart_dumper.c dart_pool_parse.c
 OBJECTS = $(SOURCES:.c=.o)
 
 all: $(TARGET)

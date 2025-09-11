@@ -6,10 +6,17 @@
 #include <unistd.h>
 #include <r_core.h>
 #include <r_flag.h>
-#include <r_util/r_json.h>
 #include <r_list.h>
 #include <r_util/r_name.h>
 #include "dart_app.h"
+
+// C++ bridge to parse Dart AOT using constant pool (ported from blutter)
+// Implemented in dart_pool_port.cpp
+extern int dart_pool_enumerate(RCore *core, const char* libapp_path,
+    void (*on_fn)(const char* name, unsigned long long addr, unsigned long long size, void* user),
+    void* user,
+    unsigned long long* out_base,
+    unsigned long long* out_heap_base);
 
 typedef unsigned long long ull;
 
@@ -36,182 +43,34 @@ void dart_app_free(DartApp* app) {
     free(app);
 }
 
+static void add_fn_cb(const char* name, unsigned long long addr, unsigned long long size, void* user) {
+    DartApp* app = (DartApp*)user;
+    if (!app || !app->functions) return;
+    DartFunction *fn = (DartFunction*)calloc(1, sizeof(DartFunction));
+    if (!fn) return;
+    fn->addr = (ut64)addr;
+    fn->size = (ut64)size;
+    if (name && *name) {
+        char *tmp = strdup(name);
+        r_name_filter(tmp, 0);
+        fn->name = tmp;
+    } else {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "func_%llx", (unsigned long long)fn->addr);
+        fn->name = strdup(buf);
+    }
+    r_list_append(app->functions, fn);
+}
+
 void dart_app_load_info(DartApp* app) {
-    if (!app || !app->core) return;
-    printf("Analyzing binary (aaa)...\n");
-    r_core_cmd(app->core, "e anal.hasnext=true", false);
-    r_core_cmd(app->core, "aaa", false);
-
-    char *out = r_core_cmd_str(app->core, "aflj");
-    if (!out) {
-        out = r_core_cmd_str(app->core, "afl");
-        if (!out) return;
+    if (!app || !app->file_path) return;
+    unsigned long long base = 0, heap_base = 0;
+    int rc = dart_pool_enumerate(app->core, app->file_path, add_fn_cb, app, &base, &heap_base);
+    if (rc == 0) {
+        app->base_addr = (ut64)base;
+        app->heap_base = (ut64)heap_base;
     }
-
-    // write debug dump of analysis output
-    {
-        FILE *dbg = fopen("/tmp/blutter_afl_dump.txt", "w");
-        if (dbg) {
-            fwrite(out, 1, strlen(out), dbg);
-            fclose(dbg);
-        }
-    }
-
-    // If JSON (aflj) was returned we parse JSON-like array, otherwise fallback to parsing plain afl lines
-    // Try robust JSON parsing with libr_util r_json
-    if (out[0] == '[') {
-        RJson *j = r_json_parse(out);
-        if (j) {
-            size_t i;
-            for (i = 0;; i++) {
-                const RJson *item = r_json_item(j, i);
-                if (!item) break;
-                st64 off = r_json_get_num(item, "offset");
-                if (off <= 0) off = r_json_get_num(item, "addr");
-                st64 size = r_json_get_num(item, "size");
-                const char *nm = r_json_get_str(item, "name");
-                if (off > 0) {
-                    DartFunction *fn = (DartFunction*)calloc(1, sizeof(DartFunction));
-                    if (!fn) break;
-                    fn->addr = (ut64)off;
-                    fn->size = (ut64)(size > 0 ? size : 0);
-                    if (nm && *nm) {
-                        char *tmp = strdup(nm);
-                        r_name_filter(tmp, 0);
-                        fn->name = tmp;
-                    } else {
-                        char buf[64];
-                        snprintf(buf, sizeof(buf), "func_%llx", (unsigned long long)fn->addr);
-                        fn->name = strdup(buf);
-                    }
-                    r_list_append(app->functions, fn);
-                }
-            }
-            r_json_free(j);
-        }
-    }
-
-    // Fallback to parse plain afl lines
-    char *saveptr = NULL;
-    char *line = strtok_r(out, "\n", &saveptr);
-    while (line) {
-        // trim leading spaces
-        char *p = line;
-        while (*p && isspace((unsigned char)*p)) p++;
-        if (!*p) { line = strtok_r(NULL, "\n", &saveptr); continue; }
-
-        // parse address
-        char addrbuf[64] = {0};
-        char sizebuf[64] = {0};
-        char namebuf[1024] = {0};
-
-        // try sscanf - common format: 0xADDR SIZE NAME
-        int matched = sscanf(p, "%63s %63s %1023s", addrbuf, sizebuf, namebuf);
-        if (matched >= 1) {
-            ut64 addr = 0;
-            ut64 size = 0;
-            if (addrbuf[0] == '0' && (addrbuf[1] == 'x' || addrbuf[1] == 'X')) {
-                addr = strtoull(addrbuf, NULL, 16);
-            } else {
-                addr = strtoull(addrbuf, NULL, 10);
-            }
-            if (matched >= 2) size = (ut64)strtoull(sizebuf, NULL, 10);
-
-            const char *nameptr = namebuf;
-            if (matched < 3) {
-                // fallback: last token after address and size
-                char *lastspace = strrchr(p, ' ');
-                if (lastspace) nameptr = lastspace + 1;
-                else nameptr = p;
-            }
-
-            if (addr != 0) {
-                DartFunction *fn = (DartFunction*)calloc(1, sizeof(DartFunction));
-                if (!fn) break;
-                fn->addr = addr;
-                fn->size = size;
-                char *tmp = strdup(nameptr);
-                r_name_filter(tmp, 0);
-                fn->name = tmp;
-                r_list_append(app->functions, fn);
-            }
-        }
-
-        line = strtok_r(NULL, "\n", &saveptr);
-    }
-    free(out);
-
-    // If no functions found, fallback to invoking r2 externally and parsing aflj
-    if ((!app->functions || r_list_empty(app->functions)) && app->file_path) {
-        printf("Fallback: invoking external r2 for %s\n", app->file_path);
-        char cmd[4096];
-        snprintf(cmd, sizeof(cmd), "r2 -q -c 'aa;aflj' '%s' 2>/dev/null", app->file_path);
-        FILE *fp = popen(cmd, "r");
-        if (fp) {
-            size_t cap = 8192;
-            size_t len = 0;
-            char *buf = malloc(cap);
-            if (buf) {
-                while (!feof(fp)) {
-                    size_t n = fread(buf + len, 1, cap - len - 1, fp);
-                    if (n > 0) len += n;
-                    if (len + 1 >= cap) {
-                        cap *= 2;
-                        char *tmp = realloc(buf, cap);
-                        if (!tmp) break;
-                        buf = tmp;
-                    }
-                }
-                buf[len] = '\0';
-                pclose(fp);
-
-                if (buf[0] == '[') {
-                    RJson *j = r_json_parse(buf);
-                    if (j) {
-                        size_t i;
-                        for (i = 0;; i++) {
-                            const RJson *item = r_json_item(j, i);
-                            if (!item) break;
-                            st64 off = r_json_get_num(item, "offset");
-                            if (off <= 0) off = r_json_get_num(item, "addr");
-                            st64 sizev = r_json_get_num(item, "size");
-                            const char *nm = r_json_get_str(item, "name");
-                            if (off > 0) {
-                                DartFunction *fn = (DartFunction*)calloc(1, sizeof(DartFunction));
-                                if (!fn) break;
-                                fn->addr = (ut64)off;
-                                fn->size = (ut64)(sizev > 0 ? sizev : 0);
-                                if (nm && *nm) {
-                                    char *tmp = strdup(nm);
-                                    r_name_filter(tmp, 0);
-                                    fn->name = tmp;
-                                } else {
-                                    char t[64];
-                                    snprintf(t, sizeof(t), "func_%llx", (unsigned long long)fn->addr);
-                                    fn->name = strdup(t);
-                                }
-                                r_list_append(app->functions, fn);
-                            }
-                        }
-                        r_json_free(j);
-                    }
-                }
-                // write fallback debug
-                {
-                    FILE *dbg2 = fopen("/tmp/blutter_afl_fallback.txt", "w");
-                    if (dbg2) {
-                        fwrite(buf, 1, len, dbg2);
-                        fclose(dbg2);
-                    }
-                }
-                free(buf);
-            } else {
-                pclose(fp);
-            }
-        }
-    }
-
-    printf("Found %d functions\n", app->functions ? r_list_length(app->functions) : 0);
+    printf("Found %d functions (from Dart ObjectPool)\n", app->functions ? r_list_length(app->functions) : 0);
 }
 
 static int ensure_dir(const char *path) {

@@ -104,6 +104,8 @@ int main(int argc, char** argv) {
         free(libapp_path);
         return 1;
     }
+    // Ensure binary info/symbols are loaded for queries like `isj`
+    r_core_bin_load(core, NULL, 0);
 
     DartApp* app = dart_app_new(libapp_path);
     if (!app) {

@@ -1,13 +1,14 @@
-# Blutter R2C - Pure C Implementation
+# Blutter R2C - Dart AOT via Constant Pool
 
-This is a pure C reimplementation of the Blutter Dart analysis tool that integrates with radare2.
+This utility integrates with radare2 but does NOT rely on r2 analysis (afl/aflj).
+It is self-contained C code (no Dart VM headers or libs) and will read the Dart
+snapshots/constant pool directly to derive names and addresses.
 
 ## Features
 
-- Pure C implementation (no C++ dependencies)
-- Integrates with radare2 APIs
-- Performs Dump4Radare2 functionality
-- Creates radare2 flags for Dart libraries, classes, and methods
+- Derives names/addresses from Dart constant pool (no afl parsing)
+- Uses radare2 to locate AOT snapshot symbols within ELF64
+- Emits `addNames.r2` and `r2_dart_struct.h`
 
 ## Building
 
@@ -28,19 +29,12 @@ make
 
 ## Architecture
 
-- `main.c` - Main entry point
-- `dart_app.c` - DartApp functionality
-- `dart_dumper.c` - Dumping functionality for radare2
+- `main.c` - CLI entry, opens file with radare2
+- `dart_app.c` - App model and integration
+- `dart_pool_parse.c` - Standalone parser entry (finds snapshot blobs via r2; TODO: parse ObjectPool)
+- `dart_dumper.c` - Emits radare2 scripts and pool offset flags (via PP/x27)
 
 ## Current Status
 
-This is a basic skeleton implementation that:
-- Initializes radare2 core
-- Loads binary files
-- Creates basic flags for demonstration
-- Provides framework for full Dart analysis
-
-The full implementation would require:
-- Parsing Dart VM structures
-- Analyzing Dart classes and functions
-- Implementing complete Dump4Radare2 functionality
+This component sources names from the Dart ObjectPool (work-in-progress), mirroring
+`./blutter`, without using afl or depending on Dart VM.
