@@ -18,10 +18,15 @@ if [ ! -f "$LIBAPP" ] || [ ! -f "$LIBFLUTTER" ]; then
   exit 1
 fi
 
-# Read 32 ASCII bytes at vm snapshot data + 20 (vm data symbol vaddr is 0x200 in many builds)
-# We don't depend on r2 here; we assume symbol location is at 0x200 as in typical libapp.so.
-# If needed, this can be improved to query r2 isj for the exact address.
-HASH="$(dd if="$LIBAPP" bs=1 skip=$((512+20)) count=32 2>/dev/null | tr -dc '0-9a-f' | head -c 32)"
+SNAPSHOT_DATA_VADDR=$(readelf -Ws "$LIBAPP" | grep '_kDartVmSnapshotData$' | awk '{print "0x"$2}')
+if [ -z "$SNAPSHOT_DATA_VADDR" ]; then
+    echo "Failed to find _kDartVmSnapshotData symbol in $LIBAPP" >&2
+    exit 1
+fi
+
+HASH_OFFSET=$((SNAPSHOT_DATA_VADDR+20))
+
+HASH=$(dd if="$LIBAPP" bs=1 skip=$((HASH_OFFSET)) count=32 2>/dev/null | tr -dc '0-9a-f' | head -c 32)
 if [ -z "$HASH" ]; then
   echo "Failed to extract snapshot hash from $LIBAPP" >&2
   exit 1
@@ -36,7 +41,7 @@ echo "Detected snapshot hash: $HASH, dart version: ${VERLINE:-unknown}"
 
 # Prepare minimal offsets JSON with reasonable defaults; future versions of this
 # generator can curl dart-lang/sdk sources and compute more fields.
-OUTJSON="r2flutter/offsets.json"
+OUTJSON="offsets.json"
 mkdir -p "$(dirname "$OUTJSON")"
 
 cat > "$OUTJSON" <<JSON
