@@ -181,7 +181,6 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
         r_json_free(j);
         return 0;
     }
-    r_json_free(j);
 
     // Fallback for Mach-O/iOS: scan sections for snapshot magic and infer vm/isolate data
     char *sec = r_core_cmd_str(core, "iSj");
