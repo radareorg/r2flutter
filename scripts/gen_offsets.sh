@@ -18,7 +18,7 @@ if [ ! -f "$LIBAPP" ] || [ ! -f "$LIBFLUTTER" ]; then
   exit 1
 fi
 
-SNAPSHOT_DATA_VADDR=$(readelf -Ws "$LIBAPP" | grep '_kDartVmSnapshotData$' | awk '{print "0x"$2}')
+SNAPSHOT_DATA_VADDR=$(readelf -Ws "$LIBAPP" | grep '_kDartVmSnapshotData$' | awk '{print "0x"$2}' | head -n 1)
 if [ -z "$SNAPSHOT_DATA_VADDR" ]; then
     echo "Failed to find _kDartVmSnapshotData symbol in $LIBAPP" >&2
     exit 1
