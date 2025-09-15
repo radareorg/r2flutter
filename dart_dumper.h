@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-void dart_dumper_dump4radare2(DartApp* app, const char* out_dir);
+char *dart_dumper_dump4radare2(DartApp* app);
 
 #ifdef __cplusplus
 }

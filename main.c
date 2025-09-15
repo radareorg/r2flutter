@@ -17,20 +17,25 @@ static bool is_library(const char *name) {
 }
 
 static char *find_lib_in_dir(const char *dir) {
-	if (!dir) return NULL;
-	DIR *d = opendir(dir);
-	if (!d) return NULL;
+	if (!dir) {
+		return NULL;
+	}
+	DIR *d = opendir (dir);
+	if (!d) {
+		return NULL;
+	}
 	struct dirent *ent;
 	// Prefer libapp.so explicitly if present
 	char *preferred = NULL;
 	while ((ent = readdir(d)) != NULL) {
-		if (ent->d_name[0] == '.') continue;
+		if (ent->d_name[0] == '.') {
+			continue;
+		}
 		char *full = r_str_newf ("%s/%s", dir, ent->d_name);
-		if (!full) continue;
 		struct stat st;
 		if (stat(full, &st) == 0 && S_ISREG(st.st_mode)) {
-			if (!strcmp(ent->d_name, "libapp.so")) {
-				closedir(d);
+			if (!strcmp (ent->d_name, "libapp.so")) {
+				closedir (d);
 				return full;
 			}
 			if (!preferred && is_library (ent->d_name)) {
@@ -38,20 +43,19 @@ static char *find_lib_in_dir(const char *dir) {
 				full = NULL;
 			}
 		}
-		if (full) free(full);
+		free (full);
 	}
-	closedir(d);
+	closedir (d);
 	return preferred;
 }
 
 int main(int argc, char** argv) {
-	if (argc < 3) {
-		fprintf(stderr, "Usage: %s <libapp_path> <output_dir>\n", argv[0]);
+	if (argc < 2) {
+		eprintf ("Usage: %s <libapp_path>\n", argv[0]);
 		return 1;
 	}
 
 	const char* libapp_path_in = argv[1];
-	const char* out_dir = argv[2];
 
 	char *libapp_path = NULL;
 	struct stat st;
@@ -60,31 +64,31 @@ int main(int argc, char** argv) {
 			// Prefer libapp.so explicitly if present in dir
 			char *candidate = r_str_newf ("%s/%s", libapp_path_in, "libapp.so");
 			struct stat st2;
-			if (candidate && stat(candidate, &st2) == 0 && S_ISREG(st2.st_mode)) {
+			if (candidate && stat (candidate, &st2) == 0 && S_ISREG (st2.st_mode)) {
 				libapp_path = candidate;
 			} else {
-				free(candidate);
-				libapp_path = find_lib_in_dir(libapp_path_in);
+				free (candidate);
+				libapp_path = find_lib_in_dir (libapp_path_in);
 			}
 			if (!libapp_path) {
-				fprintf(stderr, "No suitable library file found in directory: %s\n", libapp_path_in);
+				eprintf ("No suitable library file found in directory: %s\n", libapp_path_in);
 				return 1;
 			}
 		} else if (S_ISREG(st.st_mode)) {
-			libapp_path = strdup(libapp_path_in);
+			libapp_path = strdup (libapp_path_in);
 		} else {
-			fprintf(stderr, "Not a regular file or directory: %s\n", libapp_path_in);
+			eprintf ("Not a regular file or directory: %s\n", libapp_path_in);
 			return 1;
 		}
 	} else {
-		fprintf(stderr, "File or directory does not exist: %s\n", libapp_path_in);
+		eprintf ("File or directory does not exist: %s\n", libapp_path_in);
 		return 1;
 	}
 
-	RCore *core = r_core_new();
+	RCore *core = r_core_new ();
 	if (!core) {
-		fprintf(stderr, "Failed to create radare2 core\n");
-		free(libapp_path);
+		eprintf ("Failed to create radare2 core\n");
+		free (libapp_path);
 		return 1;
 	}
 
@@ -95,13 +99,13 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 	// Ensure binary info/symbols are loaded for queries like `isj`
-	r_core_bin_load(core, NULL, 0);
+	r_core_bin_load (core, NULL, 0);
 
-	DartApp* app = dart_app_new(libapp_path);
+	DartApp* app = dart_app_new (libapp_path);
 	if (!app) {
-		fprintf(stderr, "Failed to create DartApp\n");
-		r_core_free(core);
-		free(libapp_path);
+		eprintf ("Failed to create DartApp\n");
+		r_core_free (core);
+		free (libapp_path);
 		return 1;
 	}
 
@@ -120,7 +124,9 @@ int main(int argc, char** argv) {
 	dart_app_load_info (app);
 
 	printf ("Dumping for radare2\n");
-	dart_dumper_dump4radare2 (app, out_dir);
+	char *s = dart_dumper_dump4radare2 (app);
+	printf ("%s\n", s);
+	free (s);
 
 	dart_app_free (app);
 	r_core_free (core);

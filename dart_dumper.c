@@ -71,78 +71,74 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 	free(s);
 }
 
-static void dump_pool_offsets_flags(DartApp *app, FILE *of) {
-	if (!app || !app->core || !app->functions) return;
-	RList *offsets = r_list_newf(free);
-	if (!offsets) return;
+static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
+	if (!app || !app->core || !app->functions) {
+		return;
+	}
+	RList *offsets = r_list_newf (free);
 	// collect from all known functions
 	RListIter *it;
 	DartFunction *fn;
-	r_list_foreach(app->functions, it, fn) {
-		if (fn->name && !strncmp(fn->name, "sym.imp.", 8)) continue;
-		collect_pool_offsets_from_fn(app->core, fn->addr, offsets);
+	r_list_foreach (app->functions, it, fn) {
+		if (fn->name && r_str_startswith (fn->name, "sym.imp.")) {
+			continue;
+		}
+		collect_pool_offsets_from_fn (app->core, fn->addr, offsets);
 	}
 	// emit flags and comments
 	RListIter *it2;
 	ut64 *offp;
-	r_list_foreach(offsets, it2, offp) {
-		fprintf(of, "f pp.off_%llx=PP+%#llx\n", (unsigned long long)*offp, (unsigned long long)*offp);
-		fprintf(of, "'@PP+%#llx'CC pool_entry_%llx\n", (unsigned long long)*offp, (unsigned long long)*offp);
+	r_list_foreach (offsets, it2, offp) {
+		r_strbuf_appendf (sb, "f pp.off_0x%"PFMT64x"=PP+0x%"PFMT64x"\n", (uint64_t)*offp, (uint64_t)*offp);
+		r_strbuf_appendf (sb, "'@PP+0x%"PFMT64x"'CC pool_entry_%"PFMT64x"\n", (uint64_t)*offp, (uint64_t)*offp);
 	}
-	r_list_free(offsets);
+	r_list_free (offsets);
 }
 
-void dart_dumper_dump4radare2(DartApp* app, const char* out_dir) {
-	if (!app || !out_dir) return;
-	if (!r_sys_mkdirp (out_dir)) {
-		R_LOG_ERROR ("cannot mkdirp");
-		return;
-	}
+char *dart_dumper_dump4radare2(DartApp* app) {
+	RStrBuf *sb = r_strbuf_new ("");
 
-	char path[4096];
-	snprintf(path, sizeof(path), "%s/addNames.r2", out_dir);
-	FILE *of = fopen(path, "w");
-	if (!of) return;
-
-	fprintf(of, "# create flags for libraries, classes and methods\n");
-	fprintf(of, "e emu.str=true\n");
-	fprintf(of, "f app.base = %#llx\n", (unsigned long long)app->base_addr);
-	fprintf(of, "f app.heap_base = %#llx\n", (unsigned long long)app->heap_base);
+	r_strbuf_append (sb, "# create flags for libraries, classes and methods\n");
+	r_strbuf_append (sb, "e emu.str=true\n");
+	r_strbuf_appendf (sb, "f app.base = 0x%"PFMT64x"\n", (uint64_t)app->base_addr);
+	r_strbuf_appendf (sb, "f app.heap_base = 0x%"PFMT64x"\n", (uint64_t)app->heap_base);
 
 	if (app->functions) {
 		RListIter *it;
 		DartFunction *fn;
-		r_list_foreach(app->functions, it, fn) {
-			if (!fn || !fn->name) continue;
-			char safe[1024];
-			snprintf(safe, sizeof(safe), "%s", fn->name);
-			r_name_filter(safe, 0);
-			fprintf(of, "f method.%s = %#llx\n", safe, (unsigned long long)fn->addr);
-			fprintf(of, "'@%#llx'CC %s\n", (unsigned long long)fn->addr, fn->name);
+		r_list_foreach (app->functions, it, fn) {
+			if (!fn || !fn->name) {
+				continue;
+			}
+			r_strf_var (safe, 1024, "%s", fn->name);
+			r_name_filter (safe, 0);
+			r_strbuf_appendf (sb, "f method.%s = 0x%"PFMT64x"\n", safe, (uint64_t)fn->addr);
+			r_strbuf_appendf (sb, "'@0x%"PFMT64x"'CC %s\n", (uint64_t)fn->addr, fn->name);
 		}
 	}
 
-	fprintf(of, "dr x27=`e anal.gp`\n");
-	fprintf(of, "'f PP=x27\n");
+	r_strbuf_append (sb, "dr x27=`e anal.gp`\n");
+	r_strbuf_append (sb, "'f PP=x27\n");
 
 	// Scan code to gather Object Pool offsets used via PP (x27)
-	dump_pool_offsets_flags(app, of);
+	dump_pool_offsets_flags (app, sb);
 
-	fclose(of);
-
+#if 0
 	if (app->core && app->core->flags) {
 		r_flag_set(app->core->flags, "app.base", app->base_addr, 0);
 		if (app->heap_base) r_flag_set(app->core->flags, "app.heap_base", app->heap_base, 0);
 		if (app->functions) {
 			RListIter *it;
 			DartFunction *fn;
-			r_list_foreach(app->functions, it, fn) {
+			r_list_foreach (app->functions, it, fn) {
 				if (!fn || !fn->name) continue;
 				char flagname[1100];
-				snprintf(flagname, sizeof(flagname), "method.%s", fn->name);
-				r_name_filter(flagname, 0);
-				r_flag_set(app->core->flags, flagname, fn->addr, 0);
+				snprintf (flagname, sizeof(flagname), "method.%s", fn->name);
+				r_name_filter (flagname, 0);
+				r_flag_set (app->core->flags, flagname, fn->addr, 0);
 			}
 		}
 	}
+#endif
+	return r_strbuf_drain (sb);
 }
