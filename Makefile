@@ -17,4 +17,7 @@ $(TARGET): $(OBJECTS)
 clean:
 	rm -f $(OBJECTS) $(TARGET)
 
-.PHONY: all clean
+test:
+	./blutter_r2 ./arm64-v8a o
+
+.PHONY: all clean test
