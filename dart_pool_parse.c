@@ -185,7 +185,6 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 	r_json_free(j);
 	// sizes[] are available if needed later; currently unused
 	if (*vm_data && *vm_instr && *iso_data && *iso_instr) {
-		r_json_free(j);
 		return 0;
 	}
 
