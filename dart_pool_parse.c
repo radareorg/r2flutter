@@ -58,14 +58,16 @@ static RJson* load_offsets_json(void) {
 	if (!s) s = r_file_slurp("offsets.json", NULL);
 	if (!s) return NULL;
 	RJson *j = r_json_parse(s);
-	free(s);
+	//free(s);
 	return j;
 }
 
 static const DartVerLayout* load_layout_from_json(const char *hash, DartVerLayout *out) {
-	RJson *j = load_offsets_json();
-	if (!j) return NULL;
-	const RJson *hashes = r_json_get(j, "hashes");
+	RJson *j = load_offsets_json ();
+	if (!j) {
+		return NULL;
+	}
+	const RJson *hashes = r_json_get (j, "hashes");
 	const RJson *item = r_json_get(hashes, hash);
 	if (!item) { r_json_free(j); return NULL; }
 	memset(out, 0, sizeof(*out));
@@ -149,11 +151,15 @@ static int decode_pool_and_emit(DartCtx *ctx,
 static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso_data, ut64 *iso_instr) {
 	if (!core) return -1;
 	r_core_cmd(core, "e bin.cache=true", false);
-	char *s = r_core_cmd_str(core, "isj");
-	if (!s) return -1;
-	RJson *j = r_json_parse(s);
-	free(s);
-	if (!j) return -1;
+	char *s = r_core_cmd_str (core, "isj");
+	if (!s) {
+		return -1;
+	}
+	RJson *j = r_json_parse (s);
+	if (!j) {
+		free (s);
+		return -1;
+	}
 	// Accept both underscore and non-underscore symbol prefixes
 	const char *names[8] = {
 		"_kDartVmSnapshotData", "DartVmSnapshotData",
@@ -165,7 +171,7 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 	// ut64 sizes[4] = {0};
 	size_t i;
 	for (i = 0;; i++) {
-		const RJson *item = r_json_item(j, i);
+		const RJson *item = r_json_item (j, i);
 		if (!item) break;
 		const char *nm = r_json_get_str(item, "name");
 		if (!nm || !*nm) continue;
@@ -182,23 +188,30 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 			}
 		}
 	}
-	r_json_free(j);
+	r_json_free (j);
+	free (s);
 	// sizes[] are available if needed later; currently unused
 	if (*vm_data && *vm_instr && *iso_data && *iso_instr) {
 		return 0;
 	}
 
 	// Fallback for Mach-O/iOS: scan sections for snapshot magic and infer vm/isolate data
-	char *sec = r_core_cmd_str(core, "iSj");
-	if (!sec) return -1;
-	RJson *js = r_json_parse(sec);
-	free(sec);
-	if (!js) return -1;
+	char *sec = r_core_cmd_str (core, "iSj");
+	if (!sec) {
+		return -1;
+	}
+	RJson *js = r_json_parse (sec);
+	if (!js) {
+		free (sec);
+		return -1;
+	}
 	const uint32_t kMagic = 0xdcdcf5f5; // Snapshot::kMagicValue
 	ut64 found_addrs[8]; int found_cnt = 0;
 	for (size_t i = 0;; i++) {
 		const RJson *item = r_json_item(js, i);
-		if (!item) break;
+		if (!item) {
+			break;
+		}
 		ut64 vaddr = (ut64)r_json_get_num(item, "vaddr");
 		ut64 size = (ut64)r_json_get_num(item, "vsize");
 		if (!vaddr || !size) continue;
@@ -208,7 +221,9 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 		for (ut64 off = 0; off + 4 <= size; off += chunk - 16) {
 			ut64 addr = vaddr + off;
 			int toread = (int)((off + chunk <= size) ? chunk : (size - off));
-			if (toread <= 0) break;
+			if (toread <= 0) {
+				break;
+			}
 			if (r_io_read_at(core->io, addr, buf, toread) != toread) break;
 			for (int j2 = 0; j2 + 4 <= toread; j2 += 4) {
 				uint32_t val = *(uint32_t*)(buf + j2);
@@ -218,11 +233,16 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 					}
 				}
 			}
-			if (found_cnt >= 8) break;
+			if (found_cnt >= 8) {
+				break;
+			}
 		}
-		if (found_cnt >= 8) break;
+		if (found_cnt >= 8) {
+			break;
+		}
 	}
 	r_json_free(js);
+	free (sec);
 	if (found_cnt >= 1) {
 		// Heuristic: smaller snapshot is VM, larger is Isolate.
 		// Read length (int64 at +4) and compute size = length + magic_size.
@@ -235,8 +255,12 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 				continue;
 			}
 			uint64_t len = *(uint64_t*)(hdr + 0) + 4; // large_length() adds magic size
-			if (len < vm_len) { vm_len = len; vm_addr = found_addrs[i]; }
-			if (len > iso_len) { iso_len = len; iso_addr = found_addrs[i]; }
+			if (len < vm_len) {
+				vm_len = len; vm_addr = found_addrs[i];
+			}
+			if (len > iso_len) {
+				iso_len = len; iso_addr = found_addrs[i];
+			}
 		}
 		if (vm_addr && iso_addr) {
 			*vm_data = vm_addr;
@@ -259,8 +283,10 @@ static void emit_stub_symbols(RCore *core,
 	char *s = r_core_cmd_str(core, "isj");
 	if (!s) return;
 	RJson *j = r_json_parse(s);
-	free(s);
-	if (!j) return;
+	if (!j) {
+		free(s);
+		return;
+	}
 	for (size_t i = 0;; i++) {
 		const RJson *item = r_json_item(j, i);
 		if (!item) break;
@@ -279,6 +305,7 @@ static void emit_stub_symbols(RCore *core,
 		on_fn(tmp, (unsigned long long)addr, (unsigned long long)size, user);
 	}
 	r_json_free(j);
+	free(s);
 }
 
 int dart_pool_enumerate(RCore *core, const char* libapp_path,
