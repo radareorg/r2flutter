@@ -10,7 +10,7 @@
 static bool list_contains_offset(RList *list, ut64 off) {
 	RListIter *it;
 	ut64 *p;
-	r_list_foreach(list, it, p) {
+	r_list_foreach (list, it, p) {
 		if (*p == off) {
 			return true;
 		}
@@ -19,11 +19,15 @@ static bool list_contains_offset(RList *list, ut64 off) {
 }
 
 static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets) {
-	if (!core || !offsets) return;
-	char cmd[128];
-	snprintf(cmd, sizeof(cmd), "pdfj @ 0x%"PFMT64x, addr);
-	char *s = r_core_cmd_str(core, cmd);
-	if (!s) return;
+	if (!core || !offsets) {
+		return;
+	}
+	r_core_cmdf (core, "af@0x%08"PFMT64x, addr);
+	r_strf_var (cmd, 128, "pdfj @ 0x%"PFMT64x, addr);
+	char *s = r_core_cmd_str (core, cmd);
+	if (!s) {
+		return;
+	}
 	RJson *j = r_json_parse(s);
 	if (!j) { free(s); return; }
 	const RJson *ops = r_json_get(j, "ops");
@@ -44,27 +48,24 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 		const char *p = comma + 1;
 		while (*p == ' ' || *p == '#') p++;
 		// read number until non-hex/non-digit
-		bool is_hex = false;
-		if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) { is_hex = true; p += 2; }
-		ut64 val = 0;
 		const char *q = p;
 		while ((*q >= '0' && *q <= '9') || (*q >= 'a' && *q <= 'f') || (*q >= 'A' && *q <= 'F')) q++;
-		if (q == p) continue;
+		if (q == p) {
+			continue;
+		}
 		char numbuf[32];
 		size_t len = q - p;
-		if (len >= sizeof(numbuf)) len = sizeof(numbuf) - 1;
+		if (len >= sizeof (numbuf)) {
+			len = sizeof (numbuf) - 1;
+		}
 		memcpy(numbuf, p, len);
 		numbuf[len] = '\0';
-		if (is_hex) {
-			val = strtoull(numbuf, NULL, 16);
-		} else {
-			val = strtoull(numbuf, NULL, 10);
-		}
-		if (!list_contains_offset(offsets, val)) {
+		ut64 val = r_num_get (NULL, numbuf);
+		if (!list_contains_offset (offsets, val)) {
 			ut64 *pv = (ut64*)calloc(1, sizeof(ut64));
 			if (!pv) continue;
 			*pv = val;
-			r_list_append(offsets, pv);
+			r_list_append (offsets, pv);
 		}
 	}
 	r_json_free(j);

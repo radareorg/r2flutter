@@ -135,7 +135,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		fprintf(stderr, "[r2flutter] No layout for snapshot hash %s. Populate known_layouts.\n", ctx->snapshot_hash);
 		return -1;
 	}
-	// TODO:
+	// AITODO:
 	// - Read isolate snapshot header and find the heap object area
 	// - Locate the global ObjectPool and iterate entries
 	// - For kTaggedObject entries: when Function/Code/String are found, resolve names and entrypoints
@@ -338,17 +338,23 @@ int dart_pool_enumerate(RCore *core, const char* libapp_path,
 		ut8 peek[32] = {0};
 		if (read_mem(core, iso_data, peek, sizeof(peek))) {
 			fprintf(stderr, "[r2flutter] iso_data[0..32]: ");
-			for (int i = 0; i < 32; i++) fprintf(stderr, "%02x", (unsigned int)peek[i]);
+			for (int i = 0; i < 32; i++) {
+				fprintf(stderr, "%02x", (unsigned int)peek[i]);
+			}
 			fprintf(stderr, "\n");
 		}
 		// Emit FUNC symbols available in the binary (e.g., VM stubs)
-		emit_stub_symbols(core, on_fn, user);
+		emit_stub_symbols (core, on_fn, user);
 		// Decode and emit functions from ObjectPool if layout is known (WIP)
-		(void)decode_pool_and_emit(&ctx, on_fn, user);
+		(void)decode_pool_and_emit (&ctx, on_fn, user);
 		return 0; // return 0 to let caller proceed even if pool decoding isn't finished
 	}
-	if (out_base) *out_base = 0;
-	if (out_heap_base) *out_heap_base = 0;
-	fprintf(stderr, "[r2flutter] Dart snapshots not found in symbols (file=%s).\n", libapp_path ? libapp_path : "(null)");
+	if (out_base) {
+		*out_base = 0;
+	}
+	if (out_heap_base) {
+		*out_heap_base = 0;
+	}
+	eprintf ("[r2flutter] Dart snapshots not found in symbols (file=%s).\n", libapp_path ? libapp_path : "(null)");
 	return -1;
 }
