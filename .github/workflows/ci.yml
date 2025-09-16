@@ -1,0 +1,28 @@
+name: ci
+
+env:
+  R2V: 6.0.0
+
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+
+
+jobs:
+  build-linux24:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v5
+    - name: Installing radare2
+      run: |
+        wget https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2_${{env.R2V}}_amd64.deb
+        wget https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2-dev_${{env.R2V}}_amd64.deb
+        sudo dpkg -i radare2_${{env.R2V}}_amd64.deb
+        sudo dpkg -i radare2-dev_${{env.R2V}}_amd64.deb
+        sudo pip install frida-tools
+    - name: Building fluor2
+      run: make
+    - name: Testing r2frida
+      run: r2r -i test/db
