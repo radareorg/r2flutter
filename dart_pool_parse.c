@@ -173,7 +173,7 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 	for (i = 0;; i++) {
 		const RJson *item = r_json_item (j, i);
 		if (!item) break;
-		const char *nm = r_json_get_str(item, "name");
+		const char *nm = r_json_get_str(item, "realname");
 		if (!nm || !*nm) continue;
 		ut64 vaddr = (ut64)r_json_get_num(item, "vaddr");
 		if (!vaddr) vaddr = (ut64)r_json_get_num(item, "plt");
