@@ -1,0 +1,2979 @@
+NAME=test-one
+FILE=-
+CMDS=<<EOF
+pwd
+!!../blutter_r2 bins/android/first/
+EOF
+EXPECT=<<EOF
+/Users/pancake/prg/blutter/r2flutter/test
+libapp is loaded at 0x0
+Dart heap at 0x0
+app->file_path = bins/android/first//libapp.so
+Found 1477 functions (from Dart ObjectPool)
+Dumping for radare2
+# create flags for libraries, classes and methods
+e emu.str=true
+f app.base = 0x0
+f app.heap_base = 0x0
+f method.void._optimized.out_ = 0x50068
+'@0x50068'CC void._optimized.out_
+f method.stub.FfiAsyncCallbackSend = 0x50074
+'@0x50074'CC stub.FfiAsyncCallbackSend
+f method.stub.CloneSuspendState = 0x500a8
+'@0x500a8'CC stub.CloneSuspendState
+f method.stub.AsyncExceptionHandler = 0x501c8
+'@0x501c8'CC stub.AsyncExceptionHandler
+f method.stub.SuspendSyncStarAtYield = 0x50234
+'@0x50234'CC stub.SuspendSyncStarAtYield
+f method.stub.SuspendSyncStarAtStart = 0x503b8
+'@0x503b8'CC stub.SuspendSyncStarAtStart
+f method.stub.InitSyncStar = 0x50540
+'@0x50540'CC stub.InitSyncStar
+f method.stub.ReturnAsyncStar = 0x50568
+'@0x50568'CC stub.ReturnAsyncStar
+f method.stub.YieldAsyncStar = 0x50594
+'@0x50594'CC stub.YieldAsyncStar
+f method.stub.InitAsyncStar = 0x5071c
+'@0x5071c'CC stub.InitAsyncStar
+f method.stub.ReturnAsyncNotFuture = 0x50744
+'@0x50744'CC stub.ReturnAsyncNotFuture
+f method.stub.ReturnAsync = 0x50770
+'@0x50770'CC stub.ReturnAsync
+f method.stub.Resume = 0x5079c
+'@0x5079c'CC stub.Resume
+f method.stub.InitAsync = 0x50814
+'@0x50814'CC stub.InitAsync
+f method.stub.AwaitWithTypeCheck = 0x5083c
+'@0x5083c'CC stub.AwaitWithTypeCheck
+f method.stub.Await = 0x509cc
+'@0x509cc'CC stub.Await
+f method.stub.NoSuchMethodDispatcher = 0x50b54
+'@0x50b54'CC stub.NoSuchMethodDispatcher
+f method.stub.InstantiateTypeArgumentsMayShareFunctionTA = 0x50c24
+'@0x50c24'CC stub.InstantiateTypeArgumentsMayShareFunctionTA
+f method.stub.InstantiateTypeArgumentsMayShareInstantiatorTA = 0x50d6c
+'@0x50d6c'CC stub.InstantiateTypeArgumentsMayShareInstantiatorTA
+f method.stub.InstantiateTypeArguments = 0x50eb4
+'@0x50eb4'CC stub.InstantiateTypeArguments
+f method.stub.InstantiateTypeLegacyFunctionTypeParameter = 0x50fe0
+'@0x50fe0'CC stub.InstantiateTypeLegacyFunctionTypeParameter
+f method.stub.InstantiateTypeNullableFunctionTypeParameter = 0x51050
+'@0x51050'CC stub.InstantiateTypeNullableFunctionTypeParameter
+f method.stub.InstantiateTypeNonNullableFunctionTypeParameter = 0x510c0
+'@0x510c0'CC stub.InstantiateTypeNonNullableFunctionTypeParameter
+f method.stub.InstantiateTypeLegacyClassTypeParameter = 0x51120
+'@0x51120'CC stub.InstantiateTypeLegacyClassTypeParameter
+f method.stub.InstantiateTypeNullableClassTypeParameter = 0x51190
+'@0x51190'CC stub.InstantiateTypeNullableClassTypeParameter
+f method.stub.InstantiateTypeNonNullableClassTypeParameter = 0x51200
+'@0x51200'CC stub.InstantiateTypeNonNullableClassTypeParameter
+f method.stub.InstantiateType = 0x51260
+'@0x51260'CC stub.InstantiateType
+f method.stub.InstanceOf = 0x51298
+'@0x51298'CC stub.InstanceOf
+f method.stub.AssertBoolean = 0x512d4
+'@0x512d4'CC stub.AssertBoolean
+f method.stub.ReThrow = 0x512f8
+'@0x512f8'CC stub.ReThrow
+f method.stub.Throw = 0x51324
+'@0x51324'CC stub.Throw
+f method.stub.InitLateFinalInstanceField = 0x51348
+'@0x51348'CC stub.InitLateFinalInstanceField
+f method.stub.InitLateInstanceField = 0x513d4
+'@0x513d4'CC stub.InitLateInstanceField
+f method.stub.InitInstanceField = 0x51434
+'@0x51434'CC stub.InitInstanceField
+f method.stub.InitLateFinalStaticField = 0x51468
+'@0x51468'CC stub.InitLateFinalStaticField
+f method.stub.InitLateStaticField = 0x514cc
+'@0x514cc'CC stub.InitLateStaticField
+f method.stub.InitStaticField = 0x51504
+'@0x51504'CC stub.InitStaticField
+f method.stub.FfiCallbackTrampoline = 0x51538
+'@0x51538'CC stub.FfiCallbackTrampoline
+f method.stub.CallNativeThroughSafepoint = 0x61534
+'@0x61534'CC stub.CallNativeThroughSafepoint
+f method.stub.ExitSafepointIgnoreUnwindInProgress = 0x615e4
+'@0x615e4'CC stub.ExitSafepointIgnoreUnwindInProgress
+f method.stub.ExitSafepoint = 0x61718
+'@0x61718'CC stub.ExitSafepoint
+f method.stub.EnterSafepoint = 0x6184c
+'@0x6184c'CC stub.EnterSafepoint
+f method.stub.OneArgOptimizedCheckInlineCacheWithExactnessCheck = 0x61978
+'@0x61978'CC stub.OneArgOptimizedCheckInlineCacheWithExactnessCheck
+f method.stub.OneArgCheckInlineCacheWithExactnessCheck = 0x6197c
+'@0x6197c'CC stub.OneArgCheckInlineCacheWithExactnessCheck
+f method.stub.DoubleToInteger = 0x61980
+'@0x61980'CC stub.DoubleToInteger
+f method.stub.StackOverflowSharedWithoutFPURegs = 0x619b8
+'@0x619b8'CC stub.StackOverflowSharedWithoutFPURegs
+f method.stub.StackOverflowSharedWithFPURegs = 0x61a38
+'@0x61a38'CC stub.StackOverflowSharedWithFPURegs
+f method.stub.WriteErrorSharedWithoutFPURegs = 0x61b38
+'@0x61b38'CC stub.WriteErrorSharedWithoutFPURegs
+f method.stub.WriteErrorSharedWithFPURegs = 0x61b88
+'@0x61b88'CC stub.WriteErrorSharedWithFPURegs
+f method.stub.RangeErrorSharedWithoutFPURegs = 0x61c18
+'@0x61c18'CC stub.RangeErrorSharedWithoutFPURegs
+f method.stub.RangeErrorSharedWithFPURegs = 0x61c9c
+'@0x61c9c'CC stub.RangeErrorSharedWithFPURegs
+f method.stub.NullCastErrorSharedWithoutFPURegs = 0x61d60
+'@0x61d60'CC stub.NullCastErrorSharedWithoutFPURegs
+f method.stub.NullCastErrorSharedWithFPURegs = 0x61dac
+'@0x61dac'CC stub.NullCastErrorSharedWithFPURegs
+f method.stub.NullArgErrorSharedWithoutFPURegs = 0x61e38
+'@0x61e38'CC stub.NullArgErrorSharedWithoutFPURegs
+f method.stub.NullArgErrorSharedWithFPURegs = 0x61e84
+'@0x61e84'CC stub.NullArgErrorSharedWithFPURegs
+f method.stub.NullErrorSharedWithoutFPURegs = 0x61f10
+'@0x61f10'CC stub.NullErrorSharedWithoutFPURegs
+f method.stub.NullErrorSharedWithFPURegs = 0x61f5c
+'@0x61f5c'CC stub.NullErrorSharedWithFPURegs
+f method.stub.LateInitializationErrorSharedWithoutFPURegs = 0x61fe8
+'@0x61fe8'CC stub.LateInitializationErrorSharedWithoutFPURegs
+f method.stub.LateInitializationErrorSharedWithFPURegs = 0x62038
+'@0x62038'CC stub.LateInitializationErrorSharedWithFPURegs
+f method.stub.DispatchTableNullError = 0x620c8
+'@0x620c8'CC stub.DispatchTableNullError
+f method.stub.NotLoaded = 0x620ec
+'@0x620ec'CC stub.NotLoaded
+f method.stub.AsynchronousGapMarker = 0x62108
+'@0x62108'CC stub.AsynchronousGapMarker
+f method.stub.FrameAwaitingMaterialization = 0x6210c
+'@0x6210c'CC stub.FrameAwaitingMaterialization
+f method.stub.CallClosureNoSuchMethod = 0x62110
+'@0x62110'CC stub.CallClosureNoSuchMethod
+f method.stub.LazySpecializeNullableTypeTest = 0x621d0
+'@0x621d0'CC stub.LazySpecializeNullableTypeTest
+f method.stub.LazySpecializeTypeTest = 0x6223c
+'@0x6223c'CC stub.LazySpecializeTypeTest
+f method.stub.SlowTypeTest = 0x622a0
+'@0x622a0'CC stub.SlowTypeTest
+f method.stub.NullableTypeParameterTypeTest = 0x623b4
+'@0x623b4'CC stub.NullableTypeParameterTypeTest
+f method.stub.TypeParameterTypeTest = 0x62400
+'@0x62400'CC stub.TypeParameterTypeTest
+f method.stub.UnreachableTypeTest = 0x62444
+'@0x62444'CC stub.UnreachableTypeTest
+f method.stub.TopTypeTypeTest = 0x62448
+'@0x62448'CC stub.TopTypeTypeTest
+f method.stub.DefaultNullableTypeTest = 0x6244c
+'@0x6244c'CC stub.DefaultNullableTypeTest
+f method.stub.DefaultTypeTest = 0x62464
+'@0x62464'CC stub.DefaultTypeTest
+f method.stub.Subtype7TestCache = 0x62470
+'@0x62470'CC stub.Subtype7TestCache
+f method.stub.Subtype6TestCache = 0x62728
+'@0x62728'CC stub.Subtype6TestCache
+f method.stub.Subtype4TestCache = 0x629ac
+'@0x629ac'CC stub.Subtype4TestCache
+f method.stub.Subtype3TestCache = 0x62ba0
+'@0x62ba0'CC stub.Subtype3TestCache
+f method.stub.Subtype2TestCache = 0x62d54
+'@0x62d54'CC stub.Subtype2TestCache
+f method.stub.Subtype1TestCache = 0x62ec0
+'@0x62ec0'CC stub.Subtype1TestCache
+f method.stub.NullIsAssignableToType = 0x62fc4
+'@0x62fc4'CC stub.NullIsAssignableToType
+f method.stub.TypeIsTopTypeForSubtyping = 0x63064
+'@0x63064'CC stub.TypeIsTopTypeForSubtyping
+f method.stub.AssertAssignable = 0x630cc
+'@0x630cc'CC stub.AssertAssignable
+f method.stub.AssertSubtype = 0x630d0
+'@0x630d0'CC stub.AssertSubtype
+f method.stub.TwoArgsUnoptimizedStaticCall = 0x63104
+'@0x63104'CC stub.TwoArgsUnoptimizedStaticCall
+f method.stub.OneArgUnoptimizedStaticCall = 0x6310c
+'@0x6310c'CC stub.OneArgUnoptimizedStaticCall
+f method.stub.ZeroArgsUnoptimizedStaticCall = 0x63114
+'@0x63114'CC stub.ZeroArgsUnoptimizedStaticCall
+f method.stub.TwoArgsOptimizedCheckInlineCache = 0x63144
+'@0x63144'CC stub.TwoArgsOptimizedCheckInlineCache
+f method.stub.OneArgOptimizedCheckInlineCache = 0x63148
+'@0x63148'CC stub.OneArgOptimizedCheckInlineCache
+f method.stub.SmiEqualInlineCache = 0x6314c
+'@0x6314c'CC stub.SmiEqualInlineCache
+f method.stub.SmiLessInlineCache = 0x63150
+'@0x63150'CC stub.SmiLessInlineCache
+f method.stub.SmiAddInlineCache = 0x63154
+'@0x63154'CC stub.SmiAddInlineCache
+f method.stub.TwoArgsCheckInlineCache = 0x63158
+'@0x63158'CC stub.TwoArgsCheckInlineCache
+f method.stub.OneArgCheckInlineCache = 0x6315c
+'@0x6315c'CC stub.OneArgCheckInlineCache
+f method.stub.RuntimeCallBreakpoint = 0x63160
+'@0x63160'CC stub.RuntimeCallBreakpoint
+f method.stub.UnoptStaticCallBreakpoint = 0x63164
+'@0x63164'CC stub.UnoptStaticCallBreakpoint
+f method.stub.ICCallBreakpoint = 0x63168
+'@0x63168'CC stub.ICCallBreakpoint
+f method.stub.OptimizedIdenticalWithNumberCheck = 0x6316c
+'@0x6316c'CC stub.OptimizedIdenticalWithNumberCheck
+f method.stub.UnoptimizedIdenticalWithNumberCheck = 0x631e4
+'@0x631e4'CC stub.UnoptimizedIdenticalWithNumberCheck
+f method.stub.DeoptimizeLazyFromThrow = 0x6325c
+'@0x6325c'CC stub.DeoptimizeLazyFromThrow
+f method.stub.DeoptimizeLazyFromReturn = 0x634b4
+'@0x634b4'CC stub.DeoptimizeLazyFromReturn
+f method.stub.Deoptimize = 0x636bc
+'@0x636bc'CC stub.Deoptimize
+f method.stub.FixParameterizedAllocationStubTarget = 0x638a0
+'@0x638a0'CC stub.FixParameterizedAllocationStubTarget
+f method.stub.FixAllocationStubTarget = 0x638dc
+'@0x638dc'CC stub.FixAllocationStubTarget
+f method.stub.MegamorphicCall = 0x63910
+'@0x63910'CC stub.MegamorphicCall
+f method.stub.ICCallThroughCode = 0x639b8
+'@0x639b8'CC stub.ICCallThroughCode
+f method.stub.SingleTargetCall = 0x63a08
+'@0x63a08'CC stub.SingleTargetCall
+f method.stub.MonomorphicSmiableCheck = 0x63a84
+'@0x63a84'CC stub.MonomorphicSmiableCheck
+f method.stub.SwitchableCallMiss = 0x63ab0
+'@0x63ab0'CC stub.SwitchableCallMiss
+f method.stub.DebugStepCheck = 0x63afc
+'@0x63afc'CC stub.DebugStepCheck
+f method.stub.InvokeDartCode = 0x63b00
+'@0x63b00'CC stub.InvokeDartCode
+f method.stub.OptimizeFunction = 0x63c30
+'@0x63c30'CC stub.OptimizeFunction
+f method.stub.CallStaticFunction = 0x63c7c
+'@0x63c7c'CC stub.CallStaticFunction
+f method.stub.FixCallersTarget = 0x63cb4
+'@0x63cb4'CC stub.FixCallersTarget
+f method.stub.CallAutoScopeNative = 0x63d68
+'@0x63d68'CC stub.CallAutoScopeNative
+f method.stub.CallNoScopeNative = 0x63df4
+'@0x63df4'CC stub.CallNoScopeNative
+f method.stub.CallBootstrapNative = 0x63e80
+'@0x63e80'CC stub.CallBootstrapNative
+f method.stub.LazyCompile = 0x63f0c
+'@0x63f0c'CC stub.LazyCompile
+f method.stub.CallToRuntime = 0x63f48
+'@0x63f48'CC stub.CallToRuntime
+f method.stub.CloneContext = 0x63fe4
+'@0x63fe4'CC stub.CloneContext
+f method.stub.BoxFloat64x2 = 0x640d0
+'@0x640d0'CC stub.BoxFloat64x2
+f method.stub.BoxFloat32x4 = 0x6412c
+'@0x6412c'CC stub.BoxFloat32x4
+f method.stub.BoxDouble = 0x64188
+'@0x64188'CC stub.BoxDouble
+f method.stub.AllocateUnhandledException = 0x641e4
+'@0x641e4'CC stub.AllocateUnhandledException
+f method.stub.AllocateRecord3Named = 0x641f4
+'@0x641f4'CC stub.AllocateRecord3Named
+f method.stub.AllocateRecord3 = 0x642b0
+'@0x642b0'CC stub.AllocateRecord3
+f method.stub.AllocateRecord2Named = 0x64374
+'@0x64374'CC stub.AllocateRecord2Named
+f method.stub.AllocateRecord2 = 0x6442c
+'@0x6442c'CC stub.AllocateRecord2
+f method.stub.AllocateRecord = 0x644ec
+'@0x644ec'CC stub.AllocateRecord
+f method.stub.AllocateObjectSlow = 0x645e4
+'@0x645e4'CC stub.AllocateObjectSlow
+f method.stub.AllocateObjectParameterized = 0x6466c
+'@0x6466c'CC stub.AllocateObjectParameterized
+f method.stub.AllocateObject = 0x646c4
+'@0x646c4'CC stub.AllocateObject
+f method.stub.AllocateGrowableArray = 0x64708
+'@0x64708'CC stub.AllocateGrowableArray
+f method.stub.AllocateContext = 0x64744
+'@0x64744'CC stub.AllocateContext
+f method.stub.AllocateClosureTAGeneric = 0x64860
+'@0x64860'CC stub.AllocateClosureTAGeneric
+f method.stub.AllocateClosureTA = 0x64944
+'@0x64944'CC stub.AllocateClosureTA
+f method.stub.AllocateClosureGeneric = 0x64a20
+'@0x64a20'CC stub.AllocateClosureGeneric
+f method.stub.AllocateClosure = 0x64b00
+'@0x64b00'CC stub.AllocateClosure
+f method.stub.AllocateMintSharedWithoutFPURegs = 0x64bd8
+'@0x64bd8'CC stub.AllocateMintSharedWithoutFPURegs
+f method.stub.AllocateMintSharedWithFPURegs = 0x64c8c
+'@0x64c8c'CC stub.AllocateMintSharedWithFPURegs
+f method.stub.AllocateFloat64x2Array = 0x64dc0
+'@0x64dc0'CC stub.AllocateFloat64x2Array
+f method.stub.AllocateInt32x4Array = 0x64e7c
+'@0x64e7c'CC stub.AllocateInt32x4Array
+f method.stub.AllocateFloat32x4Array = 0x64f38
+'@0x64f38'CC stub.AllocateFloat32x4Array
+f method.stub.AllocateFloat64Array = 0x64ff4
+'@0x64ff4'CC stub.AllocateFloat64Array
+f method.stub.AllocateFloat32Array = 0x650b0
+'@0x650b0'CC stub.AllocateFloat32Array
+f method.stub.AllocateUint64Array = 0x6516c
+'@0x6516c'CC stub.AllocateUint64Array
+f method.stub.AllocateInt64Array = 0x65228
+'@0x65228'CC stub.AllocateInt64Array
+f method.stub.AllocateUint32Array = 0x652e4
+'@0x652e4'CC stub.AllocateUint32Array
+f method.stub.AllocateInt32Array = 0x653a0
+'@0x653a0'CC stub.AllocateInt32Array
+f method.stub.AllocateUint16Array = 0x6545c
+'@0x6545c'CC stub.AllocateUint16Array
+f method.stub.AllocateInt16Array = 0x6551c
+'@0x6551c'CC stub.AllocateInt16Array
+f method.stub.AllocateUint8ClampedArray = 0x655dc
+'@0x655dc'CC stub.AllocateUint8ClampedArray
+f method.stub.AllocateUint8Array = 0x6569c
+'@0x6569c'CC stub.AllocateUint8Array
+f method.stub.AllocateInt8Array = 0x6575c
+'@0x6575c'CC stub.AllocateInt8Array
+f method.stub.AllocateInt32x4 = 0x6581c
+'@0x6581c'CC stub.AllocateInt32x4
+f method.stub.AllocateFloat64x2 = 0x65870
+'@0x65870'CC stub.AllocateFloat64x2
+f method.stub.AllocateFloat32x4 = 0x658c4
+'@0x658c4'CC stub.AllocateFloat32x4
+f method.stub.AllocateDouble = 0x65918
+'@0x65918'CC stub.AllocateDouble
+f method.stub.AllocateMint = 0x6596c
+'@0x6596c'CC stub.AllocateMint
+f method.stub.AllocateArray = 0x659c0
+'@0x659c0'CC stub.AllocateArray
+f method.stub.ArrayWriteBarrier = 0x65ac0
+'@0x65ac0'CC stub.ArrayWriteBarrier
+f method.stub.WriteBarrierWrappers = 0x65ebc
+'@0x65ebc'CC stub.WriteBarrierWrappers
+f method.stub.WriteBarrier = 0x6613c
+'@0x6613c'CC stub.WriteBarrier
+f method.stub.DeoptForRewind = 0x663f8
+'@0x663f8'CC stub.DeoptForRewind
+f method.stub.RunExceptionHandler = 0x66604
+'@0x66604'CC stub.RunExceptionHandler
+f method.stub.JumpToFrame = 0x66620
+'@0x66620'CC stub.JumpToFrame
+f method.stub.GetCStackPointer = 0x666c0
+'@0x666c0'CC stub.GetCStackPointer
+f method.Object.noSuchMethod = 0x66768
+'@0x66768'CC Object.noSuchMethod
+f method.new.NoSuchMethodError = 0x66794
+'@0x66794'CC new.NoSuchMethodError
+f method.NoSuchMethodError._throwNew = 0x667a0
+'@0x667a0'CC NoSuchMethodError._throwNew
+f method.new.NoSuchMethodError._withType = 0x66804
+'@0x66804'CC new.NoSuchMethodError._withType
+f method.new._InvocationMirror._withType = 0x669b4
+'@0x669b4'CC new._InvocationMirror._withType
+f method._InvocationMirror._allocateInvocationMirrorForClosure = 0x66a98
+'@0x66a98'CC _InvocationMirror._allocateInvocationMirrorForClosure
+f method._InvocationMirror._allocateInvocationMirror = 0x66b28
+'@0x66b28'CC _InvocationMirror._allocateInvocationMirror
+f method.assert.type.is.Symbol = 0x66bd4
+'@0x66bd4'CC assert.type.is.Symbol
+f method.new._InvocationMirror = 0x66bf4
+'@0x66bf4'CC new._InvocationMirror
+f method.NoSuchMethodError._NamedArgumentsMap = 0x66c00
+'@0x66c00'CC NoSuchMethodError._NamedArgumentsMap
+f method._OperatorEqualsAndHashCode._hashCode = 0x66de8
+'@0x66de8'CC _OperatorEqualsAndHashCode._hashCode
+f method._LinkedHashMapMixin._set = 0x66e44
+'@0x66e44'CC _LinkedHashMapMixin._set
+f method._LinkedHashMapMixin._insert = 0x66fa4
+'@0x66fa4'CC _LinkedHashMapMixin._insert
+f method._LinkedHashMapMixin._rehash = 0x67198
+'@0x67198'CC _LinkedHashMapMixin._rehash
+f method._LinkedHashMapMixin._init = 0x67234
+'@0x67234'CC _LinkedHashMapMixin._init
+f method.assert.type.is.List_int_ = 0x67440
+'@0x67440'CC assert.type.is.List_int_
+f method._LinkedHashMapMixin._findValueOrInsertPoint = 0x674d8
+'@0x674d8'CC _LinkedHashMapMixin._findValueOrInsertPoint
+f method.new.Map = 0x676a8
+'@0x676a8'CC new.Map
+f method.new._Map = 0x67744
+'@0x67744'CC new._Map
+f method._uninitializedData = 0x67750
+'@0x67750'CC _uninitializedData
+f method._rehashObjects = 0x67770
+'@0x67770'CC _rehashObjects
+f method._uninitializedIndex = 0x67848
+'@0x67848'CC _uninitializedIndex
+f method._InvocationMirror._unpackTypeArguments = 0x67864
+'@0x67864'CC _InvocationMirror._unpackTypeArguments
+f method.assert.type.is.List_Type_ = 0x678c8
+'@0x678c8'CC assert.type.is.List_Type_
+f method.new.Symbol = 0x6794c
+'@0x6794c'CC new.Symbol
+f method.Duration. = 0x67958
+'@0x67958'CC Duration.
+f method._Uri. = 0x67994
+'@0x67994'CC _Uri.
+f method._SimpleUri. = 0x67d64
+'@0x67d64'CC _SimpleUri.
+f method._ControllerStream. = 0x67e64
+'@0x67e64'CC _ControllerStream.
+f method.assert.type.is.Stream_X0_ = 0x67ed0
+'@0x67ed0'CC assert.type.is.Stream_X0_
+f method.Symbol. = 0x67fa4
+'@0x67fa4'CC Symbol.
+f method._ByteBuffer. = 0x68030
+'@0x68030'CC _ByteBuffer.
+f method.new._ByteBuffer._New = 0x680cc
+'@0x680cc'CC new._ByteBuffer._New
+f method.new._ByteBuffer = 0x68104
+'@0x68104'CC new._ByteBuffer
+f method._TypedListBase._setClampedRange = 0x68110
+'@0x68110'CC _TypedListBase._setClampedRange
+f method._TypedListBase._setClampedRange = 0x68164
+'@0x68164'CC _TypedListBase._setClampedRange
+f method._TypedList._nativeSetFloat64x2 = 0x681b8
+'@0x681b8'CC _TypedList._nativeSetFloat64x2
+f method._TypedList._nativeGetFloat64x2 = 0x68200
+'@0x68200'CC _TypedList._nativeGetFloat64x2
+f method._TypedList._nativeSetInt32x4 = 0x6827c
+'@0x6827c'CC _TypedList._nativeSetInt32x4
+f method._TypedList._nativeGetInt32x4 = 0x682c4
+'@0x682c4'CC _TypedList._nativeGetInt32x4
+f method._TypedList._nativeSetFloat32x4 = 0x68340
+'@0x68340'CC _TypedList._nativeSetFloat32x4
+f method._TypedList._nativeGetFloat32x4 = 0x68388
+'@0x68388'CC _TypedList._nativeGetFloat32x4
+f method._TypedList._nativeSetFloat64 = 0x68404
+'@0x68404'CC _TypedList._nativeSetFloat64
+f method._TypedList._nativeGetFloat64 = 0x6844c
+'@0x6844c'CC _TypedList._nativeGetFloat64
+f method._TypedList._nativeSetFloat32 = 0x684c8
+'@0x684c8'CC _TypedList._nativeSetFloat32
+f method._TypedList._nativeGetFloat32 = 0x68510
+'@0x68510'CC _TypedList._nativeGetFloat32
+f method.assert.type.is._TypedList = 0x6858c
+'@0x6858c'CC assert.type.is._TypedList
+f method.String. = 0x68684
+'@0x68684'CC String.
+f method._StringBase. = 0x68744
+'@0x68744'CC _StringBase.
+f method._StringBase.__ = 0x68868
+'@0x68868'CC _StringBase.__
+f method._StringBase.__ = 0x68930
+'@0x68930'CC _StringBase.__
+f method._StringBase._interpolate = 0x68a24
+'@0x68a24'CC _StringBase._interpolate
+f method.String._concatAll = 0x68c4c
+'@0x68c4c'CC String._concatAll
+f method.allocateOneByteString = 0x68e04
+'@0x68e04'CC allocateOneByteString
+f method._printClosure = 0x68eec
+'@0x68eec'CC _printClosure
+f method._unsupportedPrint = 0x68ef4
+'@0x68ef4'CC _unsupportedPrint
+f method._unsupportedPrint = 0x68f24
+'@0x68f24'CC _unsupportedPrint
+f method.new.UnsupportedError = 0x68f48
+'@0x68f48'CC new.UnsupportedError
+f method.new.UnsupportedError = 0x68f54
+'@0x68f54'CC new.UnsupportedError
+f method._boundsCheckForPartialInstantiation = 0x68f88
+'@0x68f88'CC _boundsCheckForPartialInstantiation
+f method._prependTypeArguments = 0x68fcc
+'@0x68fcc'CC _prependTypeArguments
+f method._printClosure = 0x6901c
+'@0x6901c'CC _printClosure
+f method._StringBase._concatRangeNative = 0x6904c
+'@0x6904c'CC _StringBase._concatRangeNative
+f method._StringBase._interpolateSingle = 0x690d0
+'@0x690d0'CC _StringBase._interpolateSingle
+f method.String. = 0x6914c
+'@0x6914c'CC String.
+f method._MirrorReference. = 0x69210
+'@0x69210'CC _MirrorReference.
+f method._SendPort. = 0x692a4
+'@0x692a4'CC _SendPort.
+f method._SendPort.send = 0x69354
+'@0x69354'CC _SendPort.send
+f method._SendPort._sendInternal = 0x69394
+'@0x69394'CC _SendPort._sendInternal
+f method._SendPort._get_id = 0x693d8
+'@0x693d8'CC _SendPort._get_id
+f method._RawReceivePort. = 0x69414
+'@0x69414'CC _RawReceivePort.
+f method.assert.type.is._RawReceivePort = 0x694c8
+'@0x694c8'CC assert.type.is._RawReceivePort
+f method._RawReceivePort._handleMessage = 0x694e8
+'@0x694e8'CC _RawReceivePort._handleMessage
+f method._runPendingImmediateCallback = 0x69598
+'@0x69598'CC _runPendingImmediateCallback
+f method._setupHooks = 0x695f4
+'@0x695f4'CC _setupHooks
+f method._Timer._factory = 0x69608
+'@0x69608'CC _Timer._factory
+f method._Timer._factory = 0x69640
+'@0x69640'CC _Timer._factory
+f method._Timer._createTimer = 0x696a8
+'@0x696a8'CC _Timer._createTimer
+f method._EventHandler._timerMillisecondClock = 0x69778
+'@0x69778'CC _EventHandler._timerMillisecondClock
+f method._makeDatagram = 0x697a4
+'@0x697a4'CC _makeDatagram
+f method.new.Datagram = 0x697e8
+'@0x697e8'CC new.Datagram
+f method.new.InternetAddressType._from = 0x697f4
+'@0x697f4'CC new.InternetAddressType._from
+f method.new.ArgumentError = 0x698c0
+'@0x698c0'CC new.ArgumentError
+f method.new.ArgumentError.value = 0x698cc
+'@0x698cc'CC new.ArgumentError.value
+f method.new.ArgumentError = 0x699a8
+'@0x699a8'CC new.ArgumentError
+f method.assert.type.is.Uint8List = 0x69a58
+'@0x69a58'CC assert.type.is.Uint8List
+f method._getWatchSignalInternal = 0x69a7c
+'@0x69a7c'CC _getWatchSignalInternal
+f method._ProcessUtils._watchSignalInternal = 0x69a84
+'@0x69a84'CC _ProcessUtils._watchSignalInternal
+f method._signalControllers = 0x69ac8
+'@0x69ac8'CC _signalControllers
+f method.assert.type.is._SignalController_ = 0x69ae8
+'@0x69ae8'CC assert.type.is._SignalController_
+f method._makeUint8ListView = 0x69b14
+'@0x69b14'CC _makeUint8ListView
+f method.new.Uint8List.view = 0x69b84
+'@0x69b84'CC new.Uint8List.view
+f method._getUriBaseClosure = 0x69bd0
+'@0x69bd0'CC _getUriBaseClosure
+f method._uriBaseClosure = 0x69bd8
+'@0x69bd8'CC _uriBaseClosure
+f method._uriBaseClosure = 0x69c04
+'@0x69c04'CC _uriBaseClosure
+f method._Namespace._setupNamespace = 0x69cc0
+'@0x69cc0'CC _Namespace._setupNamespace
+f method._NamespaceImpl._setupNamespace = 0x69cf4
+'@0x69cf4'CC _NamespaceImpl._setupNamespace
+f method._NamespaceImpl._create = 0x69d40
+'@0x69d40'CC _NamespaceImpl._create
+f method.new._NamespaceImpl = 0x69dbc
+'@0x69dbc'CC new._NamespaceImpl
+f method.new.FileSystemException._fromOSError = 0x69dc8
+'@0x69dc8'CC new.FileSystemException._fromOSError
+f method.new.OSError = 0x6a2d0
+'@0x6a2d0'CC new.OSError
+f method.new.FileSystemException = 0x6a360
+'@0x6a360'CC new.FileSystemException
+f method.new.PathNotFoundException = 0x6a36c
+'@0x6a36c'CC new.PathNotFoundException
+f method.new.PathExistsException = 0x6a378
+'@0x6a378'CC new.PathExistsException
+f method.new.PathAccessException = 0x6a384
+'@0x6a384'CC new.PathAccessException
+f method.Platform.isWindows = 0x6a390
+'@0x6a390'CC Platform.isWindows
+f method.Platform.operatingSystem = 0x6a3f8
+'@0x6a3f8'CC Platform.operatingSystem
+f method._Platform._operatingSystem = 0x6a424
+'@0x6a424'CC _Platform._operatingSystem
+f method.new._Uri.directory = 0x6a498
+'@0x6a498'CC new._Uri.directory
+f method._Uri._makeFileUri = 0x6a50c
+'@0x6a50c'CC _Uri._makeFileUri
+f method.new._Uri = 0x6a64c
+'@0x6a64c'CC new._Uri
+f method.new._Uri = 0x6a944
+'@0x6a944'CC new._Uri
+f method._Uri._removeDotSegments = 0x6a950
+'@0x6a950'CC _Uri._removeDotSegments
+f method.new.ConcurrentModificationError = 0x6ac70
+'@0x6ac70'CC new.ConcurrentModificationError
+f method.List.join = 0x6ac7c
+'@0x6ac7c'CC List.join
+f method.List._joinWithSeparator = 0x6ae24
+'@0x6ae24'CC List._joinWithSeparator
+f method.StringBuffer._addPart = 0x6af60
+'@0x6af60'CC StringBuffer._addPart
+f method.StringBuffer._compact = 0x6b120
+'@0x6b120'CC StringBuffer._compact
+f method._StringBase._concatRange = 0x6b24c
+'@0x6b24c'CC _StringBase._concatRange
+f method.new._GrowableList.withCapacity = 0x6b2e0
+'@0x6b2e0'CC new._GrowableList.withCapacity
+f method.List._allocateData = 0x6b334
+'@0x6b334'CC List._allocateData
+f method.List._emptyList = 0x6b3a8
+'@0x6b3a8'CC List._emptyList
+f method.StringBuffer._consumeBuffer = 0x6b3c8
+'@0x6b3c8'CC StringBuffer._consumeBuffer
+f method.StringBuffer._create = 0x6b470
+'@0x6b470'CC StringBuffer._create
+f method.StringBuffer.write = 0x6b4f4
+'@0x6b4f4'CC StringBuffer.write
+f method.new.StringBuffer = 0x6b564
+'@0x6b564'CC new.StringBuffer
+f method.new.StringBuffer = 0x6b5d0
+'@0x6b5d0'CC new.StringBuffer
+f method._StringBase.isEmpty = 0x6b5dc
+'@0x6b5dc'CC _StringBase.isEmpty
+f method.List.length = 0x6b5f8
+'@0x6b5f8'CC List.length
+f method.List._shrink = 0x6b758
+'@0x6b758'CC List._shrink
+f method.List._grow = 0x6b874
+'@0x6b874'CC List._grow
+f method.new._GrowableList = 0x6b970
+'@0x6b970'CC new._GrowableList
+f method._Uri._mayContainDotSegments = 0x6b9e0
+'@0x6b9e0'CC _Uri._mayContainDotSegments
+f method._Uri._normalizeRelativePath = 0x6ba6c
+'@0x6ba6c'CC _Uri._normalizeRelativePath
+f method.IterableElementError.noElement = 0x6befc
+'@0x6befc'CC IterableElementError.noElement
+f method.new.StateError = 0x6bf1c
+'@0x6bf1c'CC new.StateError
+f method.StateError._throwNew = 0x6bf28
+'@0x6bf28'CC StateError._throwNew
+f method.StateError._throwNew = 0x6bf4c
+'@0x6bf4c'CC StateError._throwNew
+f method._Uri._escapeScheme = 0x6bf84
+'@0x6bf84'CC _Uri._escapeScheme
+f method._StringBase.substring = 0x6c1a4
+'@0x6c1a4'CC _StringBase.substring
+f method._StringBase._substringUnchecked = 0x6c228
+'@0x6c228'CC _StringBase._substringUnchecked
+f method.RangeError.checkValidRange = 0x6c308
+'@0x6c308'CC RangeError.checkValidRange
+f method.new.RangeError.range = 0x6c45c
+'@0x6c45c'CC new.RangeError.range
+f method.new.RangeError = 0x6c59c
+'@0x6c59c'CC new.RangeError
+f method.new.RangeError = 0x6c5dc
+'@0x6c5dc'CC new.RangeError
+f method._Uri._makePath = 0x6c5e8
+'@0x6c5e8'CC _Uri._makePath
+f method._Uri._normalizePath = 0x6c73c
+'@0x6c73c'CC _Uri._normalizePath
+f method._StringBase. = 0x6c7cc
+'@0x6c7cc'CC _StringBase.
+f method._Uri._normalizeOrSubstring = 0x6c84c
+'@0x6c84c'CC _Uri._normalizeOrSubstring
+f method._Uri._normalize = 0x6c950
+'@0x6c950'CC _Uri._normalize
+f method.new.ReachabilityError = 0x6cf24
+'@0x6cf24'CC new.ReachabilityError
+f method._Uri._fail = 0x6cf30
+'@0x6cf30'CC _Uri._fail
+f method.new.FormatException = 0x6cf84
+'@0x6cf84'CC new.FormatException
+f method.new.FormatException = 0x6cf90
+'@0x6cf90'CC new.FormatException
+f method._Uri._escapeChar = 0x6d084
+'@0x6d084'CC _Uri._escapeChar
+f method.new.String.fromCharCodes = 0x6d2bc
+'@0x6d2bc'CC new.String.fromCharCodes
+f method._StringBase.createFromCharCodes = 0x6d348
+'@0x6d348'CC _StringBase.createFromCharCodes
+f method._StringBase._createFromCodePoints = 0x6d5fc
+'@0x6d5fc'CC _StringBase._createFromCodePoints
+f method.String._allocateFromTwoByteList = 0x6d680
+'@0x6d680'CC String._allocateFromTwoByteList
+f method._StringBase._scanCodeUnits = 0x6d704
+'@0x6d704'CC _StringBase._scanCodeUnits
+f method._StringBase._createOneByteString = 0x6d7b4
+'@0x6d7b4'CC _StringBase._createOneByteString
+f method.RangeError.checkNotNegative = 0x6d93c
+'@0x6d93c'CC RangeError.checkNotNegative
+f method._Uri._normalizeEscape = 0x6d9ac
+'@0x6d9ac'CC _Uri._normalizeEscape
+f method.new.String.fromCharCode = 0x6dc30
+'@0x6dc30'CC new.String.fromCharCode
+f method.ListIterable.join = 0x6dda0
+'@0x6dda0'CC ListIterable.join
+f method.ListBase.map = 0x6df8c
+'@0x6df8c'CC ListBase.map
+f method.new.MappedListIterable = 0x6e004
+'@0x6e004'CC new.MappedListIterable
+f method._Uri._makePath._anonymous.closure_ = 0x6e010
+'@0x6e010'CC _Uri._makePath._anonymous.closure_
+f method._Uri._uriEncode = 0x6e040
+'@0x6e040'CC _Uri._uriEncode
+f method.StringBuffer._ensureCapacity = 0x6e410
+'@0x6e410'CC StringBuffer._ensureCapacity
+f method.Utf8Encoder.convert = 0x6e498
+'@0x6e498'CC Utf8Encoder.convert
+f method._Utf8Encoder._writeReplacementCharacter = 0x6e5dc
+'@0x6e5dc'CC _Utf8Encoder._writeReplacementCharacter
+f method._Utf8Encoder._fillBuffer = 0x6e680
+'@0x6e680'CC _Utf8Encoder._fillBuffer
+f method._Utf8Encoder._writeSurrogate = 0x6eab4
+'@0x6eab4'CC _Utf8Encoder._writeSurrogate
+f method.new._Utf8Encoder = 0x6ec30
+'@0x6ec30'CC new._Utf8Encoder
+f method.StringBuffer.writeCharCode = 0x6ec3c
+'@0x6ec3c'CC StringBuffer.writeCharCode
+f method._Uri._makeHost = 0x6ee3c
+'@0x6ee3c'CC _Uri._makeHost
+f method._Uri._normalizeRegName = 0x6f224
+'@0x6f224'CC _Uri._normalizeRegName
+f method.Uri.parseIPv6Address = 0x6fa90
+'@0x6fa90'CC Uri.parseIPv6Address
+f method.Uri._parseIPv4Address = 0x70358
+'@0x70358'CC Uri._parseIPv4Address
+f method.int.parse = 0x706c0
+'@0x706c0'CC int.parse
+f method.int._handleFormatError = 0x7083c
+'@0x7083c'CC int._handleFormatError
+f method.int._parse = 0x70954
+'@0x70954'CC int._parse
+f method.int._parseRadix = 0x70bf4
+'@0x70bf4'CC int._parseRadix
+f method.int._initInt64OverflowLimits = 0x711a0
+'@0x711a0'CC int._initInt64OverflowLimits
+f method.int._parseBlock = 0x712f4
+'@0x712f4'CC int._parseBlock
+f method.int._int64OverflowLimits = 0x7154c
+'@0x7154c'CC int._int64OverflowLimits
+f method._StringBase._firstNonWhitespace = 0x71568
+'@0x71568'CC _StringBase._firstNonWhitespace
+f method._StringBase._lastNonWhitespace = 0x716c4
+'@0x716c4'CC _StringBase._lastNonWhitespace
+f method.int._tryParseSmi = 0x71820
+'@0x71820'CC int._tryParseSmi
+f method.Uri.parseIPv6Address.parseHex = 0x71978
+'@0x71978'CC Uri.parseIPv6Address.parseHex
+f method.Uri.parseIPv6Address.error = 0x71abc
+'@0x71abc'CC Uri.parseIPv6Address.error
+f method._Uri._normalizeZoneID = 0x71b4c
+'@0x71b4c'CC _Uri._normalizeZoneID
+f method._Uri._checkZoneID = 0x72100
+'@0x72100'CC _Uri._checkZoneID
+f method._Uri._makeScheme = 0x72198
+'@0x72198'CC _Uri._makeScheme
+f method._Uri._canonicalizeScheme = 0x723fc
+'@0x723fc'CC _Uri._canonicalizeScheme
+f method._StringBase.startsWith = 0x724fc
+'@0x724fc'CC _StringBase.startsWith
+f method._StringBase._substringMatches = 0x72628
+'@0x72628'CC _StringBase._substringMatches
+f method.List._growToNextCapacity = 0x72890
+'@0x72890'CC List._growToNextCapacity
+f method._Uri._makeWindowsFileUrl = 0x728d8
+'@0x728d8'CC _Uri._makeWindowsFileUrl
+f method._Uri._checkWindowsPathReservedCharacters = 0x72fe0
+'@0x72fe0'CC _Uri._checkWindowsPathReservedCharacters
+f method.new._RegExp = 0x73254
+'@0x73254'CC new._RegExp
+f method.ListBase.skip = 0x73360
+'@0x73360'CC ListBase.skip
+f method.new.SubListIterable = 0x733c0
+'@0x733c0'CC new.SubListIterable
+f method.new.SubListIterable = 0x734d8
+'@0x734d8'CC new.SubListIterable
+f method._Uri._checkWindowsDriveLetter = 0x734e4
+'@0x734e4'CC _Uri._checkWindowsDriveLetter
+f method._StringBase.replaceAll = 0x735b4
+'@0x735b4'CC _StringBase.replaceAll
+f method._StringBase._joinReplaceAllResult = 0x73960
+'@0x73960'CC _StringBase._joinReplaceAllResult
+f method._StringBase._joinReplaceAllOneByteResult = 0x739ec
+'@0x739ec'CC _StringBase._joinReplaceAllOneByteResult
+f method._StringBase._addReplaceSlice = 0x73d00
+'@0x73d00'CC _StringBase._addReplaceSlice
+f method.new._StringAllMatchesIterator = 0x73f2c
+'@0x73f2c'CC new._StringAllMatchesIterator
+f method.assert.type.is.Match = 0x73f38
+'@0x73f38'CC assert.type.is.Match
+f method._StringBase.replaceRange = 0x73f60
+'@0x73f60'CC _StringBase.replaceRange
+f method._Uri._isWindowsCached = 0x742f0
+'@0x742f0'CC _Uri._isWindowsCached
+f method._Uri._isWindowsPlatform = 0x7431c
+'@0x7431c'CC _Uri._isWindowsPlatform
+f method._Directory._current = 0x7438c
+'@0x7438c'CC _Directory._current
+f method.new.Directory.fromRawPath = 0x743c8
+'@0x743c8'CC new.Directory.fromRawPath
+f method.new._Directory = 0x74414
+'@0x74414'CC new._Directory
+f method.FileSystemEntity._toStringFromUtf8Array = 0x74420
+'@0x74420'CC FileSystemEntity._toStringFromUtf8Array
+f method.Utf8Decoder.convert = 0x744f8
+'@0x744f8'CC Utf8Decoder.convert
+f method._Utf8Decoder.convertSingle = 0x74580
+'@0x74580'CC _Utf8Decoder.convertSingle
+f method._Utf8Decoder.decodeGeneral = 0x74a2c
+'@0x74a2c'CC _Utf8Decoder.decodeGeneral
+f method._Utf8Decoder.decode16 = 0x74fcc
+'@0x74fcc'CC _Utf8Decoder.decode16
+f method.allocateTwoByteString = 0x7539c
+'@0x7539c'CC allocateTwoByteString
+f method._Utf8Decoder.decode8 = 0x75480
+'@0x75480'CC _Utf8Decoder.decode8
+f method._Utf8Decoder._makeUint8List = 0x756ac
+'@0x756ac'CC _Utf8Decoder._makeUint8List
+f method.new._Utf8Decoder = 0x75788
+'@0x75788'CC new._Utf8Decoder
+f method.FileSystemEntity._toNullTerminatedUtf8Array = 0x75794
+'@0x75794'CC FileSystemEntity._toNullTerminatedUtf8Array
+f method.IterableElementError.tooFew = 0x75a20
+'@0x75a20'CC IterableElementError.tooFew
+f method.new.Directory = 0x75a40
+'@0x75a40'CC new.Directory
+f method.FileSystemEntity._toUtf8Array = 0x75abc
+'@0x75abc'CC FileSystemEntity._toUtf8Array
+f method._ioOverridesToken = 0x75afc
+'@0x75afc'CC _ioOverridesToken
+f method.new.Object = 0x75b14
+'@0x75b14'CC new.Object
+f method.Zone._current = 0x75b20
+'@0x75b20'CC Zone._current
+f method._NamespaceImpl._namespace = 0x75b28
+'@0x75b28'CC _NamespaceImpl._namespace
+f method._NamespaceImpl._getDefault = 0x75b84
+'@0x75b84'CC _NamespaceImpl._getDefault
+f method.IOOverrides.current = 0x75bf4
+'@0x75bf4'CC IOOverrides.current
+f method._setupHooks = 0x75c58
+'@0x75c58'CC _setupHooks
+f method._EventHandler._sendData = 0x75c78
+'@0x75c78'CC _EventHandler._sendData
+f method._EventHandler._sendData = 0x75cbc
+'@0x75cbc'CC _EventHandler._sendData
+f method.assert.type.is.List_int__ = 0x75d04
+'@0x75d04'CC assert.type.is.List_int__
+f method._ExternalBuffer.end = 0x75da8
+'@0x75da8'CC _ExternalBuffer.end
+f method._ExternalBuffer.end = 0x75ddc
+'@0x75ddc'CC _ExternalBuffer.end
+f method._ExternalBuffer.start = 0x75de4
+'@0x75de4'CC _ExternalBuffer.start
+f method._ExternalBuffer.data = 0x75e18
+'@0x75e18'CC _ExternalBuffer.data
+f method.new.TlsException = 0x75e48
+'@0x75e48'CC new.TlsException
+f method.new._RandomAccessFile = 0x75ef4
+'@0x75ef4'CC new._RandomAccessFile
+f method.new._FileResourceInfo = 0x75fc8
+'@0x75fc8'CC new._FileResourceInfo
+f method.assert.type.is._FileResourceInfo = 0x76040
+'@0x76040'CC assert.type.is._FileResourceInfo
+f method._FileResourceInfo.fileOpened = 0x76060
+'@0x76060'CC _FileResourceInfo.fileOpened
+f method._FileResourceInfo.openFiles = 0x760dc
+'@0x760dc'CC _FileResourceInfo.openFiles
+f method.new.Map._fromLiteral = 0x76118
+'@0x76118'CC new.Map._fromLiteral
+f method.new._FileResourceInfo = 0x762e8
+'@0x762e8'CC new._FileResourceInfo
+f method.new._RandomAccessFileOpsImpl = 0x762f4
+'@0x762f4'CC new._RandomAccessFileOpsImpl
+f method._RandomAccessFileOpsImpl._setPointer = 0x7634c
+'@0x7634c'CC _RandomAccessFileOpsImpl._setPointer
+f method.new._RandomAccessFileOpsImpl = 0x76390
+'@0x76390'CC new._RandomAccessFileOpsImpl
+f method._SecureFilterImpl.ENCRYPTED_SIZE = 0x7639c
+'@0x7639c'CC _SecureFilterImpl.ENCRYPTED_SIZE
+f method._SecureFilterImpl.SIZE = 0x763a4
+'@0x763a4'CC _SecureFilterImpl.SIZE
+f method._SecureFilterImpl.ENCRYPTED_SIZE = 0x763ac
+'@0x763ac'CC _SecureFilterImpl.ENCRYPTED_SIZE
+f method._SecureFilterImpl.SIZE = 0x763dc
+'@0x763dc'CC _SecureFilterImpl.SIZE
+f method.new.Link.fromRawPath = 0x7640c
+'@0x7640c'CC new.Link.fromRawPath
+f method.new._Link = 0x76458
+'@0x76458'CC new._Link
+f method.new.Link = 0x76464
+'@0x76464'CC new.Link
+f method.new.X509Certificate._ = 0x764e0
+'@0x764e0'CC new.X509Certificate._
+f method.new._X509CertificateImpl = 0x764f8
+'@0x764f8'CC new._X509CertificateImpl
+f method._Closure._instantiator_type_arguments = 0x76504
+'@0x76504'CC _Closure._instantiator_type_arguments
+f method.new.HandshakeException = 0x7653c
+'@0x7653c'CC new.HandshakeException
+f method.new.File.fromRawPath = 0x765e8
+'@0x765e8'CC new.File.fromRawPath
+f method.new._File = 0x76660
+'@0x76660'CC new._File
+f method.new.File = 0x7666c
+'@0x7666c'CC new.File
+f method._ResourceHandleImpl._sentinel = 0x76708
+'@0x76708'CC _ResourceHandleImpl._sentinel
+f method.new._ResourceHandleImpl = 0x76728
+'@0x76728'CC new._ResourceHandleImpl
+f method._ResourceHandleImpl._handle = 0x76734
+'@0x76734'CC _ResourceHandleImpl._handle
+f method._ResourceHandleImpl._sentinel = 0x76754
+'@0x76754'CC _ResourceHandleImpl._sentinel
+f method._SocketControlMessageImpl.level = 0x76784
+'@0x76784'CC _SocketControlMessageImpl.level
+f method.new.CertificateException = 0x767b0
+'@0x767b0'CC new.CertificateException
+f method.new._SocketControlMessageImpl = 0x7685c
+'@0x7685c'CC new._SocketControlMessageImpl
+f method._Closure._delayed_type_arguments = 0x768b8
+'@0x768b8'CC _Closure._delayed_type_arguments
+f method.Future._state = 0x768c4
+'@0x768c4'CC Future._state
+f method.Future.timeout = 0x768f0
+'@0x768f0'CC Future.timeout
+f method.Future.then = 0x76b64
+'@0x76b64'CC Future.then
+f method.Future._addListener = 0x76e04
+'@0x76e04'CC Future._addListener
+f method._RootZone.scheduleMicrotask = 0x76fac
+'@0x76fac'CC _RootZone.scheduleMicrotask
+f method._rootScheduleMicrotask = 0x76fec
+'@0x76fec'CC _rootScheduleMicrotask
+f method.scheduleMicrotask = 0x770d0
+'@0x770d0'CC scheduleMicrotask
+f method._ensureScheduleImmediate = 0x771bc
+'@0x771bc'CC _ensureScheduleImmediate
+f method._AsyncRun._scheduleImmediate = 0x771ec
+'@0x771ec'CC _AsyncRun._scheduleImmediate
+f method._startMicrotaskLoop = 0x7725c
+'@0x7725c'CC _startMicrotaskLoop
+f method._startMicrotaskLoop = 0x77288
+'@0x77288'CC _startMicrotaskLoop
+f method._microtaskLoop = 0x7733c
+'@0x7733c'CC _microtaskLoop
+f method._setScheduleImmediateClosure = 0x773dc
+'@0x773dc'CC _setScheduleImmediateClosure
+f method._scheduleAsyncCallback = 0x773f0
+'@0x773f0'CC _scheduleAsyncCallback
+f method.new._AsyncCallbackEntry = 0x77490
+'@0x77490'CC new._AsyncCallbackEntry
+f method._Zone.inSameErrorZone = 0x7749c
+'@0x7749c'CC _Zone.inSameErrorZone
+f method._RootZone.bindCallback._anonymous.closure_ = 0x774c4
+'@0x774c4'CC _RootZone.bindCallback._anonymous.closure_
+f method._RootZone.run = 0x77514
+'@0x77514'CC _RootZone.run
+f method._rootRun = 0x775cc
+'@0x775cc'CC _rootRun
+f method._RootZone.bindCallbackGuarded._anonymous.closure_ = 0x77698
+'@0x77698'CC _RootZone.bindCallbackGuarded._anonymous.closure_
+f method._RootZone.runGuarded = 0x776dc
+'@0x776dc'CC _RootZone.runGuarded
+f method._RootZone.handleUncaughtError = 0x77798
+'@0x77798'CC _RootZone.handleUncaughtError
+f method._rootHandleError = 0x777d4
+'@0x777d4'CC _rootHandleError
+f method._schedulePriorityAsyncCallback = 0x7783c
+'@0x7783c'CC _schedulePriorityAsyncCallback
+f method._rootHandleError._anonymous.closure_ = 0x77924
+'@0x77924'CC _rootHandleError._anonymous.closure_
+f method.Error.throwWithStackTrace = 0x77974
+'@0x77974'CC Error.throwWithStackTrace
+f method.Error._throw = 0x779b8
+'@0x779b8'CC Error._throw
+f method.Future._cloneResult = 0x77a2c
+'@0x77a2c'CC Future._cloneResult
+f method.Future._prependListeners._anonymous.closure_ = 0x77a90
+'@0x77a90'CC Future._prependListeners._anonymous.closure_
+f method.Future._prependListeners = 0x77ad4
+'@0x77ad4'CC Future._prependListeners
+f method.Future._reverseListeners = 0x77cf8
+'@0x77cf8'CC Future._reverseListeners
+f method.Future._propagateToListeners = 0x77d64
+'@0x77d64'CC Future._propagateToListeners
+f method.Future._setValue = 0x78560
+'@0x78560'CC Future._setValue
+f method.Future._removeListeners = 0x785e4
+'@0x785e4'CC Future._removeListeners
+f method._Closure._context = 0x78660
+'@0x78660'CC _Closure._context
+f method._FutureListener.state = 0x7866c
+'@0x7866c'CC _FutureListener.state
+f method.Future._ignoreError = 0x78698
+'@0x78698'CC Future._ignoreError
+f method.Future._chainCoreFutureSync = 0x786c0
+'@0x786c0'CC Future._chainCoreFutureSync
+f method.Future._setChained = 0x7881c
+'@0x7881c'CC Future._setChained
+f method.Future._error = 0x78868
+'@0x78868'CC Future._error
+f method.Future._propagateToListeners.handleError = 0x788bc
+'@0x788bc'CC Future._propagateToListeners.handleError
+f method.new.AsyncError = 0x78ad4
+'@0x78ad4'CC new.AsyncError
+f method._FutureListener.handleError = 0x78ae0
+'@0x78ae0'CC _FutureListener.handleError
+f method._RootZone.runUnary = 0x78d20
+'@0x78d20'CC _RootZone.runUnary
+f method._rootRunUnary = 0x78de0
+'@0x78de0'CC _rootRunUnary
+f method._RootZone.runBinary = 0x78eb4
+'@0x78eb4'CC _RootZone.runBinary
+f method._rootRunBinary = 0x78f84
+'@0x78f84'CC _rootRunBinary
+f method._FutureListener.matchesErrorTest = 0x79068
+'@0x79068'CC _FutureListener.matchesErrorTest
+f method.Future._propagateToListeners.handleValueCallback = 0x790e4
+'@0x790e4'CC Future._propagateToListeners.handleValueCallback
+f method._FutureListener.handleValue = 0x791a0
+'@0x791a0'CC _FutureListener.handleValue
+f method.Future._propagateToListeners.handleWhenCompleteCallback = 0x79240
+'@0x79240'CC Future._propagateToListeners.handleWhenCompleteCallback
+f method._FutureListener.handleWhenComplete = 0x7951c
+'@0x7951c'CC _FutureListener.handleWhenComplete
+f method.Future._propagateToListeners.handleWhenCompleteCallback._anonymous.closure_ = 0x79564
+'@0x79564'CC Future._propagateToListeners.handleWhenCompleteCallback._anonymous.closure_
+f method.new._FutureListener = 0x79574
+'@0x79574'CC new._FutureListener
+f method._registerErrorHandler = 0x79580
+'@0x79580'CC _registerErrorHandler
+f method.new.Timer = 0x796b0
+'@0x796b0'CC new.Timer
+f method.Timer._createTimer = 0x7976c
+'@0x7976c'CC Timer._createTimer
+f method.Timer._createTimer._anonymous.closure_ = 0x797f8
+'@0x797f8'CC Timer._createTimer._anonymous.closure_
+f method.Future._asyncComplete = 0x79844
+'@0x79844'CC Future._asyncComplete
+f method.Future._asyncCompleteWithValue = 0x79930
+'@0x79930'CC Future._asyncCompleteWithValue
+f method.Future._setPendingComplete = 0x799b4
+'@0x799b4'CC Future._setPendingComplete
+f method.Future._asyncCompleteWithValue._anonymous.closure_ = 0x799c8
+'@0x799c8'CC Future._asyncCompleteWithValue._anonymous.closure_
+f method.Future._completeWithValue = 0x79a0c
+'@0x79a0c'CC Future._completeWithValue
+f method.Future._chainFuture = 0x79a98
+'@0x79a98'CC Future._chainFuture
+f method.Future._chainForeignFuture = 0x79b60
+'@0x79b60'CC Future._chainForeignFuture
+f method.Future._chainForeignFuture._anonymous.closure_ = 0x79c48
+'@0x79c48'CC Future._chainForeignFuture._anonymous.closure_
+f method.Future._completeError = 0x79c90
+'@0x79c90'CC Future._completeError
+f method.Future._setError = 0x79cf8
+'@0x79cf8'CC Future._setError
+f method.Future._setErrorObject = 0x79d58
+'@0x79d58'CC Future._setErrorObject
+f method.Future._chainForeignFuture._anonymous.closure_ = 0x79da4
+'@0x79da4'CC Future._chainForeignFuture._anonymous.closure_
+f method.Future._chainForeignFuture._anonymous.closure_ = 0x79dec
+'@0x79dec'CC Future._chainForeignFuture._anonymous.closure_
+f method.Future._chainCoreFutureAsync = 0x79e94
+'@0x79e94'CC Future._chainCoreFutureAsync
+f method.Future._chainCoreFutureAsync._anonymous.closure_ = 0x7a064
+'@0x7a064'CC Future._chainCoreFutureAsync._anonymous.closure_
+f method.new.Future = 0x7a0a8
+'@0x7a0a8'CC new.Future
+f method.Future.timeout._anonymous.closure_ = 0x7a0b4
+'@0x7a0b4'CC Future.timeout._anonymous.closure_
+f method._Timer.cancel = 0x7a118
+'@0x7a118'CC _Timer.cancel
+f method._Timer._notifyEventHandler = 0x7a1cc
+'@0x7a1cc'CC _Timer._notifyEventHandler
+f method._Timer._scheduleWakeup = 0x7a2f4
+'@0x7a2f4'CC _Timer._scheduleWakeup
+f method._Timer._createTimerHandler = 0x7a398
+'@0x7a398'CC _Timer._createTimerHandler
+f method._RawReceivePort._setActive = 0x7a42c
+'@0x7a42c'CC _RawReceivePort._setActive
+f method.new._RawReceivePort = 0x7a470
+'@0x7a470'CC new._RawReceivePort
+f method.new._RawReceivePort._ = 0x7a4e8
+'@0x7a4e8'CC new._RawReceivePort._
+f method._Timer._handleMessage = 0x7a564
+'@0x7a564'CC _Timer._handleMessage
+f method._Timer._handleMessage = 0x7a594
+'@0x7a594'CC _Timer._handleMessage
+f method._Timer._runTimers = 0x7a614
+'@0x7a614'CC _Timer._runTimers
+f method._Timer._queueFromTimeoutEvent = 0x7aa28
+'@0x7aa28'CC _Timer._queueFromTimeoutEvent
+f method.assert.type.is._Timer = 0x7ad10
+'@0x7ad10'CC assert.type.is._Timer
+f method._Timer._queueFromZeroEvent = 0x7ad30
+'@0x7ad30'CC _Timer._queueFromZeroEvent
+f method._Timer._shutdownTimerHandler = 0x7af98
+'@0x7af98'CC _Timer._shutdownTimerHandler
+f method._Timer._cancelWakeup = 0x7b000
+'@0x7b000'CC _Timer._cancelWakeup
+f method._TimerHeap.remove = 0x7b078
+'@0x7b078'CC _TimerHeap.remove
+f method._TimerHeap._bubbleDown = 0x7b318
+'@0x7b318'CC _TimerHeap._bubbleDown
+f method._TimerHeap._bubbleUp = 0x7b600
+'@0x7b600'CC _TimerHeap._bubbleUp
+f method._Timer._sentinelTimer = 0x7b87c
+'@0x7b87c'CC _Timer._sentinelTimer
+f method._TimerHeap.isFirst = 0x7b8b4
+'@0x7b8b4'CC _TimerHeap.isFirst
+f method._Timer._heap = 0x7b908
+'@0x7b908'CC _Timer._heap
+f method.new._TimerHeap = 0x7b948
+'@0x7b948'CC new._TimerHeap
+f method.new._TimerHeap = 0x7ba08
+'@0x7ba08'CC new._TimerHeap
+f method.Future.timeout._anonymous.closure_ = 0x7ba14
+'@0x7ba14'CC Future.timeout._anonymous.closure_
+f method.Future.timeout._anonymous.closure_ = 0x7ba74
+'@0x7ba74'CC Future.timeout._anonymous.closure_
+f method.Future._complete = 0x7bb24
+'@0x7bb24'CC Future._complete
+f method.Future.timeout._anonymous.closure_ = 0x7bc8c
+'@0x7bc8c'CC Future.timeout._anonymous.closure_
+f method.new.TimeoutException = 0x7bcfc
+'@0x7bcfc'CC new.TimeoutException
+f method.Future.timeout = 0x7bd08
+'@0x7bd08'CC Future.timeout
+f method._Closure._function = 0x7bd88
+'@0x7bd88'CC _Closure._function
+f method.Future._state = 0x7bdc0
+'@0x7bdc0'CC Future._state
+f method._Timer._enqueue = 0x7bde0
+'@0x7bde0'CC _Timer._enqueue
+f method._TimerHeap.add = 0x7bedc
+'@0x7bedc'CC _TimerHeap.add
+f method._TimerHeap._resize = 0x7bfd8
+'@0x7bfd8'CC _TimerHeap._resize
+f method.List.setRange = 0x7c100
+'@0x7c100'CC List.setRange
+f method._Timer._notifyZeroHandler = 0x7c3c4
+'@0x7c3c4'CC _Timer._notifyZeroHandler
+f method._Timer._lastZeroTimer = 0x7c424
+'@0x7c424'CC _Timer._lastZeroTimer
+f method.new._Timer._internal = 0x7c468
+'@0x7c468'CC new._Timer._internal
+f method.new._Timer = 0x7c4e8
+'@0x7c4e8'CC new._Timer
+f method._EventHandler._timerMillisecondClock = 0x7c4f4
+'@0x7c4f4'CC _EventHandler._timerMillisecondClock
+f method._startIsolate = 0x7c564
+'@0x7c564'CC _startIsolate
+f method._delayEntrypointInvocation = 0x7c5a4
+'@0x7c5a4'CC _delayEntrypointInvocation
+f method.new.RawReceivePort = 0x7c678
+'@0x7c678'CC new.RawReceivePort
+f method._delayEntrypointInvocation._anonymous.closure_ = 0x7c6b0
+'@0x7c6b0'CC _delayEntrypointInvocation._anonymous.closure_
+f method._RawReceivePort.close = 0x7c878
+'@0x7c878'CC _RawReceivePort.close
+f method._LinkedHashMapMixin.remove = 0x7c8e4
+'@0x7c8e4'CC _LinkedHashMapMixin.remove
+f method._RawReceivePort._closeInternal = 0x7cbe8
+'@0x7cbe8'CC _RawReceivePort._closeInternal
+f method._getStartMainIsolateFunction = 0x7cc5c
+'@0x7cc5c'CC _getStartMainIsolateFunction
+f method._startMainIsolate = 0x7cc64
+'@0x7cc64'CC _startMainIsolate
+f method._startMainIsolate = 0x7cca0
+'@0x7cca0'CC _startMainIsolate
+f method._getIsolateScheduleImmediateClosure = 0x7cce0
+'@0x7cce0'CC _getIsolateScheduleImmediateClosure
+f method._isolateScheduleImmediate = 0x7cce8
+'@0x7cce8'CC _isolateScheduleImmediate
+f method._RawReceivePort._portMap = 0x7ccfc
+'@0x7ccfc'CC _RawReceivePort._portMap
+f method._RawReceivePort._lookupOpenPorts = 0x7cd38
+'@0x7cd38'CC _RawReceivePort._lookupOpenPorts
+f method.new._GrowableList.of = 0x7cd90
+'@0x7cd90'CC new._GrowableList.of
+f method.new._GrowableList._ofOther = 0x7ce90
+'@0x7ce90'CC new._GrowableList._ofOther
+f method.new._GrowableList._ofEfficientLengthIterable = 0x7d014
+'@0x7d014'CC new._GrowableList._ofEfficientLengthIterable
+f method._LinkedHashMapMixin.values = 0x7d234
+'@0x7d234'CC _LinkedHashMapMixin.values
+f method.new._CompactIterable = 0x7d298
+'@0x7d298'CC new._CompactIterable
+f method._RawReceivePort._lookupHandler = 0x7d2a4
+'@0x7d2a4'CC _RawReceivePort._lookupHandler
+f method._LinkedHashMapMixin._getValueOrData = 0x7d330
+'@0x7d330'CC _LinkedHashMapMixin._getValueOrData
+f method._RawReceivePort._get_id = 0x7d520
+'@0x7d520'CC _RawReceivePort._get_id
+f method._Capability. = 0x7d594
+'@0x7d594'CC _Capability.
+f method._Capability._equals = 0x7d608
+'@0x7d608'CC _Capability._equals
+f method.DynamicLibrary. = 0x7d684
+'@0x7d684'CC DynamicLibrary.
+f method.DynamicLibrary.getHandle = 0x7d73c
+'@0x7d73c'CC DynamicLibrary.getHandle
+f method.Pointer. = 0x7d7b0
+'@0x7d7b0'CC Pointer.
+f method._Record. = 0x7d804
+'@0x7d804'CC _Record.
+f method.double. = 0x7d944
+'@0x7d944'CC double.
+f method.double._equal = 0x7da2c
+'@0x7da2c'CC double._equal
+f method.int. = 0x7daa8
+'@0x7daa8'CC int.
+f method._Closure. = 0x7dba4
+'@0x7dba4'CC _Closure.
+f method._AbstractType. = 0x7dc38
+'@0x7dc38'CC _AbstractType.
+f method._Type. = 0x7dce0
+'@0x7dce0'CC _Type.
+f method.Object. = 0x7de48
+'@0x7de48'CC Object.
+f method.Object.runtimeType = 0x7de64
+'@0x7de64'CC Object.runtimeType
+f method.Iterable.isNotEmpty = 0x7df88
+'@0x7df88'CC Iterable.isNotEmpty
+f method.Iterable.isEmpty = 0x7dfbc
+'@0x7dfbc'CC Iterable.isEmpty
+f method._StringBase._identityHashCode = 0x7e020
+'@0x7e020'CC _StringBase._identityHashCode
+f method._TypedListBase.isNotEmpty = 0x7e0a8
+'@0x7e0a8'CC _TypedListBase.isNotEmpty
+f method.List.add = 0x7e0c0
+'@0x7e0c0'CC List.add
+f method._Float64x2ListMixin.sublist = 0x7e19c
+'@0x7e19c'CC _Float64x2ListMixin.sublist
+f method._Float64x2ListMixin.sublist = 0x7e334
+'@0x7e334'CC _Float64x2ListMixin.sublist
+f method._Int32x4ListMixin.sublist = 0x7e530
+'@0x7e530'CC _Int32x4ListMixin.sublist
+f method._Int32x4ListMixin.sublist = 0x7e6c8
+'@0x7e6c8'CC _Int32x4ListMixin.sublist
+f method._Float32x4ListMixin.sublist = 0x7e8c4
+'@0x7e8c4'CC _Float32x4ListMixin.sublist
+f method._Float32x4ListMixin.sublist = 0x7ea5c
+'@0x7ea5c'CC _Float32x4ListMixin.sublist
+f method._TypedDoubleListMixin.sublist = 0x7ec58
+'@0x7ec58'CC _TypedDoubleListMixin.sublist
+f method._TypedDoubleListMixin.sublist = 0x7ee18
+'@0x7ee18'CC _TypedDoubleListMixin.sublist
+f method._TypedDoubleListMixin.sublist = 0x7f03c
+'@0x7f03c'CC _TypedDoubleListMixin.sublist
+f method._TypedDoubleListMixin.sublist = 0x7f214
+'@0x7f214'CC _TypedDoubleListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x7f450
+'@0x7f450'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x7f610
+'@0x7f610'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x7f834
+'@0x7f834'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x7f9f4
+'@0x7f9f4'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x7fc18
+'@0x7fc18'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x7fdf0
+'@0x7fdf0'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x8002c
+'@0x8002c'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x80204
+'@0x80204'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x80440
+'@0x80440'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x80630
+'@0x80630'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x80884
+'@0x80884'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x80a74
+'@0x80a74'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x80cc8
+'@0x80cc8'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x80ec8
+'@0x80ec8'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x81124
+'@0x81124'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x81324
+'@0x81324'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x81580
+'@0x81580'CC _TypedIntListMixin.sublist
+f method._TypedIntListMixin.sublist = 0x81780
+'@0x81780'CC _TypedIntListMixin.sublist
+f method.List.sublist = 0x819dc
+'@0x819dc'CC List.sublist
+f method.ListBase.sublist = 0x81b30
+'@0x81b30'CC ListBase.sublist
+f method.new.List.from = 0x81bfc
+'@0x81bfc'CC new.List.from
+f method.makeListFixedLength = 0x81f44
+'@0x81f44'CC makeListFixedLength
+f method.assert.type.is.List_Y0_ = 0x81fcc
+'@0x81fcc'CC assert.type.is.List_Y0_
+f method.new._List.of = 0x820a0
+'@0x820a0'CC new._List.of
+f method.new._List._ofOther = 0x82254
+'@0x82254'CC new._List._ofOther
+f method.new._List._ofEfficientLengthIterable = 0x822a0
+'@0x822a0'CC new._List._ofEfficientLengthIterable
+f method.ListBase.getRange = 0x82530
+'@0x82530'CC ListBase.getRange
+f method.List.sublist = 0x825fc
+'@0x825fc'CC List.sublist
+f method._Array._sliceInternal = 0x8279c
+'@0x8279c'CC _Array._sliceInternal
+f method.Duration.hashCode = 0x82820
+'@0x82820'CC Duration.hashCode
+f method._Uri.hashCode = 0x82844
+'@0x82844'CC _Uri.hashCode
+f method._Uri.hashCode = 0x82874
+'@0x82874'CC _Uri.hashCode
+f method._Uri._text = 0x828d8
+'@0x828d8'CC _Uri._text
+f method._Uri._initializeText = 0x82908
+'@0x82908'CC _Uri._initializeText
+f method._Uri._writeAuthority = 0x82a3c
+'@0x82a3c'CC _Uri._writeAuthority
+f method._SimpleUri.hashCode = 0x82ae0
+'@0x82ae0'CC _SimpleUri.hashCode
+f method._ControllerStream.hashCode = 0x82b54
+'@0x82b54'CC _ControllerStream.hashCode
+f method._getHash = 0x82ba4
+'@0x82ba4'CC _getHash
+f method._uriBaseClosure = 0x82c18
+'@0x82c18'CC _uriBaseClosure
+f method._unsupportedUriBase = 0x82c20
+'@0x82c20'CC _unsupportedUriBase
+f method._unsupportedUriBase = 0x82c4c
+'@0x82c4c'CC _unsupportedUriBase
+f method._checkLoaded = 0x82c70
+'@0x82c70'CC _checkLoaded
+f method.new._DeferredNotLoadedError = 0x82cd0
+'@0x82cd0'CC new._DeferredNotLoadedError
+f method.LibraryPrefix._isLoaded = 0x82cdc
+'@0x82cdc'CC LibraryPrefix._isLoaded
+f method._checkLoaded = 0x82d50
+'@0x82d50'CC _checkLoaded
+f method._objectNoSuchMethod = 0x82d88
+'@0x82d88'CC _objectNoSuchMethod
+f method._loadLibrary = 0x82de0
+'@0x82de0'CC _loadLibrary
+f method.stub._iso_stub_ReturnAsyncNotFutureStub = 0x82f44
+'@0x82f44'CC stub._iso_stub_ReturnAsyncNotFutureStub
+f method.new.Future = 0x82f70
+'@0x82f70'CC new.Future
+f method.Timer.run = 0x83020
+'@0x83020'CC Timer.run
+f method.new.Future._anonymous.closure_ = 0x8305c
+'@0x8305c'CC new.Future._anonymous.closure_
+f method._completeWithErrorCallback = 0x830e4
+'@0x830e4'CC _completeWithErrorCallback
+f method.stub._iso_stub_AwaitStub = 0x8314c
+'@0x8314c'CC stub._iso_stub_AwaitStub
+f method.LibraryPrefix._issueLoad = 0x832d4
+'@0x832d4'CC LibraryPrefix._issueLoad
+f method.new.Completer = 0x83310
+'@0x83310'CC new.Completer
+f method.new._AsyncCompleter = 0x83394
+'@0x83394'CC new._AsyncCompleter
+f method.LibraryPrefix._loadingUnit = 0x833a0
+'@0x833a0'CC LibraryPrefix._loadingUnit
+f method.stub._iso_stub_InitAsyncStub = 0x83404
+'@0x83404'CC stub._iso_stub_InitAsyncStub
+f method._loadLibrary._anonymous.closure_ = 0x8342c
+'@0x8342c'CC _loadLibrary._anonymous.closure_
+f method.LibraryPrefix._setLoaded = 0x83470
+'@0x83470'CC LibraryPrefix._setLoaded
+f method.LibraryPrefix._loads = 0x834ac
+'@0x834ac'CC LibraryPrefix._loads
+f method.assert.type.is.Completer_void_ = 0x834dc
+'@0x834dc'CC assert.type.is.Completer_void_
+f method._loadLibrary = 0x83500
+'@0x83500'CC _loadLibrary
+f method._uriBaseClosure = 0x83538
+'@0x83538'CC _uriBaseClosure
+f method._rehashObjects = 0x83568
+'@0x83568'CC _rehashObjects
+f method.Expando._rehash = 0x83628
+'@0x83628'CC Expando._rehash
+f method.Expando.__ = 0x837e4
+'@0x837e4'CC Expando.__
+f method.new._WeakProperty = 0x83c30
+'@0x83c30'CC new._WeakProperty
+f method.Expando._limit = 0x83c3c
+'@0x83c3c'CC Expando._limit
+f method.checkValidWeakTarget = 0x83c6c
+'@0x83c6c'CC checkValidWeakTarget
+f method.Expando._deletedEntry = 0x83d00
+'@0x83d00'CC Expando._deletedEntry
+f method.assert.type.is._WeakProperty_ = 0x83d18
+'@0x83d18'CC assert.type.is._WeakProperty_
+f method._listGetAt = 0x83d44
+'@0x83d44'CC _listGetAt
+f method._mapGet = 0x83d94
+'@0x83d94'CC _mapGet
+f method._mapContainsKey = 0x83dd8
+'@0x83dd8'CC _mapContainsKey
+f method._mapKeys = 0x83e1c
+'@0x83e1c'CC _mapKeys
+f method._listLength = 0x83e68
+'@0x83e68'CC _listLength
+f method._completeLoads = 0x83eb4
+'@0x83eb4'CC _completeLoads
+f method._Completer.completeError = 0x83fc0
+'@0x83fc0'CC _Completer.completeError
+f method.Future._asyncCompleteError = 0x84088
+'@0x84088'CC Future._asyncCompleteError
+f method.new.DeferredLoadException = 0x84118
+'@0x84118'CC new.DeferredLoadException
+f method._completeLoads = 0x84124
+'@0x84124'CC _completeLoads
+f method.identityHashCode = 0x84168
+'@0x84168'CC identityHashCode
+f method._listSetAt = 0x841bc
+'@0x841bc'CC _listSetAt
+f method.Symbol.hashCode = 0x84218
+'@0x84218'CC Symbol.hashCode
+f method._TypedListView.offsetInBytes = 0x84280
+'@0x84280'CC _TypedListView.offsetInBytes
+f method._TypedList.offsetInBytes = 0x8428c
+'@0x8428c'CC _TypedList.offsetInBytes
+f method.Null.hashCode = 0x84294
+'@0x84294'CC Null.hashCode
+f method._ByteBuffer.hashCode = 0x8429c
+'@0x8429c'CC _ByteBuffer.hashCode
+f method._StringBase.hashCode = 0x842d8
+'@0x842d8'CC _StringBase.hashCode
+f method.String.hashCode = 0x84360
+'@0x84360'CC String.hashCode
+f method._SendPort.hashCode = 0x843e0
+'@0x843e0'CC _SendPort.hashCode
+f method._SendPort._get_hashcode = 0x84450
+'@0x84450'CC _SendPort._get_hashcode
+f method._RawReceivePort.hashCode = 0x8448c
+'@0x8448c'CC _RawReceivePort.hashCode
+f method._Capability.hashCode = 0x844c8
+'@0x844c8'CC _Capability.hashCode
+f method._Capability._get_hashcode = 0x84500
+'@0x84500'CC _Capability._get_hashcode
+f method.DynamicLibrary.hashCode = 0x84574
+'@0x84574'CC DynamicLibrary.hashCode
+f method.Pointer.hashCode = 0x845d0
+'@0x845d0'CC Pointer.hashCode
+f method._Record.hashCode = 0x8463c
+'@0x8463c'CC _Record.hashCode
+f method.bool.hashCode = 0x8477c
+'@0x8477c'CC bool.hashCode
+f method.double.hashCode = 0x8479c
+'@0x8479c'CC double.hashCode
+f method.int.hashCode = 0x847f8
+'@0x847f8'CC int.hashCode
+f method.int.hashCode = 0x8481c
+'@0x8481c'CC int.hashCode
+f method._Closure.hashCode = 0x84840
+'@0x84840'CC _Closure.hashCode
+f method._Closure._computeHash = 0x848f0
+'@0x848f0'CC _Closure._computeHash
+f method._AbstractType.hashCode = 0x84964
+'@0x84964'CC _AbstractType.hashCode
+f method.Object.hashCode = 0x849e8
+'@0x849e8'CC Object.hashCode
+f method._AssertionError.toString = 0x84a20
+'@0x84a20'CC _AssertionError.toString
+f method._AssertionError._evaluateAssertion = 0x84cbc
+'@0x84cbc'CC _AssertionError._evaluateAssertion
+f method._AssertionError._throwNewSource = 0x84da8
+'@0x84da8'CC _AssertionError._throwNewSource
+f method._AssertionError._throwNew = 0x84dfc
+'@0x84dfc'CC _AssertionError._throwNew
+f method._AssertionError._doThrowNew = 0x84e44
+'@0x84e44'CC _AssertionError._doThrowNew
+f method.new._AssertionError._create = 0x84e8c
+'@0x84e8c'CC new._AssertionError._create
+f method._AssertionError._messageString = 0x84f34
+'@0x84f34'CC _AssertionError._messageString
+f method.Error.safeToString = 0x84fa8
+'@0x84fa8'CC Error.safeToString
+f method.Object._toString = 0x85050
+'@0x85050'CC Object._toString
+f method.Error._stringToSafeString = 0x850c8
+'@0x850c8'CC Error._stringToSafeString
+f method.JsonCodec.encode = 0x85100
+'@0x85100'CC JsonCodec.encode
+f method._JsonStringStringifier.stringify = 0x85134
+'@0x85134'CC _JsonStringStringifier.stringify
+f method._JsonStringStringifier.printOn = 0x85190
+'@0x85190'CC _JsonStringStringifier.printOn
+f method._JsonStringifier.writeObject = 0x8521c
+'@0x8521c'CC _JsonStringifier.writeObject
+f method._defaultToEncodable = 0x852cc
+'@0x852cc'CC _defaultToEncodable
+f method.new.JsonUnsupportedObjectError = 0x852fc
+'@0x852fc'CC new.JsonUnsupportedObjectError
+f method._JsonStringStringifier._partialResult = 0x85308
+'@0x85308'CC _JsonStringStringifier._partialResult
+f method._defaultToEncodable = 0x85340
+'@0x85340'CC _defaultToEncodable
+f method._JsonStringifier._checkCycle = 0x85388
+'@0x85388'CC _JsonStringifier._checkCycle
+f method.new.JsonCyclicError = 0x854d0
+'@0x854d0'CC new.JsonCyclicError
+f method._JsonStringifier.writeJsonValue = 0x854dc
+'@0x854dc'CC _JsonStringifier.writeJsonValue
+f method._JsonStringifier.writeStringContent = 0x85590
+'@0x85590'CC _JsonStringifier.writeStringContent
+f method._JsonStringStringifier.writeStringSlice = 0x85b10
+'@0x85b10'CC _JsonStringStringifier.writeStringSlice
+f method._JsonStringStringifier.writeString = 0x85b80
+'@0x85b80'CC _JsonStringStringifier.writeString
+f method.new._JsonStringStringifier = 0x85bb8
+'@0x85bb8'CC new._JsonStringStringifier
+f method._StringBase.trim = 0x85bc4
+'@0x85bc4'CC _StringBase.trim
+f method._CyclicInitializationError.toString = 0x85c6c
+'@0x85c6c'CC _CyclicInitializationError.toString
+f method.new._CyclicInitializationError = 0x85ce0
+'@0x85ce0'CC new._CyclicInitializationError
+f method.NoSuchMethodError.toString = 0x85d40
+'@0x85d40'CC NoSuchMethodError.toString
+f method.StringBuffer.writeln = 0x86b24
+'@0x86b24'CC StringBuffer.writeln
+f method.NoSuchMethodError._existingMethodSignature = 0x86b70
+'@0x86b70'CC NoSuchMethodError._existingMethodSignature
+f method._InvocationMirror.namedArguments = 0x86bf4
+'@0x86bf4'CC _InvocationMirror.namedArguments
+f method.new.Map.unmodifiable = 0x86f6c
+'@0x86f6c'CC new.Map.unmodifiable
+f method.new.UnmodifiableMapView = 0x86fbc
+'@0x86fbc'CC new.UnmodifiableMapView
+f method.new.LinkedHashMap.from = 0x86fc8
+'@0x86fc8'CC new.LinkedHashMap.from
+f method.new.LinkedHashMap.from._anonymous.closure_ = 0x870c4
+'@0x870c4'CC new.LinkedHashMap.from._anonymous.closure_
+f method._InvocationMirror._typeArgsLen = 0x8716c
+'@0x8716c'CC _InvocationMirror._typeArgsLen
+f method._InvocationMirror.positionalArguments = 0x87224
+'@0x87224'CC _InvocationMirror.positionalArguments
+f method.new._ImmutableList._from = 0x8738c
+'@0x8738c'CC new._ImmutableList._from
+f method.assert.type.is.List_X0_ = 0x87400
+'@0x87400'CC assert.type.is.List_X0_
+f method._InvocationMirror.typeArguments = 0x874d4
+'@0x874d4'CC _InvocationMirror.typeArguments
+f method.Symbol.computeUnmangledName = 0x875c4
+'@0x875c4'CC Symbol.computeUnmangledName
+f method._InvocationMirror.memberName = 0x877fc
+'@0x877fc'CC _InvocationMirror.memberName
+f method._InvocationMirror._setMemberNameAndType = 0x87858
+'@0x87858'CC _InvocationMirror._setMemberNameAndType
+f method.NoSuchMethodError.toString._anonymous.closure_ = 0x879fc
+'@0x879fc'CC NoSuchMethodError.toString._anonymous.closure_
+f method._DeferredNotLoadedError.toString = 0x87b20
+'@0x87b20'CC _DeferredNotLoadedError.toString
+f method.ArgumentError.toString = 0x87b7c
+'@0x87b7c'CC ArgumentError.toString
+f method.UnsupportedError.toString = 0x87f08
+'@0x87f08'CC UnsupportedError.toString
+f method.StateError.toString = 0x87f5c
+'@0x87f5c'CC StateError.toString
+f method.ConcurrentModificationError.toString = 0x87fb0
+'@0x87fb0'CC ConcurrentModificationError.toString
+f method.JsonCyclicError.toString = 0x88040
+'@0x88040'CC JsonCyclicError.toString
+f method.JsonUnsupportedObjectError.toString = 0x88048
+'@0x88048'CC JsonUnsupportedObjectError.toString
+f method.LateError.toString = 0x880d8
+'@0x880d8'CC LateError.toString
+f method.LateError._throwLocalAssignedDuringInitialization = 0x88134
+'@0x88134'CC LateError._throwLocalAssignedDuringInitialization
+f method.new.LateError = 0x881a0
+'@0x881a0'CC new.LateError
+f method.LateError._throwLocalAssignedDuringInitialization = 0x881ac
+'@0x881ac'CC LateError._throwLocalAssignedDuringInitialization
+f method.LateError._throwLocalAlreadyInitialized = 0x881e4
+'@0x881e4'CC LateError._throwLocalAlreadyInitialized
+f method.LateError._throwLocalAlreadyInitialized = 0x88250
+'@0x88250'CC LateError._throwLocalAlreadyInitialized
+f method.LateError._throwLocalNotInitialized = 0x88288
+'@0x88288'CC LateError._throwLocalNotInitialized
+f method.LateError._throwLocalNotInitialized = 0x882f4
+'@0x882f4'CC LateError._throwLocalNotInitialized
+f method.LateError._throwFieldAlreadyInitialized = 0x8832c
+'@0x8832c'CC LateError._throwFieldAlreadyInitialized
+f method.LateError._throwFieldAlreadyInitialized = 0x88398
+'@0x88398'CC LateError._throwFieldAlreadyInitialized
+f method.new.LateError.fieldNI = 0x883d0
+'@0x883d0'CC new.LateError.fieldNI
+f method.new.LateError.fieldADI = 0x8844c
+'@0x8844c'CC new.LateError.fieldADI
+f method.ReachabilityError.toString = 0x884c8
+'@0x884c8'CC ReachabilityError.toString
+f method.AbstractClassInstantiationError.toString = 0x884d0
+'@0x884d0'CC AbstractClassInstantiationError.toString
+f method.new.AbstractClassInstantiationError._create = 0x88558
+'@0x88558'CC new.AbstractClassInstantiationError._create
+f method._InternalError.toString = 0x885c8
+'@0x885c8'CC _InternalError.toString
+f method.Error._stackTrace = 0x88624
+'@0x88624'CC Error._stackTrace
+f method.Iterable.toString = 0x88658
+'@0x88658'CC Iterable.toString
+f method.Iterable.iterableToShortString = 0x88688
+'@0x88688'CC Iterable.iterableToShortString
+f method.StringBuffer.writeAll = 0x8886c
+'@0x8886c'CC StringBuffer.writeAll
+f method._iterablePartsToStrings = 0x88a54
+'@0x88a54'CC _iterablePartsToStrings
+f method.isToStringVisiting = 0x89324
+'@0x89324'CC isToStringVisiting
+f method.toStringVisiting = 0x8940c
+'@0x8940c'CC toStringVisiting
+f method.Duration.toString = 0x89440
+'@0x89440'CC Duration.toString
+f method._Enum.toString = 0x894f8
+'@0x894f8'CC _Enum.toString
+f method.OutOfMemoryError.toString = 0x89590
+'@0x89590'CC OutOfMemoryError.toString
+f method.StackOverflowError.toString = 0x89598
+'@0x89598'CC StackOverflowError.toString
+f method.FormatException.toString = 0x895a0
+'@0x895a0'CC FormatException.toString
+f method.String. = 0x89b48
+'@0x89b48'CC String.
+f method.IntegerDivisionByZeroException.toString = 0x89cfc
+'@0x89cfc'CC IntegerDivisionByZeroException.toString
+f method.StringBuffer.toString = 0x89d04
+'@0x89d04'CC StringBuffer.toString
+f method._Uri.toString = 0x89d64
+'@0x89d64'CC _Uri.toString
+f method.UriData.toString = 0x89da8
+'@0x89da8'CC UriData.toString
+f method._SimpleUri.toString = 0x89e40
+'@0x89e40'CC _SimpleUri.toString
+f method.Expando.toString = 0x89e4c
+'@0x89e4c'CC Expando.toString
+f method.AsyncError.toString = 0x89ea0
+'@0x89ea0'CC AsyncError.toString
+f method.DeferredLoadException.toString = 0x89edc
+'@0x89edc'CC DeferredLoadException.toString
+f method.TimeoutException.toString = 0x89f38
+'@0x89f38'CC TimeoutException.toString
+f method.MapView.toString = 0x89fc4
+'@0x89fc4'CC MapView.toString
+f method.MapBase.mapToString = 0x89ff8
+'@0x89ff8'CC MapBase.mapToString
+f method.MapBase.mapToString._anonymous.closure_ = 0x8a220
+'@0x8a220'CC MapBase.mapToString._anonymous.closure_
+f method.Abi.toString = 0x8a2a8
+'@0x8a2a8'CC Abi.toString
+f method.Symbol.toString = 0x8a31c
+'@0x8a31c'CC Symbol.toString
+f method.IsolateSpawnException.toString = 0x8a3a4
+'@0x8a3a4'CC IsolateSpawnException.toString
+f method.SubListIterable.elementAt = 0x8a3f8
+'@0x8a3f8'CC SubListIterable.elementAt
+f method.new.IndexError = 0x8a4f0
+'@0x8a4f0'CC new.IndexError
+f method.SubListIterable._endIndex = 0x8a4fc
+'@0x8a4fc'CC SubListIterable._endIndex
+f method.SubListIterable._startIndex = 0x8a58c
+'@0x8a58c'CC SubListIterable._startIndex
+f method.MappedListIterable.elementAt = 0x8a604
+'@0x8a604'CC MappedListIterable.elementAt
+f method._IntListMixin.fillRange = 0x8a674
+'@0x8a674'CC _IntListMixin.fillRange
+f method.UnmodifiableListMixin.__ = 0x8a768
+'@0x8a768'CC UnmodifiableListMixin.__
+f method.OSError.toString = 0x8a7b8
+'@0x8a7b8'CC OSError.toString
+f method._Directory.toString = 0x8a904
+'@0x8a904'CC _Directory.toString
+f method._File.toString = 0x8a960
+'@0x8a960'CC _File.toString
+f method._Link.toString = 0x8a9bc
+'@0x8a9bc'CC _Link.toString
+f method.PathAccessException.toString = 0x8aa18
+'@0x8aa18'CC PathAccessException.toString
+f method.FileSystemException._toStringHelper = 0x8aa4c
+'@0x8aa4c'CC FileSystemException._toStringHelper
+f method.PathExistsException.toString = 0x8ac34
+'@0x8ac34'CC PathExistsException.toString
+f method.PathNotFoundException.toString = 0x8ac68
+'@0x8ac68'CC PathNotFoundException.toString
+f method.FileSystemException.toString = 0x8ac9c
+'@0x8ac9c'CC FileSystemException.toString
+f method.TlsException.toString = 0x8acd0
+'@0x8acd0'CC TlsException.toString
+f method.InternetAddressType.toString = 0x8ae00
+'@0x8ae00'CC InternetAddressType.toString
+f method.Null.toString = 0x8ae7c
+'@0x8ae7c'CC Null.toString
+f method._TypedListBase.toString = 0x8ae84
+'@0x8ae84'CC _TypedListBase.toString
+f method.ListBase.listToString = 0x8aef4
+'@0x8aef4'CC ListBase.listToString
+f method.Iterable.iterableToFullString = 0x8af28
+'@0x8af28'CC Iterable.iterableToFullString
+f method.ListBase.toString = 0x8b13c
+'@0x8b13c'CC ListBase.toString
+f method.SetBase.toString = 0x8b16c
+'@0x8b16c'CC SetBase.toString
+f method.SetBase.setToString = 0x8b19c
+'@0x8b19c'CC SetBase.setToString
+f method.MapBase.toString = 0x8b1d0
+'@0x8b1d0'CC MapBase.toString
+f method._Record.toString = 0x8b200
+'@0x8b200'CC _Record.toString
+f method.bool.toString = 0x8b3d0
+'@0x8b3d0'CC bool.toString
+f method.double.toString = 0x8b3e8
+'@0x8b3e8'CC double.toString
+f method.double._toString = 0x8b64c
+'@0x8b64c'CC double._toString
+f method.double._cache = 0x8b6c4
+'@0x8b6c4'CC double._cache
+f method.int.toString = 0x8b6e4
+'@0x8b6e4'CC int.toString
+f method.int._positiveBase10Length = 0x8b8e8
+'@0x8b8e8'CC int._positiveBase10Length
+f method.int._negativeToString = 0x8ba30
+'@0x8ba30'CC int._negativeToString
+f method.int._negativeBase10Length = 0x8bbe8
+'@0x8bbe8'CC int._negativeBase10Length
+f method._AbstractType.toString = 0x8bd30
+'@0x8bd30'CC _AbstractType.toString
+f method.Object.toString = 0x8bda8
+'@0x8bda8'CC Object.toString
+f method.ListBase.iterator = 0x8be20
+'@0x8be20'CC ListBase.iterator
+f method.new.ListIterator = 0x8bea4
+'@0x8bea4'CC new.ListIterator
+f method.ListIterable.iterator = 0x8beb0
+'@0x8beb0'CC ListIterable.iterator
+f method._AllMatchesIterable.iterator = 0x8bfb0
+'@0x8bfb0'CC _AllMatchesIterable.iterator
+f method.assert.type.is.RegExpMatch = 0x8bff4
+'@0x8bff4'CC assert.type.is.RegExpMatch
+f method.new._AllMatchesIterator = 0x8c014
+'@0x8c014'CC new._AllMatchesIterator
+f method._StringAllMatchesIterable.iterator = 0x8c020
+'@0x8c020'CC _StringAllMatchesIterable.iterator
+f method._SyncStarIterable.iterator = 0x8c064
+'@0x8c064'CC _SyncStarIterable.iterator
+f method.stub._iso_stub_CloneSuspendStateStub = 0x8c110
+'@0x8c110'CC stub._iso_stub_CloneSuspendStateStub
+f method.new._SyncStarIterator = 0x8c230
+'@0x8c230'CC new._SyncStarIterator
+f method._CompactIterable.iterator = 0x8c23c
+'@0x8c23c'CC _CompactIterable.iterator
+f method.new._CompactIterator = 0x8c2bc
+'@0x8c2bc'CC new._CompactIterator
+f method.new._CompactIterator = 0x8c368
+'@0x8c368'CC new._CompactIterator
+f method._CompactIterableImmutable.iterator = 0x8c374
+'@0x8c374'CC _CompactIterableImmutable.iterator
+f method.new._CompactIteratorImmutable = 0x8c3d0
+'@0x8c3d0'CC new._CompactIteratorImmutable
+f method._TypedIntListMixin._slowSetRange = 0x8c3dc
+'@0x8c3dc'CC _TypedIntListMixin._slowSetRange
+f method._TypedIntListMixin._slowSetRange = 0x8c9a0
+'@0x8c9a0'CC _TypedIntListMixin._slowSetRange
+f method.Float32x4List.elementSizeInBytes = 0x8cd64
+'@0x8cd64'CC Float32x4List.elementSizeInBytes
+f method.Int64List.elementSizeInBytes = 0x8cd6c
+'@0x8cd6c'CC Int64List.elementSizeInBytes
+f method.Int32List.elementSizeInBytes = 0x8cd74
+'@0x8cd74'CC Int32List.elementSizeInBytes
+f method.Int16List.elementSizeInBytes = 0x8cd7c
+'@0x8cd7c'CC Int16List.elementSizeInBytes
+f method.Int8List.elementSizeInBytes = 0x8cd84
+'@0x8cd84'CC Int8List.elementSizeInBytes
+f method._Float64x2ListMixin.elementAt = 0x8cd8c
+'@0x8cd8c'CC _Float64x2ListMixin.elementAt
+f method._Float64x2ListMixin.elementAt = 0x8ce00
+'@0x8ce00'CC _Float64x2ListMixin.elementAt
+f method._Int32x4ListMixin.elementAt = 0x8ceac
+'@0x8ceac'CC _Int32x4ListMixin.elementAt
+f method._Int32x4ListMixin.elementAt = 0x8cf20
+'@0x8cf20'CC _Int32x4ListMixin.elementAt
+f method._Float32x4ListMixin.elementAt = 0x8cfc8
+'@0x8cfc8'CC _Float32x4ListMixin.elementAt
+f method._Float32x4ListMixin.elementAt = 0x8d03c
+'@0x8d03c'CC _Float32x4ListMixin.elementAt
+f method._DoubleListMixin.elementAt = 0x8d0e8
+'@0x8d0e8'CC _DoubleListMixin.elementAt
+f method._DoubleListMixin.elementAt = 0x8d1a4
+'@0x8d1a4'CC _DoubleListMixin.elementAt
+f method._IntListMixin.elementAt = 0x8d2c0
+'@0x8d2c0'CC _IntListMixin.elementAt
+f method.List.elementAt = 0x8d31c
+'@0x8d31c'CC List.elementAt
+f method.ListBase.elementAt = 0x8d350
+'@0x8d350'CC ListBase.elementAt
+f method._UnmodifiableFloat64x2ArrayView.__ = 0x8d424
+'@0x8d424'CC _UnmodifiableFloat64x2ArrayView.__
+f method.Float64x2List.__ = 0x8d478
+'@0x8d478'CC Float64x2List.__
+f method._Float64x2ArrayView.__ = 0x8d500
+'@0x8d500'CC _Float64x2ArrayView.__
+f method.Float64x2List.__ = 0x8d598
+'@0x8d598'CC Float64x2List.__
+f method._UnmodifiableInt32x4ArrayView.__ = 0x8d664
+'@0x8d664'CC _UnmodifiableInt32x4ArrayView.__
+f method.Int32x4List.__ = 0x8d6b8
+'@0x8d6b8'CC Int32x4List.__
+f method._Int32x4ArrayView.__ = 0x8d740
+'@0x8d740'CC _Int32x4ArrayView.__
+f method.Int32x4List.__ = 0x8d7d8
+'@0x8d7d8'CC Int32x4List.__
+f method._UnmodifiableFloat32x4ArrayView.__ = 0x8d8a4
+'@0x8d8a4'CC _UnmodifiableFloat32x4ArrayView.__
+f method.Float32x4List.__ = 0x8d8f8
+'@0x8d8f8'CC Float32x4List.__
+f method._Float32x4ArrayView.__ = 0x8d980
+'@0x8d980'CC _Float32x4ArrayView.__
+f method.Float32x4List.__ = 0x8da18
+'@0x8da18'CC Float32x4List.__
+f method._UnmodifiableFloat64ArrayView.__ = 0x8dae4
+'@0x8dae4'CC _UnmodifiableFloat64ArrayView.__
+f method.Float64List.__ = 0x8db38
+'@0x8db38'CC Float64List.__
+f method._Float64ArrayView.__ = 0x8dbc0
+'@0x8dbc0'CC _Float64ArrayView.__
+f method.Float64List.__ = 0x8dc58
+'@0x8dc58'CC Float64List.__
+f method._UnmodifiableFloat32ArrayView.__ = 0x8dd24
+'@0x8dd24'CC _UnmodifiableFloat32ArrayView.__
+f method.Float32List.__ = 0x8dd78
+'@0x8dd78'CC Float32List.__
+f method._Float32ArrayView.__ = 0x8de04
+'@0x8de04'CC _Float32ArrayView.__
+f method.Float32List.__ = 0x8dea0
+'@0x8dea0'CC Float32List.__
+f method._UnmodifiableUint64ArrayView.__ = 0x8df74
+'@0x8df74'CC _UnmodifiableUint64ArrayView.__
+f method.Uint64List.__ = 0x8dfc8
+'@0x8dfc8'CC Uint64List.__
+f method._Uint64ArrayView.__ = 0x8e058
+'@0x8e058'CC _Uint64ArrayView.__
+f method.Uint64List.__ = 0x8e0f8
+'@0x8e0f8'CC Uint64List.__
+f method._UnmodifiableInt64ArrayView.__ = 0x8e1d4
+'@0x8e1d4'CC _UnmodifiableInt64ArrayView.__
+f method.Int64List.__ = 0x8e228
+'@0x8e228'CC Int64List.__
+f method._Int64ArrayView.__ = 0x8e2b8
+'@0x8e2b8'CC _Int64ArrayView.__
+f method.Int64List.__ = 0x8e358
+'@0x8e358'CC Int64List.__
+f method._UnmodifiableUint32ArrayView.__ = 0x8e434
+'@0x8e434'CC _UnmodifiableUint32ArrayView.__
+f method.Uint32List.__ = 0x8e488
+'@0x8e488'CC Uint32List.__
+f method._Uint32ArrayView.__ = 0x8e518
+'@0x8e518'CC _Uint32ArrayView.__
+f method.Uint32List.__ = 0x8e5b8
+'@0x8e5b8'CC Uint32List.__
+f method._UnmodifiableInt32ArrayView.__ = 0x8e690
+'@0x8e690'CC _UnmodifiableInt32ArrayView.__
+f method.Int32List.__ = 0x8e6e4
+'@0x8e6e4'CC Int32List.__
+f method._Int32ArrayView.__ = 0x8e774
+'@0x8e774'CC _Int32ArrayView.__
+f method.Int32List.__ = 0x8e814
+'@0x8e814'CC Int32List.__
+f method._UnmodifiableUint16ArrayView.__ = 0x8e8ec
+'@0x8e8ec'CC _UnmodifiableUint16ArrayView.__
+f method.Uint16List.__ = 0x8e940
+'@0x8e940'CC Uint16List.__
+f method._Uint16ArrayView.__ = 0x8e9d0
+'@0x8e9d0'CC _Uint16ArrayView.__
+f method.Uint16List.__ = 0x8ea70
+'@0x8ea70'CC Uint16List.__
+f method._UnmodifiableInt16ArrayView.__ = 0x8eb4c
+'@0x8eb4c'CC _UnmodifiableInt16ArrayView.__
+f method.Int16List.__ = 0x8eba0
+'@0x8eba0'CC Int16List.__
+f method._Int16ArrayView.__ = 0x8ec30
+'@0x8ec30'CC _Int16ArrayView.__
+f method.Int16List.__ = 0x8ecd0
+'@0x8ecd0'CC Int16List.__
+f method._UnmodifiableUint8ClampedArrayView.__ = 0x8edac
+'@0x8edac'CC _UnmodifiableUint8ClampedArrayView.__
+f method.Uint8ClampedList.__ = 0x8ee00
+'@0x8ee00'CC Uint8ClampedList.__
+f method._Uint8ClampedArrayView.__ = 0x8ef08
+'@0x8ef08'CC _Uint8ClampedArrayView.__
+f method.Uint8ClampedList.__ = 0x8efc4
+'@0x8efc4'CC Uint8ClampedList.__
+f method._UnmodifiableUint8ArrayView.__ = 0x8f0c8
+'@0x8f0c8'CC _UnmodifiableUint8ArrayView.__
+f method.Uint8List.__ = 0x8f11c
+'@0x8f11c'CC Uint8List.__
+f method._Uint8ArrayView.__ = 0x8f1f8
+'@0x8f1f8'CC _Uint8ArrayView.__
+f method.Uint8List.__ = 0x8f294
+'@0x8f294'CC Uint8List.__
+f method._UnmodifiableInt8ArrayView.__ = 0x8f36c
+'@0x8f36c'CC _UnmodifiableInt8ArrayView.__
+f method.Int8List.__ = 0x8f3c0
+'@0x8f3c0'CC Int8List.__
+f method._Int8ArrayView.__ = 0x8f44c
+'@0x8f44c'CC _Int8ArrayView.__
+f method.Int8List.__ = 0x8f4e8
+'@0x8f4e8'CC Int8List.__
+f method.List.__ = 0x8f5c0
+'@0x8f5c0'CC List.__
+f method.UnmodifiableListMixin.__ = 0x8f660
+'@0x8f660'CC UnmodifiableListMixin.__
+f method.List.__ = 0x8f6b0
+'@0x8f6b0'CC List.__
+f method._IntListMixin.last = 0x8f750
+'@0x8f750'CC _IntListMixin.last
+f method._IntListMixin.last = 0x8f7bc
+'@0x8f7bc'CC _IntListMixin.last
+f method.List.last = 0x8f824
+'@0x8f824'CC List.last
+f method._Float64x2ListMixin.iterator = 0x8f894
+'@0x8f894'CC _Float64x2ListMixin.iterator
+f method.new._TypedListIterator = 0x8f8d8
+'@0x8f8d8'CC new._TypedListIterator
+f method._Int32x4ListMixin.iterator = 0x8f8e4
+'@0x8f8e4'CC _Int32x4ListMixin.iterator
+f method._Float32x4ListMixin.iterator = 0x8f928
+'@0x8f928'CC _Float32x4ListMixin.iterator
+f method._DoubleListMixin.iterator = 0x8f96c
+'@0x8f96c'CC _DoubleListMixin.iterator
+f method._IntListMixin.iterator = 0x8f9b0
+'@0x8f9b0'CC _IntListMixin.iterator
+f method.List.iterator = 0x8f9f4
+'@0x8f9f4'CC List.iterator
+f method._Array.iterator = 0x8fa38
+'@0x8fa38'CC _Array.iterator
+f method.new._ArrayIterator = 0x8fa7c
+'@0x8fa7c'CC new._ArrayIterator
+f method._ImmutableLinkedHashSetMixin.iterator = 0x8fa88
+'@0x8fa88'CC _ImmutableLinkedHashSetMixin.iterator
+f method._LinkedHashSetMixin.iterator = 0x8fae0
+'@0x8fae0'CC _LinkedHashSetMixin.iterator
+f method._BufferingStreamSubscription._sendDone = 0x8fb54
+'@0x8fb54'CC _BufferingStreamSubscription._sendDone
+f method.assert.type.is._EventDispatch_X0_ = 0x8fc20
+'@0x8fc20'CC assert.type.is._EventDispatch_X0_
+f method.assert.type.is.StreamSubscription_X0_ = 0x8fd00
+'@0x8fd00'CC assert.type.is.StreamSubscription_X0_
+f method._BufferingStreamSubscription._state = 0x8fddc
+'@0x8fddc'CC _BufferingStreamSubscription._state
+f method._BufferingStreamSubscription._state = 0x8fdfc
+'@0x8fdfc'CC _BufferingStreamSubscription._state
+f method._BufferingStreamSubscription._onDone = 0x8fe28
+'@0x8fe28'CC _BufferingStreamSubscription._onDone
+f method._BufferingStreamSubscription._onError = 0x8fe5c
+'@0x8fe5c'CC _BufferingStreamSubscription._onError
+f method.Future.whenComplete = 0x8fe90
+'@0x8fe90'CC Future.whenComplete
+f method._BufferingStreamSubscription._cancel = 0x8ff68
+'@0x8ff68'CC _BufferingStreamSubscription._cancel
+f method._ControllerSubscription._onCancel = 0x9001c
+'@0x9001c'CC _ControllerSubscription._onCancel
+f method.assert.type.is._ControllerSubscription_X0_ = 0x90060
+'@0x90060'CC assert.type.is._ControllerSubscription_X0_
+f method._PendingEvents.cancelSchedule = 0x90138
+'@0x90138'CC _PendingEvents.cancelSchedule
+f method.assert.type.is._PendingEvents_X0_ = 0x90154
+'@0x90154'CC assert.type.is._PendingEvents_X0_
+f method.Future._nullFuture = 0x90228
+'@0x90228'CC Future._nullFuture
+f method.nullFuture = 0x9026c
+'@0x9026c'CC nullFuture
+f method.nullFuture._anonymous.closure_ = 0x902bc
+'@0x902bc'CC nullFuture._anonymous.closure_
+f method.new.Future.value = 0x90338
+'@0x90338'CC new.Future.value
+f method._BufferingStreamSubscription._sendDone.sendDone = 0x90418
+'@0x90418'CC _BufferingStreamSubscription._sendDone.sendDone
+f method._BufferingStreamSubscription._sendError = 0x904b4
+'@0x904b4'CC _BufferingStreamSubscription._sendError
+f method._BufferingStreamSubscription._checkState = 0x90610
+'@0x90610'CC _BufferingStreamSubscription._checkState
+f method._ControllerSubscription._onResume = 0x90814
+'@0x90814'CC _ControllerSubscription._onResume
+f method._ControllerSubscription._onPause = 0x90848
+'@0x90848'CC _ControllerSubscription._onPause
+f method._PendingEvents.schedule = 0x9087c
+'@0x9087c'CC _PendingEvents.schedule
+f method._PendingEvents.schedule._anonymous.closure_ = 0x90954
+'@0x90954'CC _PendingEvents.schedule._anonymous.closure_
+f method._PendingEvents.handleNext = 0x909bc
+'@0x909bc'CC _PendingEvents.handleNext
+f method._BufferingStreamSubscription._mayResumeInput = 0x90a70
+'@0x90a70'CC _BufferingStreamSubscription._mayResumeInput
+f method._BufferingStreamSubscription._sendError.sendError = 0x90ac4
+'@0x90ac4'CC _BufferingStreamSubscription._sendError.sendError
+f method._RootZone.runUnaryGuarded = 0x90c50
+'@0x90c50'CC _RootZone.runUnaryGuarded
+f method._RootZone.runBinaryGuarded = 0x90d3c
+'@0x90d3c'CC _RootZone.runBinaryGuarded
+f method._StreamController._close = 0x90e38
+'@0x90e38'CC _StreamController._close
+f method.assert.type.is.StreamController_X0_ = 0x90e58
+'@0x90e58'CC assert.type.is.StreamController_X0_
+f method._StreamController._state = 0x90f38
+'@0x90f38'CC _StreamController._state
+f method._StreamController._state = 0x90f58
+'@0x90f58'CC _StreamController._state
+f method._Closure._function_type_arguments = 0x90f84
+'@0x90f84'CC _Closure._function_type_arguments
+f method._StreamController._close = 0x90fbc
+'@0x90fbc'CC _StreamController._close
+f method._StreamController._close = 0x90ff0
+'@0x90ff0'CC _StreamController._close
+f method._AddStreamState.complete = 0x91088
+'@0x91088'CC _AddStreamState.complete
+f method.assert.type.is._StreamControllerAddStreamState_X0_ = 0x910c4
+'@0x910c4'CC assert.type.is._StreamControllerAddStreamState_X0_
+f method._BufferingStreamSubscription._sendData = 0x91198
+'@0x91198'CC _BufferingStreamSubscription._sendData
+f method._BufferingStreamSubscription._close = 0x91278
+'@0x91278'CC _BufferingStreamSubscription._close
+f method._BufferingStreamSubscription._close = 0x91298
+'@0x91298'CC _BufferingStreamSubscription._close
+f method._BufferingStreamSubscription._close = 0x912cc
+'@0x912cc'CC _BufferingStreamSubscription._close
+f method._BufferingStreamSubscription._addPending = 0x91344
+'@0x91344'CC _BufferingStreamSubscription._addPending
+f method._PendingEvents.add = 0x9141c
+'@0x9141c'CC _PendingEvents.add
+f method.new._PendingEvents = 0x914e8
+'@0x914e8'CC new._PendingEvents
+f method.MapView.containsKey = 0x914f4
+'@0x914f4'CC MapView.containsKey
+f method._StreamController.addStream = 0x91528
+'@0x91528'CC _StreamController.addStream
+f method._StreamController._badEventState = 0x9167c
+'@0x9167c'CC _StreamController._badEventState
+f method.new._StreamControllerAddStreamState = 0x916d4
+'@0x916d4'CC new._StreamControllerAddStreamState
+f method.new._AddStreamState = 0x91770
+'@0x91770'CC new._AddStreamState
+f method.new._StreamControllerAddStreamState = 0x91914
+'@0x91914'CC new._StreamControllerAddStreamState
+f method._StreamController.close = 0x91920
+'@0x91920'CC _StreamController.close
+f method._StreamController._closeUnchecked = 0x919ac
+'@0x919ac'CC _StreamController._closeUnchecked
+f method._StreamController._ensurePendingEvents = 0x91a54
+'@0x91a54'CC _StreamController._ensurePendingEvents
+f method._StreamController._subscription = 0x91bb8
+'@0x91bb8'CC _StreamController._subscription
+f method._StreamController._ensureDoneFuture = 0x91c68
+'@0x91c68'CC _StreamController._ensureDoneFuture
+f method._StreamController.addError = 0x91d48
+'@0x91d48'CC _StreamController.addError
+f method._StreamController._addError = 0x91dcc
+'@0x91dcc'CC _StreamController._addError
+f method._StreamController._addError = 0x91ecc
+'@0x91ecc'CC _StreamController._addError
+f method.new._DelayedError = 0x91f08
+'@0x91f08'CC new._DelayedError
+f method._BufferingStreamSubscription._addError = 0x91f14
+'@0x91f14'CC _BufferingStreamSubscription._addError
+f method._BufferingStreamSubscription._addError = 0x91fbc
+'@0x91fbc'CC _BufferingStreamSubscription._addError
+f method._StreamController.add = 0x91ff8
+'@0x91ff8'CC _StreamController.add
+f method._StreamController._add = 0x92084
+'@0x92084'CC _StreamController._add
+f method._StreamController._add = 0x921a4
+'@0x921a4'CC _StreamController._add
+f method.new._DelayedData = 0x921dc
+'@0x921dc'CC new._DelayedData
+f method._BufferingStreamSubscription._add = 0x921e8
+'@0x921e8'CC _BufferingStreamSubscription._add
+f method._BufferingStreamSubscription._add = 0x922c4
+'@0x922c4'CC _BufferingStreamSubscription._add
+f method._StreamController._recordResume = 0x922fc
+'@0x922fc'CC _StreamController._recordResume
+f method._runGuarded = 0x923ac
+'@0x923ac'CC _runGuarded
+f method._AddStreamState.resume = 0x9244c
+'@0x9244c'CC _AddStreamState.resume
+f method._StreamController._recordPause = 0x9249c
+'@0x9249c'CC _StreamController._recordPause
+f method._AddStreamState.pause = 0x92548
+'@0x92548'CC _AddStreamState.pause
+f method._StreamController._recordCancel = 0x92598
+'@0x92598'CC _StreamController._recordCancel
+f method._AsyncStarStreamController.onCancel = 0x927b8
+'@0x927b8'CC _AsyncStarStreamController.onCancel
+f method._AsyncStarStreamController.controller = 0x927ec
+'@0x927ec'CC _AsyncStarStreamController.controller
+f method._AsyncStarStreamController.onCancel = 0x92848
+'@0x92848'CC _AsyncStarStreamController.onCancel
+f method._AsyncStarStreamController.scheduleGenerator = 0x92930
+'@0x92930'CC _AsyncStarStreamController.scheduleGenerator
+f method._AsyncStarStreamController.runBody = 0x929c0
+'@0x929c0'CC _AsyncStarStreamController.runBody
+f method._AsyncStarStreamController.runBody = 0x929f4
+'@0x929f4'CC _AsyncStarStreamController.runBody
+f method._AddStreamState.cancel = 0x92a84
+'@0x92a84'CC _AddStreamState.cancel
+f method._AddStreamState.cancel._anonymous.closure_ = 0x92b00
+'@0x92b00'CC _AddStreamState.cancel._anonymous.closure_
+f method._StreamController._recordCancel.complete = 0x92b44
+'@0x92b44'CC _StreamController._recordCancel.complete
+f method._StreamController._subscribe = 0x92ba8
+'@0x92ba8'CC _StreamController._subscribe
+f method._BufferingStreamSubscription._guardCallback = 0x92d38
+'@0x92d38'CC _BufferingStreamSubscription._guardCallback
+f method._BufferingStreamSubscription._setPendingEvents = 0x92dd8
+'@0x92dd8'CC _BufferingStreamSubscription._setPendingEvents
+f method.assert.type.is._PendingEvents_X0__ = 0x92e90
+'@0x92e90'CC assert.type.is._PendingEvents_X0__
+f method._StreamController._pendingEvents = 0x92f70
+'@0x92f70'CC _StreamController._pendingEvents
+f method.new._BufferingStreamSubscription = 0x9302c
+'@0x9302c'CC new._BufferingStreamSubscription
+f method.new._BufferingStreamSubscription.zoned = 0x930b8
+'@0x930b8'CC new._BufferingStreamSubscription.zoned
+f method._BufferingStreamSubscription._registerDoneHandler = 0x931d0
+'@0x931d0'CC _BufferingStreamSubscription._registerDoneHandler
+f method._BufferingStreamSubscription._registerErrorHandler = 0x931d8
+'@0x931d8'CC _BufferingStreamSubscription._registerErrorHandler
+f method._nullErrorHandler = 0x93300
+'@0x93300'CC _nullErrorHandler
+f method._nullErrorHandler = 0x93334
+'@0x93334'CC _nullErrorHandler
+f method.new._ControllerSubscription = 0x93394
+'@0x93394'CC new._ControllerSubscription
+f method._StreamController._subscribe._anonymous.closure_ = 0x933a0
+'@0x933a0'CC _StreamController._subscribe._anonymous.closure_
+f method._StreamController.isPaused = 0x933e0
+'@0x933e0'CC _StreamController.isPaused
+f method._StreamController.isClosed = 0x93478
+'@0x93478'CC _StreamController.isClosed
+f method._StreamController.stream = 0x934a0
+'@0x934a0'CC _StreamController.stream
+f method.new._ControllerStream = 0x934d0
+'@0x934d0'CC new._ControllerStream
+f method._StreamController.onResume = 0x934dc
+'@0x934dc'CC _StreamController.onResume
+f method._StreamController.onCancel = 0x9350c
+'@0x9350c'CC _StreamController.onCancel
+f method._UnmodifiableInt8ArrayView.buffer = 0x9353c
+'@0x9353c'CC _UnmodifiableInt8ArrayView.buffer
+f method.new._UnmodifiableByteBufferView = 0x93568
+'@0x93568'CC new._UnmodifiableByteBufferView
+f method._TypedListView.buffer = 0x93574
+'@0x93574'CC _TypedListView.buffer
+f method._TypedList.buffer = 0x935a0
+'@0x935a0'CC _TypedList.buffer
+f method.CodeUnits.length = 0x935c8
+'@0x935c8'CC CodeUnits.length
+f method._StreamController._addError = 0x935d8
+'@0x935d8'CC _StreamController._addError
+f method._BufferingStreamSubscription._addError = 0x935f8
+'@0x935f8'CC _BufferingStreamSubscription._addError
+f method.SubListIterable.length = 0x93618
+'@0x93618'CC SubListIterable.length
+f method.MappedListIterable.length = 0x936e0
+'@0x936e0'CC MappedListIterable.length
+f method._LinkedHashMapMixin.__ = 0x936f0
+'@0x936f0'CC _LinkedHashMapMixin.__
+f method._StreamController._add = 0x937ac
+'@0x937ac'CC _StreamController._add
+f method._BufferingStreamSubscription._add = 0x937cc
+'@0x937cc'CC _BufferingStreamSubscription._add
+f method._UnmodifiableByteBufferView.asUint8List = 0x937ec
+'@0x937ec'CC _UnmodifiableByteBufferView.asUint8List
+f method.new._UnmodifiableUint8ArrayView = 0x93860
+'@0x93860'CC new._UnmodifiableUint8ArrayView
+f method._Uri.resolveUri = 0x9386c
+'@0x9386c'CC _Uri.resolveUri
+f method._Uri._mergePaths = 0x93d70
+'@0x93d70'CC _Uri._mergePaths
+f method._StringBase.lastIndexOf = 0x94060
+'@0x94060'CC _StringBase.lastIndexOf
+f method._Uri._packageNameEnd = 0x94248
+'@0x94248'CC _Uri._packageNameEnd
+f method._Uri.replace = 0x94364
+'@0x94364'CC _Uri.replace
+f method._Uri._makePort = 0x94618
+'@0x94618'CC _Uri._makePort
+f method._Uri._defaultPort = 0x9467c
+'@0x9467c'CC _Uri._defaultPort
+f method._SimpleUri.replace = 0x94718
+'@0x94718'CC _SimpleUri.replace
+f method._SimpleUri._isScheme = 0x94b3c
+'@0x94b3c'CC _SimpleUri._isScheme
+f method.RangeError._errorExplanation = 0x94b90
+'@0x94b90'CC RangeError._errorExplanation
+f method.int._ = 0x94ce4
+'@0x94ce4'CC int._
+f method.int._ = 0x94d3c
+'@0x94d3c'CC int._
+f method.int._greaterThanFromInteger = 0x94d9c
+'@0x94d9c'CC int._greaterThanFromInteger
+f method.IndexError._errorExplanation = 0x94e18
+'@0x94e18'CC IndexError._errorExplanation
+f method.ArgumentError._errorExplanation = 0x94f00
+'@0x94f00'CC ArgumentError._errorExplanation
+f method._ArrayIterator.current = 0x94f08
+'@0x94f08'CC _ArrayIterator.current
+f method._ArrayIterator.moveNext = 0x94f5c
+'@0x94f5c'CC _ArrayIterator.moveNext
+f method._StreamController.onListen = 0x94fe0
+'@0x94fe0'CC _StreamController.onListen
+f method._Uri.hasEmptyPath = 0x95010
+'@0x95010'CC _Uri.hasEmptyPath
+f method._SimpleUri.hasEmptyPath = 0x9502c
+'@0x9502c'CC _SimpleUri.hasEmptyPath
+f method._DelayedData.perform = 0x95048
+'@0x95048'CC _DelayedData.perform
+f method._DelayedError.perform = 0x950b4
+'@0x950b4'CC _DelayedError.perform
+f method.CodeUnits.__ = 0x95148
+'@0x95148'CC CodeUnits.__
+f method._DelayedDone.perform = 0x951b0
+'@0x951b0'CC _DelayedDone.perform
+f method._Uri.hasFragment = 0x95230
+'@0x95230'CC _Uri.hasFragment
+f method._SimpleUri.hasFragment = 0x95248
+'@0x95248'CC _SimpleUri.hasFragment
+f method.MapView.keys = 0x9526c
+'@0x9526c'CC MapView.keys
+f method._Uri.fragment = 0x952ac
+'@0x952ac'CC _Uri.fragment
+f method._SimpleUri.fragment = 0x952c8
+'@0x952c8'CC _SimpleUri.fragment
+f method._Uri.hasAbsolutePath = 0x95328
+'@0x95328'CC _Uri.hasAbsolutePath
+f method._SimpleUri.hasAbsolutePath = 0x95364
+'@0x95364'CC _SimpleUri.hasAbsolutePath
+f method._Uri.port = 0x953bc
+'@0x953bc'CC _Uri.port
+f method._AllMatchesIterator.current = 0x95410
+'@0x95410'CC _AllMatchesIterator.current
+f method._SimpleUri.port = 0x95464
+'@0x95464'CC _SimpleUri.port
+f method._SimpleUri._isHttps = 0x95530
+'@0x95530'CC _SimpleUri._isHttps
+f method._SimpleUri._isHttp = 0x95580
+'@0x95580'CC _SimpleUri._isHttp
+f method._AllMatchesIterator.moveNext = 0x955d0
+'@0x955d0'CC _AllMatchesIterator.moveNext
+f method._RegExp.isUnicode = 0x957e0
+'@0x957e0'CC _RegExp.isUnicode
+f method._RegExpMatch._start = 0x95854
+'@0x95854'CC _RegExpMatch._start
+f method._RegExpMatch._end = 0x958b0
+'@0x958b0'CC _RegExpMatch._end
+f method.new._RegExpMatch = 0x95910
+'@0x95910'CC new._RegExpMatch
+f method._RegExp._ExecuteMatch = 0x9591c
+'@0x9591c'CC _RegExp._ExecuteMatch
+f method._StringAllMatchesIterator.current = 0x95984
+'@0x95984'CC _StringAllMatchesIterator.current
+f method._SimpleUri.userInfo = 0x959e0
+'@0x959e0'CC _SimpleUri.userInfo
+f method._StringAllMatchesIterator.moveNext = 0x95a54
+'@0x95a54'CC _StringAllMatchesIterator.moveNext
+f method.new._StringMatch = 0x95ba0
+'@0x95ba0'CC new._StringMatch
+f method._Uri.isScheme = 0x95bac
+'@0x95bac'CC _Uri.isScheme
+f method._caseInsensitiveStartsWith = 0x95c08
+'@0x95c08'CC _caseInsensitiveStartsWith
+f method._caseInsensitiveCompareStart = 0x95c48
+'@0x95c48'CC _caseInsensitiveCompareStart
+f method._Uri.hasAuthority = 0x95d28
+'@0x95d28'CC _Uri.hasAuthority
+f method._SimpleUri.hasAuthority = 0x95d40
+'@0x95d40'CC _SimpleUri.hasAuthority
+f method._Uri.scheme = 0x95d58
+'@0x95d58'CC _Uri.scheme
+f method._SimpleUri.scheme = 0x95d60
+'@0x95d60'CC _SimpleUri.scheme
+f method._SimpleUri._computeScheme = 0x95dd8
+'@0x95dd8'CC _SimpleUri._computeScheme
+f method._SimpleUri._isPackage = 0x95ecc
+'@0x95ecc'CC _SimpleUri._isPackage
+f method._SimpleUri._isFile = 0x95f1c
+'@0x95f1c'CC _SimpleUri._isFile
+f method._Uri.hasQuery = 0x95f6c
+'@0x95f6c'CC _Uri.hasQuery
+f method._SimpleUri.hasQuery = 0x95f84
+'@0x95f84'CC _SimpleUri.hasQuery
+f method._Uri.hasScheme = 0x95fa0
+'@0x95fa0'CC _Uri.hasScheme
+f method._SimpleUri.hasScheme = 0x95fe0
+'@0x95fe0'CC _SimpleUri.hasScheme
+f method._Uri.query = 0x95ff8
+'@0x95ff8'CC _Uri.query
+f method._SimpleUri.query = 0x96014
+'@0x96014'CC _SimpleUri.query
+f method._Uri.host = 0x96084
+'@0x96084'CC _Uri.host
+f method._SimpleUri.host = 0x9611c
+'@0x9611c'CC _SimpleUri.host
+f method._Uri.path = 0x96184
+'@0x96184'CC _Uri.path
+f method._SyncStarIterator.current = 0x9618c
+'@0x9618c'CC _SyncStarIterator.current
+f method._SimpleUri.path = 0x961e0
+'@0x961e0'CC _SimpleUri.path
+f method._SyncStarIterator.moveNext = 0x9623c
+'@0x9623c'CC _SyncStarIterator.moveNext
+f method._SyncStarIterator._yieldStarIterable = 0x96860
+'@0x96860'CC _SyncStarIterator._yieldStarIterable
+f method._SyncStarIterator._current = 0x968bc
+'@0x968bc'CC _SyncStarIterator._current
+f method._SuspendState._resume = 0x96930
+'@0x96930'CC _SuspendState._resume
+f method.assert.type.is._SuspendState = 0x96938
+'@0x96938'CC assert.type.is._SuspendState
+f method.stub._iso_stub_ResumeStub = 0x96958
+'@0x96958'CC stub._iso_stub_ResumeStub
+f method.assert.type.is.Iterable_X0__ = 0x969d0
+'@0x969d0'CC assert.type.is.Iterable_X0__
+f method._BufferingStreamSubscription.resume = 0x96abc
+'@0x96abc'CC _BufferingStreamSubscription.resume
+f method._BufferingStreamSubscription._decrementPauseCount = 0x96bdc
+'@0x96bdc'CC _BufferingStreamSubscription._decrementPauseCount
+f method._BufferingStreamSubscription.cancel = 0x96bf0
+'@0x96bf0'CC _BufferingStreamSubscription.cancel
+f method._AsyncCompleter.complete = 0x96c80
+'@0x96c80'CC _AsyncCompleter.complete
+f method._SyncCompleter.complete = 0x96d44
+'@0x96d44'CC _SyncCompleter.complete
+f method._DelayedEvent.next = 0x96e08
+'@0x96e08'CC _DelayedEvent.next
+f method._httpConnectionHook._anonymous.closure_ = 0x96e10
+'@0x96e10'CC _httpConnectionHook._anonymous.closure_
+f method._httpConnectionHook = 0x96e18
+'@0x96e18'CC _httpConnectionHook
+f method._httpConnectionHook = 0x96e38
+'@0x96e38'CC _httpConnectionHook
+f method._StreamImpl.listen = 0x96e68
+'@0x96e68'CC _StreamImpl.listen
+f method._ControllerStream._createSubscription = 0x96ea0
+'@0x96ea0'CC _ControllerStream._createSubscription
+f method._ControllerSubscription._onResume = 0x96eec
+'@0x96eec'CC _ControllerSubscription._onResume
+f method._ControllerSubscription._onPause = 0x96f34
+'@0x96f34'CC _ControllerSubscription._onPause
+f method._StreamController.hasListener = 0x96f7c
+'@0x96f7c'CC _StreamController.hasListener
+f method._BufferingStreamSubscription.pause = 0x96fa4
+'@0x96fa4'CC _BufferingStreamSubscription.pause
+f method._DelayedEvent.next = 0x970a4
+'@0x970a4'CC _DelayedEvent.next
+f method._DelayedDone.next = 0x970d4
+'@0x970d4'CC _DelayedDone.next
+f method._ImmutableLinkedHashMapMixin.containsKey = 0x970f8
+'@0x970f8'CC _ImmutableLinkedHashMapMixin.containsKey
+f method._LinkedHashMapMixin.containsKey = 0x97150
+'@0x97150'CC _LinkedHashMapMixin.containsKey
+f method._LinkedHashMapMixin._getValueOrData = 0x971a0
+'@0x971a0'CC _LinkedHashMapMixin._getValueOrData
+f method._OperatorEqualsAndCanonicalHashCode._hashCode = 0x973d4
+'@0x973d4'CC _OperatorEqualsAndCanonicalHashCode._hashCode
+f method._OperatorEqualsAndCanonicalHashCode.cidSymbol = 0x974bc
+'@0x974bc'CC _OperatorEqualsAndCanonicalHashCode.cidSymbol
+f method._ImmutableLinkedHashMapMixin._createIndex = 0x974c4
+'@0x974c4'CC _ImmutableLinkedHashMapMixin._createIndex
+f method._LinkedHashMapMixin._findValueOrInsertPoint = 0x97780
+'@0x97780'CC _LinkedHashMapMixin._findValueOrInsertPoint
+f method._HashBase._indexSizeToHashMask = 0x97958
+'@0x97958'CC _HashBase._indexSizeToHashMask
+f method._LinkedHashMapMixin.containsKey = 0x97a20
+'@0x97a20'CC _LinkedHashMapMixin.containsKey
+f method.MapView.forEach = 0x97a70
+'@0x97a70'CC MapView.forEach
+f method.MapView.__ = 0x97aa8
+'@0x97aa8'CC MapView.__
+f method._CompactIterator.current = 0x97af8
+'@0x97af8'CC _CompactIterator.current
+f method._CompactIteratorImmutable.current = 0x97b4c
+'@0x97b4c'CC _CompactIteratorImmutable.current
+f method._CompactIterator.moveNext = 0x97ba0
+'@0x97ba0'CC _CompactIterator.moveNext
+f method._CompactIteratorImmutable.moveNext = 0x97ce8
+'@0x97ce8'CC _CompactIteratorImmutable.moveNext
+f method.ListIterator.current = 0x97d70
+'@0x97d70'CC ListIterator.current
+f method.ListIterator.moveNext = 0x97dc4
+'@0x97dc4'CC ListIterator.moveNext
+f method._StringBase.allMatches = 0x97ec8
+'@0x97ec8'CC _StringBase.allMatches
+f method.new._StringAllMatchesIterable = 0x97f68
+'@0x97f68'CC new._StringAllMatchesIterable
+f method._LinkedHashSetMixin._regenerateIndex = 0x97f74
+'@0x97f74'CC _LinkedHashSetMixin._regenerateIndex
+f method._LinkedHashSetMixin._rehash = 0x980f8
+'@0x980f8'CC _LinkedHashSetMixin._rehash
+f method._LinkedHashSetMixin._init = 0x981ac
+'@0x981ac'CC _LinkedHashSetMixin._init
+f method._UnmodifiableSetMixin._throwUnmodifiable = 0x98348
+'@0x98348'CC _UnmodifiableSetMixin._throwUnmodifiable
+f method._LinkedHashSetMixin._regenerateIndex = 0x9836c
+'@0x9836c'CC _LinkedHashSetMixin._regenerateIndex
+f method._LinkedHashSetMixin._rehash = 0x984f0
+'@0x984f0'CC _LinkedHashSetMixin._rehash
+f method._LinkedHashSetMixin._init = 0x9858c
+'@0x9858c'CC _LinkedHashSetMixin._init
+f method._LinkedHashSetMixin._add = 0x98748
+'@0x98748'CC _LinkedHashSetMixin._add
+f method._LinkedHashMapMixin._regenerateIndex = 0x98a18
+'@0x98a18'CC _LinkedHashMapMixin._regenerateIndex
+f method._LinkedHashMapMixin._regenerateIndex = 0x98c3c
+'@0x98c3c'CC _LinkedHashMapMixin._regenerateIndex
+f method._ImmutableLinkedHashMapMixin.keys = 0x98e84
+'@0x98e84'CC _ImmutableLinkedHashMapMixin.keys
+f method.new._CompactIterableImmutable = 0x98ee8
+'@0x98ee8'CC new._CompactIterableImmutable
+f method._LinkedHashMapMixin.keys = 0x98ef4
+'@0x98ef4'CC _LinkedHashMapMixin.keys
+f method._TypedListIterator.current = 0x98f34
+'@0x98f34'CC _TypedListIterator.current
+f method._TypedListIterator.moveNext = 0x98f88
+'@0x98f88'CC _TypedListIterator.moveNext
+f method._RegExp.allMatches = 0x99050
+'@0x99050'CC _RegExp.allMatches
+f method.new._AllMatchesIterable = 0x990e8
+'@0x990e8'CC new._AllMatchesIterable
+f method._HashBase._isModifiedSince = 0x990f4
+'@0x990f4'CC _HashBase._isModifiedSince
+f method._HashBase._checkSum = 0x99134
+'@0x99134'CC _HashBase._checkSum
+f method._StringBase.toUpperCase = 0x9914c
+'@0x9914c'CC _StringBase.toUpperCase
+f method.String.toUpperCase = 0x991c4
+'@0x991c4'CC String.toUpperCase
+f method._StringBase.padLeft = 0x99394
+'@0x99394'CC _StringBase.padLeft
+f method.String.padLeft = 0x99464
+'@0x99464'CC String.padLeft
+f method._ByteBuffer.asUint8List = 0x99568
+'@0x99568'CC _ByteBuffer.asUint8List
+f method.new._Uint8ArrayView = 0x99618
+'@0x99618'CC new._Uint8ArrayView
+f method._rangeCheck = 0x99624
+'@0x99624'CC _rangeCheck
+f method._ByteBuffer.lengthInBytes = 0x99724
+'@0x99724'CC _ByteBuffer.lengthInBytes
+f method._TypedList.lengthInBytes = 0x9978c
+'@0x9978c'CC _TypedList.lengthInBytes
+f method._Array.length = 0x997e4
+'@0x997e4'CC _Array.length
+f method._Float64x2ArrayView.__ = 0x997f0
+'@0x997f0'CC _Float64x2ArrayView.__
+f method.Float64x2List.__ = 0x99874
+'@0x99874'CC Float64x2List.__
+f method._Int32x4ArrayView.__ = 0x998f4
+'@0x998f4'CC _Int32x4ArrayView.__
+f method.Int32x4List.__ = 0x99978
+'@0x99978'CC Int32x4List.__
+f method._Float32x4ArrayView.__ = 0x999f8
+'@0x999f8'CC _Float32x4ArrayView.__
+f method.Float32x4List.__ = 0x99a7c
+'@0x99a7c'CC Float32x4List.__
+f method._Float64ArrayView.__ = 0x99afc
+'@0x99afc'CC _Float64ArrayView.__
+f method.Float64List.__ = 0x99b80
+'@0x99b80'CC Float64List.__
+f method._Float32ArrayView.__ = 0x99c00
+'@0x99c00'CC _Float32ArrayView.__
+f method.Float32List.__ = 0x99c88
+'@0x99c88'CC Float32List.__
+f method._Int64ArrayView.__ = 0x99d0c
+'@0x99d0c'CC _Int64ArrayView.__
+f method.Int64List.__ = 0x99d68
+'@0x99d68'CC Int64List.__
+f method._Uint32ArrayView.__ = 0x99dc0
+'@0x99dc0'CC _Uint32ArrayView.__
+f method.Uint32List.__ = 0x99e08
+'@0x99e08'CC Uint32List.__
+f method._Int32ArrayView.__ = 0x99e4c
+'@0x99e4c'CC _Int32ArrayView.__
+f method.Int32List.__ = 0x99e94
+'@0x99e94'CC Int32List.__
+f method._Uint16ArrayView.__ = 0x99ed8
+'@0x99ed8'CC _Uint16ArrayView.__
+f method.Uint16List.__ = 0x99f20
+'@0x99f20'CC Uint16List.__
+f method._Int16ArrayView.__ = 0x99f64
+'@0x99f64'CC _Int16ArrayView.__
+f method.Int16List.__ = 0x99fac
+'@0x99fac'CC Int16List.__
+f method._Uint8ArrayView.__ = 0x99ff0
+'@0x99ff0'CC _Uint8ArrayView.__
+f method.Uint8List.__ = 0x9a034
+'@0x9a034'CC Uint8List.__
+f method._Int8ArrayView.__ = 0x9a078
+'@0x9a078'CC _Int8ArrayView.__
+f method.Int8List.__ = 0x9a0bc
+'@0x9a0bc'CC Int8List.__
+f method._LinkedHashMapMixin.forEach = 0x9a100
+'@0x9a100'CC _LinkedHashMapMixin.forEach
+f method._LinkedHashMapMixin.forEach = 0x9a260
+'@0x9a260'CC _LinkedHashMapMixin.forEach
+f method._StringBase.matchAsPrefix = 0x9a3d4
+'@0x9a3d4'CC _StringBase.matchAsPrefix
+f method._StringBase._substringUncheckedNative = 0x9a54c
+'@0x9a54c'CC _StringBase._substringUncheckedNative
+f method.String._substringUncheckedNative = 0x9a5d0
+'@0x9a5d0'CC String._substringUncheckedNative
+f method._ImmutableLinkedHashMapMixin.__ = 0x9a720
+'@0x9a720'CC _ImmutableLinkedHashMapMixin.__
+f method._LinkedHashMapMixin.__ = 0x9a790
+'@0x9a790'CC _LinkedHashMapMixin.__
+f method._LinkedHashMapMixin.__ = 0x9a7e0
+'@0x9a7e0'CC _LinkedHashMapMixin.__
+f method._StringBase.contains = 0x9a830
+'@0x9a830'CC _StringBase.contains
+f method.String.contains = 0x9a930
+'@0x9a930'CC String.contains
+f method._StringBase.toLowerCase = 0x9aa4c
+'@0x9aa4c'CC _StringBase.toLowerCase
+f method.String.toLowerCase = 0x9aac4
+'@0x9aac4'CC String.toLowerCase
+f method._StringBase.split = 0x9ac28
+'@0x9ac28'CC _StringBase.split
+f method.String.split = 0x9b0b8
+'@0x9b0b8'CC String.split
+f method.String._splitWithCharCode = 0x9b12c
+'@0x9b12c'CC String._splitWithCharCode
+f method._StringBase.indexOf = 0x9b45c
+'@0x9b45c'CC _StringBase.indexOf
+f method.String.indexOf = 0x9b640
+'@0x9b640'CC String.indexOf
+f method._RegExp.matchAsPrefix = 0x9b7b8
+'@0x9b7b8'CC _RegExp.matchAsPrefix
+f method._RegExp._ExecuteMatchSticky = 0x9b890
+'@0x9b890'CC _RegExp._ExecuteMatchSticky
+f method.List.__ = 0x9b8f8
+'@0x9b8f8'CC List.__
+f method._Array.__ = 0x9b93c
+'@0x9b93c'CC _Array.__
+f method._UnmodifiableSetMixin.remove = 0x9b97c
+'@0x9b97c'CC _UnmodifiableSetMixin.remove
+f method._LinkedHashSetMixin.remove = 0x9b9b8
+'@0x9b9b8'CC _LinkedHashSetMixin.remove
+f method.double._equalToInteger = 0x9bbdc
+'@0x9bbdc'CC double._equalToInteger
+f method.int._equalToInteger = 0x9bc58
+'@0x9bc58'CC int._equalToInteger
+f method.double.toDouble = 0x9bd34
+'@0x9bd34'CC double.toDouble
+f method.int.toDouble = 0x9bd3c
+'@0x9bd3c'CC int.toDouble
+f method.new._Double.fromInteger = 0x9bd74
+'@0x9bd74'CC new._Double.fromInteger
+f method.int.bitLength = 0x9be2c
+'@0x9be2c'CC int.bitLength
+f method.int.bitLength = 0x9bea0
+'@0x9bea0'CC int.bitLength
+f method.stub._iso_stub_SlowTypeTestStub = 0x9bec0
+'@0x9bec0'CC stub._iso_stub_SlowTypeTestStub
+f method.stub._iso_stub_UnreachableTypeTestStub = 0x9bfd4
+'@0x9bfd4'CC stub._iso_stub_UnreachableTypeTestStub
+f method.stub._iso_stub_TypeParameterTypeTestStub = 0x9bfd8
+'@0x9bfd8'CC stub._iso_stub_TypeParameterTypeTestStub
+f method.stub._iso_stub_NullableTypeParameterTypeTestStub = 0x9c01c
+'@0x9c01c'CC stub._iso_stub_NullableTypeParameterTypeTestStub
+f method.stub._iso_stub_TopTypeTypeTestStub = 0x9c068
+'@0x9c068'CC stub._iso_stub_TopTypeTypeTestStub
+f method.stub._iso_stub_DefaultNullableTypeTestStub = 0x9c06c
+'@0x9c06c'CC stub._iso_stub_DefaultNullableTypeTestStub
+f method.stub._iso_stub_DefaultTypeTestStub = 0x9c084
+'@0x9c084'CC stub._iso_stub_DefaultTypeTestStub
+f method.stub._iso_stub_CallClosureNoSuchMethodStub = 0x9c090
+'@0x9c090'CC stub._iso_stub_CallClosureNoSuchMethodStub
+f method.stub._iso_stub_InitLateFinalInstanceFieldStub = 0x9c150
+'@0x9c150'CC stub._iso_stub_InitLateFinalInstanceFieldStub
+f method.stub._iso_stub_InitLateInstanceFieldStub = 0x9c1dc
+'@0x9c1dc'CC stub._iso_stub_InitLateInstanceFieldStub
+f method.stub._iso_stub_InitInstanceFieldStub = 0x9c23c
+'@0x9c23c'CC stub._iso_stub_InitInstanceFieldStub
+f method.stub._iso_stub_InitLateFinalStaticFieldStub = 0x9c270
+'@0x9c270'CC stub._iso_stub_InitLateFinalStaticFieldStub
+f method.stub._iso_stub_InitLateStaticFieldStub = 0x9c2d4
+'@0x9c2d4'CC stub._iso_stub_InitLateStaticFieldStub
+f method.stub._iso_stub_InitStaticFieldStub = 0x9c30c
+'@0x9c30c'CC stub._iso_stub_InitStaticFieldStub
+f method.stub._iso_stub_InstanceOfStub = 0x9c340
+'@0x9c340'CC stub._iso_stub_InstanceOfStub
+f method.stub._iso_stub_AssertBooleanStub = 0x9c37c
+'@0x9c37c'CC stub._iso_stub_AssertBooleanStub
+f method.stub._iso_stub_ReThrowStub = 0x9c3a0
+'@0x9c3a0'CC stub._iso_stub_ReThrowStub
+f method.stub._iso_stub_ThrowStub = 0x9c3cc
+'@0x9c3cc'CC stub._iso_stub_ThrowStub
+f method.stub._iso_stub_ArrayWriteBarrierStub = 0x9c3f0
+'@0x9c3f0'CC stub._iso_stub_ArrayWriteBarrierStub
+f method.stub._iso_stub_WriteBarrierWrappersStub = 0x9c7ec
+'@0x9c7ec'CC stub._iso_stub_WriteBarrierWrappersStub
+f method.stub._iso_stub_CloneContextStub = 0x9ca6c
+'@0x9ca6c'CC stub._iso_stub_CloneContextStub
+f method.stub._iso_stub_AllocateUnhandledExceptionStub = 0x9cb58
+'@0x9cb58'CC stub._iso_stub_AllocateUnhandledExceptionStub
+f method.stub._iso_stub_AllocateRecord3NamedStub = 0x9cb68
+'@0x9cb68'CC stub._iso_stub_AllocateRecord3NamedStub
+f method.stub._iso_stub_AllocateRecord3Stub = 0x9cc24
+'@0x9cc24'CC stub._iso_stub_AllocateRecord3Stub
+f method.stub._iso_stub_AllocateRecord2NamedStub = 0x9cce8
+'@0x9cce8'CC stub._iso_stub_AllocateRecord2NamedStub
+f method.stub._iso_stub_AllocateRecord2Stub = 0x9cda0
+'@0x9cda0'CC stub._iso_stub_AllocateRecord2Stub
+f method.stub._iso_stub_AllocateRecordStub = 0x9ce60
+'@0x9ce60'CC stub._iso_stub_AllocateRecordStub
+f method.stub._iso_stub_AllocateObjectParameterizedStub = 0x9cf58
+'@0x9cf58'CC stub._iso_stub_AllocateObjectParameterizedStub
+f method.stub._iso_stub_AllocateObjectStub = 0x9cfb0
+'@0x9cfb0'CC stub._iso_stub_AllocateObjectStub
+f method.stub._iso_stub_AllocateGrowableArrayStub = 0x9cff4
+'@0x9cff4'CC stub._iso_stub_AllocateGrowableArrayStub
+f method.stub._iso_stub_AllocateContextStub = 0x9d030
+'@0x9d030'CC stub._iso_stub_AllocateContextStub
+f method.stub._iso_stub_AllocateClosureTAGenericStub = 0x9d14c
+'@0x9d14c'CC stub._iso_stub_AllocateClosureTAGenericStub
+f method.stub._iso_stub_AllocateClosureTAStub = 0x9d230
+'@0x9d230'CC stub._iso_stub_AllocateClosureTAStub
+f method.stub._iso_stub_AllocateClosureGenericStub = 0x9d30c
+'@0x9d30c'CC stub._iso_stub_AllocateClosureGenericStub
+f method.stub._iso_stub_AllocateClosureStub = 0x9d3ec
+'@0x9d3ec'CC stub._iso_stub_AllocateClosureStub
+f method.stub._iso_stub_AllocateFloat64x2ArrayStub = 0x9d4c4
+'@0x9d4c4'CC stub._iso_stub_AllocateFloat64x2ArrayStub
+f method.stub._iso_stub_AllocateInt32x4ArrayStub = 0x9d580
+'@0x9d580'CC stub._iso_stub_AllocateInt32x4ArrayStub
+f method.stub._iso_stub_AllocateFloat32x4ArrayStub = 0x9d63c
+'@0x9d63c'CC stub._iso_stub_AllocateFloat32x4ArrayStub
+f method.stub._iso_stub_AllocateFloat64ArrayStub = 0x9d6f8
+'@0x9d6f8'CC stub._iso_stub_AllocateFloat64ArrayStub
+f method.stub._iso_stub_AllocateFloat32ArrayStub = 0x9d7b4
+'@0x9d7b4'CC stub._iso_stub_AllocateFloat32ArrayStub
+f method.stub._iso_stub_AllocateUint64ArrayStub = 0x9d870
+'@0x9d870'CC stub._iso_stub_AllocateUint64ArrayStub
+f method.stub._iso_stub_AllocateInt64ArrayStub = 0x9d92c
+'@0x9d92c'CC stub._iso_stub_AllocateInt64ArrayStub
+f method.stub._iso_stub_AllocateUint32ArrayStub = 0x9d9e8
+'@0x9d9e8'CC stub._iso_stub_AllocateUint32ArrayStub
+f method.stub._iso_stub_AllocateInt32ArrayStub = 0x9daa4
+'@0x9daa4'CC stub._iso_stub_AllocateInt32ArrayStub
+f method.stub._iso_stub_AllocateUint16ArrayStub = 0x9db60
+'@0x9db60'CC stub._iso_stub_AllocateUint16ArrayStub
+f method.stub._iso_stub_AllocateInt16ArrayStub = 0x9dc20
+'@0x9dc20'CC stub._iso_stub_AllocateInt16ArrayStub
+f method.stub._iso_stub_AllocateUint8ClampedArrayStub = 0x9dce0
+'@0x9dce0'CC stub._iso_stub_AllocateUint8ClampedArrayStub
+f method.stub._iso_stub_AllocateUint8ArrayStub = 0x9dda0
+'@0x9dda0'CC stub._iso_stub_AllocateUint8ArrayStub
+f method.stub._iso_stub_AllocateInt8ArrayStub = 0x9de60
+'@0x9de60'CC stub._iso_stub_AllocateInt8ArrayStub
+f method.stub._iso_stub_AllocateInt32x4Stub = 0x9df20
+'@0x9df20'CC stub._iso_stub_AllocateInt32x4Stub
+f method.stub._iso_stub_AllocateFloat64x2Stub = 0x9df74
+'@0x9df74'CC stub._iso_stub_AllocateFloat64x2Stub
+f method.stub._iso_stub_AllocateFloat32x4Stub = 0x9dfc8
+'@0x9dfc8'CC stub._iso_stub_AllocateFloat32x4Stub
+f method.stub._iso_stub_AllocateDoubleStub = 0x9e01c
+'@0x9e01c'CC stub._iso_stub_AllocateDoubleStub
+f method.stub._iso_stub_AllocateMintStub = 0x9e070
+'@0x9e070'CC stub._iso_stub_AllocateMintStub
+f method.stub._iso_stub_AllocateArrayStub = 0x9e0c4
+'@0x9e0c4'CC stub._iso_stub_AllocateArrayStub
+f method.stub._iso_stub_StackOverflowSharedWithoutFPURegsStub = 0x9e1c4
+'@0x9e1c4'CC stub._iso_stub_StackOverflowSharedWithoutFPURegsStub
+f method.stub._iso_stub_StackOverflowSharedWithFPURegsStub = 0x9e244
+'@0x9e244'CC stub._iso_stub_StackOverflowSharedWithFPURegsStub
+f method.stub._iso_stub_AllocateMintSharedWithoutFPURegsStub = 0x9e344
+'@0x9e344'CC stub._iso_stub_AllocateMintSharedWithoutFPURegsStub
+f method.stub._iso_stub_AllocateMintSharedWithFPURegsStub = 0x9e3f8
+'@0x9e3f8'CC stub._iso_stub_AllocateMintSharedWithFPURegsStub
+f method.stub._iso_stub_WriteErrorSharedWithoutFPURegsStub = 0x9e52c
+'@0x9e52c'CC stub._iso_stub_WriteErrorSharedWithoutFPURegsStub
+f method.stub._iso_stub_WriteErrorSharedWithFPURegsStub = 0x9e57c
+'@0x9e57c'CC stub._iso_stub_WriteErrorSharedWithFPURegsStub
+f method.stub._iso_stub_RangeErrorSharedWithoutFPURegsStub = 0x9e60c
+'@0x9e60c'CC stub._iso_stub_RangeErrorSharedWithoutFPURegsStub
+f method.stub._iso_stub_RangeErrorSharedWithFPURegsStub = 0x9e690
+'@0x9e690'CC stub._iso_stub_RangeErrorSharedWithFPURegsStub
+f method.stub._iso_stub_NullCastErrorSharedWithoutFPURegsStub = 0x9e754
+'@0x9e754'CC stub._iso_stub_NullCastErrorSharedWithoutFPURegsStub
+f method.stub._iso_stub_NullCastErrorSharedWithFPURegsStub = 0x9e7a0
+'@0x9e7a0'CC stub._iso_stub_NullCastErrorSharedWithFPURegsStub
+f method.stub._iso_stub_NullArgErrorSharedWithoutFPURegsStub = 0x9e82c
+'@0x9e82c'CC stub._iso_stub_NullArgErrorSharedWithoutFPURegsStub
+f method.stub._iso_stub_NullArgErrorSharedWithFPURegsStub = 0x9e878
+'@0x9e878'CC stub._iso_stub_NullArgErrorSharedWithFPURegsStub
+f method.stub._iso_stub_NullErrorSharedWithoutFPURegsStub = 0x9e904
+'@0x9e904'CC stub._iso_stub_NullErrorSharedWithoutFPURegsStub
+f method.stub._iso_stub_NullErrorSharedWithFPURegsStub = 0x9e950
+'@0x9e950'CC stub._iso_stub_NullErrorSharedWithFPURegsStub
+f method.stub._iso_stub_LateInitializationErrorSharedWithoutFPURegsStub = 0x9e9dc
+'@0x9e9dc'CC stub._iso_stub_LateInitializationErrorSharedWithoutFPURegsStub
+f method.stub._iso_stub_LateInitializationErrorSharedWithFPURegsStub = 0x9ea2c
+'@0x9ea2c'CC stub._iso_stub_LateInitializationErrorSharedWithFPURegsStub
+f method.stub._iso_stub_DispatchTableNullErrorStub = 0x9eabc
+'@0x9eabc'CC stub._iso_stub_DispatchTableNullErrorStub
+f method._Closure._hash = 0x9eae0
+'@0x9eae0'CC _Closure._hash
+f method._SuspendState._handleException = 0x9eaec
+'@0x9eaec'CC _SuspendState._handleException
+f method._AsyncStarStreamController.close = 0x9ec4c
+'@0x9ec4c'CC _AsyncStarStreamController.close
+f method._AsyncStarStreamController.addError = 0x9eccc
+'@0x9eccc'CC _AsyncStarStreamController.addError
+f method._SuspendState._suspendSyncStarAtStart = 0x9ed94
+'@0x9ed94'CC _SuspendState._suspendSyncStarAtStart
+f method._SuspendState._initSyncStar = 0x9edc8
+'@0x9edc8'CC _SuspendState._initSyncStar
+f method.new._SyncStarIterable = 0x9edfc
+'@0x9edfc'CC new._SyncStarIterable
+f method._SuspendState._returnAsyncStar = 0x9ee08
+'@0x9ee08'CC _SuspendState._returnAsyncStar
+f method._SuspendState._yieldAsyncStar = 0x9ee40
+'@0x9ee40'CC _SuspendState._yieldAsyncStar
+f method._AsyncStarStreamController.stream = 0x9eea4
+'@0x9eea4'CC _AsyncStarStreamController.stream
+f method._SuspendState._createAsyncStarCallback = 0x9ef74
+'@0x9ef74'CC _SuspendState._createAsyncStarCallback
+f method._SuspendState._createAsyncStarCallback._anonymous.closure_ = 0x9efd8
+'@0x9efd8'CC _SuspendState._createAsyncStarCallback._anonymous.closure_
+f method._SuspendState._initAsyncStar = 0x9f024
+'@0x9f024'CC _SuspendState._initAsyncStar
+f method.new._AsyncStarStreamController = 0x9f080
+'@0x9f080'CC new._AsyncStarStreamController
+f method.new._SyncStreamController = 0x9f194
+'@0x9f194'CC new._SyncStreamController
+f method._AsyncStarStreamController.onResume = 0x9f1a0
+'@0x9f1a0'CC _AsyncStarStreamController.onResume
+f method._AsyncStarStreamController.onResume = 0x9f1d4
+'@0x9f1d4'CC _AsyncStarStreamController.onResume
+f method._AsyncStarStreamController.onListen = 0x9f20c
+'@0x9f20c'CC _AsyncStarStreamController.onListen
+f method._AsyncStarStreamController.onListen = 0x9f240
+'@0x9f240'CC _AsyncStarStreamController.onListen
+f method.new._AsyncStarStreamController = 0x9f278
+'@0x9f278'CC new._AsyncStarStreamController
+f method._SuspendState._returnAsyncNotFuture = 0x9f284
+'@0x9f284'CC _SuspendState._returnAsyncNotFuture
+f method._SuspendState._returnAsync = 0x9f2e8
+'@0x9f2e8'CC _SuspendState._returnAsync
+f method.Future._asyncCompleteUnchecked = 0x9f370
+'@0x9f370'CC Future._asyncCompleteUnchecked
+f method._SuspendState._awaitWithTypeCheck = 0x9f438
+'@0x9f438'CC _SuspendState._awaitWithTypeCheck
+f method.Future._thenAwait = 0x9f650
+'@0x9f650'CC Future._thenAwait
+f method._SuspendState._createAsyncCallbacks = 0x9f758
+'@0x9f758'CC _SuspendState._createAsyncCallbacks
+f method._SuspendState._createAsyncCallbacks.errorCallback = 0x9f818
+'@0x9f818'CC _SuspendState._createAsyncCallbacks.errorCallback
+f method._SuspendState._awaitNotFuture.run = 0x9f868
+'@0x9f868'CC _SuspendState._awaitNotFuture.run
+f method._SuspendState._awaitCompletedFuture.run = 0x9f8c4
+'@0x9f8c4'CC _SuspendState._awaitCompletedFuture.run
+f method._SuspendState._awaitCompletedFuture.run = 0x9f920
+'@0x9f920'CC _SuspendState._awaitCompletedFuture.run
+f method._SuspendState._await = 0x9f9c8
+'@0x9f9c8'CC _SuspendState._await
+f method._SuspendState._instantiateClosureWithFutureTypeArgument = 0x9fbd0
+'@0x9fbd0'CC _SuspendState._instantiateClosureWithFutureTypeArgument
+f method._SuspendState._awaitUserDefinedFuture.typedCallback = 0x9fc4c
+'@0x9fc4c'CC _SuspendState._awaitUserDefinedFuture.typedCallback
+f method._SuspendState._initAsync = 0x9fcac
+'@0x9fcac'CC _SuspendState._initAsync
+f method._AsyncStarStreamController.addStream = 0x9fd30
+'@0x9fd30'CC _AsyncStarStreamController.addStream
+f method._fatal = 0x9fe30
+'@0x9fe30'CC _fatal
+f method._AsyncStarStreamController.addStream._anonymous.closure_ = 0x9fe6c
+'@0x9fe6c'CC _AsyncStarStreamController.addStream._anonymous.closure_
+f method._AsyncStarStreamController.add = 0x9fed0
+'@0x9fed0'CC _AsyncStarStreamController.add
+f method._setupHooks = 0x9ffc4
+'@0x9ffc4'CC _setupHooks
+f method._resolveScriptUri = 0x9ffd8
+'@0x9ffd8'CC _resolveScriptUri
+f method.Uri.parse = 0xa0094
+'@0xa0094'CC Uri.parse
+f method.new._Uri.notSimple = 0xa0c04
+'@0xa0c04'CC new._Uri.notSimple
+f method._Uri._makeFragment = 0xa0ef0
+'@0xa0ef0'CC _Uri._makeFragment
+f method._Uri._makeQuery = 0xa0f48
+'@0xa0f48'CC _Uri._makeQuery
+f method.int.tryParse = 0xa0fa0
+'@0xa0fa0'CC int.tryParse
+f method._Uri._makeUserInfo = 0xa1024
+'@0xa1024'CC _Uri._makeUserInfo
+f method.new._SimpleUri = 0xa1070
+'@0xa1070'CC new._SimpleUri
+f method._scan = 0xa107c
+'@0xa107c'CC _scan
+f method._scannerTables = 0xa1264
+'@0xa1264'CC _scannerTables
+f method._createTables = 0xa1290
+'@0xa1290'CC _createTables
+f method.UriData.uri = 0xa5df8
+'@0xa5df8'CC UriData.uri
+f method.UriData._computeUri = 0xa5e70
+'@0xa5e70'CC UriData._computeUri
+f method.new._DataUri = 0xa5fc0
+'@0xa5fc0'CC new._DataUri
+f method.UriData._parse = 0xa5fcc
+'@0xa5fcc'CC UriData._parse
+f method.new.UriData = 0xa65d8
+'@0xa65d8'CC new.UriData
+f method.Base64Codec.normalize = 0xa65e4
+'@0xa65e4'CC Base64Codec.normalize
+f method.Base64Codec._checkPadding = 0xa6cbc
+'@0xa6cbc'CC Base64Codec._checkPadding
+f method._Base64Decoder._inverseAlphabet = 0xa6e1c
+'@0xa6e1c'CC _Base64Decoder._inverseAlphabet
+f method.int.isOdd = 0xa75ac
+'@0xa75ac'CC int.isOdd
+f method.new._GrowableList._literal1 = 0xa75d8
+'@0xa75d8'CC new._GrowableList._literal1
+f method._startsWithData = 0xa7638
+'@0xa7638'CC _startsWithData
+f method._sanitizeWindowsPath = 0xa7710
+'@0xa7710'CC _sanitizeWindowsPath
+f method._resolveScriptUri = 0xa77f4
+'@0xa77f4'CC _resolveScriptUri
+f method._setPackagesMap = 0xa782c
+'@0xa782c'CC _setPackagesMap
+f method._setPackagesMap = 0xa78f8
+'@0xa78f8'CC _setPackagesMap
+f method._setWorkingDirectory = 0xa7930
+'@0xa7930'CC _setWorkingDirectory
+f method._setWorkingDirectory = 0xa7988
+'@0xa7988'CC _setWorkingDirectory
+f method._Init = 0xa79c0
+'@0xa79c0'CC _Init
+f method._setPackagesConfig = 0xa7a44
+'@0xa7a44'CC _setPackagesConfig
+f method._Init = 0xa7ae4
+'@0xa7ae4'CC _Init
+f method._getPrintClosure = 0xa7b28
+'@0xa7b28'CC _getPrintClosure
+f method._print = 0xa7b30
+'@0xa7b30'CC _print
+f method._print = 0xa7b60
+'@0xa7b60'CC _print
+f method._printString = 0xa7bb8
+'@0xa7bb8'CC _printString
+f method.new.ByteData = 0xa7bf4
+'@0xa7bf4'CC new.ByteData
+f method.new._ByteDataView = 0xa7c70
+'@0xa7c70'CC new._ByteDataView
+f method.main = 0xa7c7c
+'@0xa7c7c'CC main
+f method.print = 0xa7de0
+'@0xa7de0'CC print
+f method.Xor.process = 0xa7e20
+'@0xa7e20'CC Xor.process
+f method.new.Xor = 0xa7f1c
+'@0xa7f1c'CC new.Xor
+f method.new.Uint8List.fromList = 0xa7f28
+'@0xa7f28'CC new.Uint8List.fromList
+f method._StringBase.codeUnits = 0xa8190
+'@0xa8190'CC _StringBase.codeUnits
+f method.new.CodeUnits = 0xa81c0
+'@0xa81c0'CC new.CodeUnits
+f method.printToConsole = 0xa81cc
+'@0xa81cc'CC printToConsole
+f method.main = 0xa8230
+'@0xa8230'CC main
+f method._storeInt16 = 0xa825c
+'@0xa825c'CC _storeInt16
+f method._storeInt32 = 0xa8290
+'@0xa8290'CC _storeInt32
+f method._storeInt64 = 0xa82c4
+'@0xa82c4'CC _storeInt64
+f method._storeInt8 = 0xa82f8
+'@0xa82f8'CC _storeInt8
+f method._loadInt8 = 0xa832c
+'@0xa832c'CC _loadInt8
+f method._loadUint32 = 0xa8350
+'@0xa8350'CC _loadUint32
+f method._loadUint8 = 0xa8374
+'@0xa8374'CC _loadUint8
+f method._loadInt16 = 0xa8398
+'@0xa8398'CC _loadInt16
+f method._loadInt64 = 0xa83bc
+'@0xa83bc'CC _loadInt64
+f method._loadUint16 = 0xa83fc
+'@0xa83fc'CC _loadUint16
+f method._checkAbiSpecificIntegerMapping = 0xa8420
+'@0xa8420'CC _checkAbiSpecificIntegerMapping
+f method._memCopy = 0xa84ac
+'@0xa84ac'CC _memCopy
+f method._loadInt32 = 0xa85d8
+'@0xa85d8'CC _loadInt32
+f method.Native._ffi_resolver = 0xa85fc
+'@0xa85fc'CC Native._ffi_resolver
+f method.Native._get_ffi_native_resolver = 0xa865c
+'@0xa865c'CC Native._get_ffi_native_resolver
+f method.Native._ffi_resolver.ffiClosure0 = 0xa86e8
+'@0xa86e8'CC Native._ffi_resolver.ffiClosure0
+f method.Native._ffi_resolver = 0xa8864
+'@0xa8864'CC Native._ffi_resolver
+f method.new.Array._ = 0xa8894
+'@0xa8894'CC new.Array._
+f method._TypeError._throwNew = 0xa892c
+'@0xa892c'CC _TypeError._throwNew
+f method.new._TypeError._create = 0xa897c
+'@0xa897c'CC new._TypeError._create
+f method._StreamIterator._hasValue = 0xa89b0
+'@0xa89b0'CC _StreamIterator._hasValue
+f method._StreamIterator._stateData = 0xa89bc
+'@0xa89bc'CC _StreamIterator._stateData
+f method.new._GrowableList._literal = 0xa89f0
+'@0xa89f0'CC new._GrowableList._literal
+f method.assert.type.is.String = 0xa8a1c
+'@0xa8a1c'CC assert.type.is.String
+f method.assert.type.is.Float64x2 = 0xa8a40
+'@0xa8a40'CC assert.type.is.Float64x2
+f method.assert.type.is.Int32x4 = 0xa8a60
+'@0xa8a60'CC assert.type.is.Int32x4
+f method.assert.type.is.Float32x4 = 0xa8a80
+'@0xa8a80'CC assert.type.is.Float32x4
+f method.assert.type.is.double = 0xa8aa0
+'@0xa8aa0'CC assert.type.is.double
+f method.assert.type.is.int = 0xa8ac0
+'@0xa8ac0'CC assert.type.is.int
+f method._Closure.call = 0xa8af0
+'@0xa8af0'CC _Closure.call
+f method._Closure.call = 0xa8dfc
+'@0xa8dfc'CC _Closure.call
+f method._Closure.call = 0xa90a0
+'@0xa90a0'CC _Closure.call
+f method._Closure.call = 0xa937c
+'@0xa937c'CC _Closure.call
+f method._Closure._hash = 0xa939c
+'@0xa939c'CC _Closure._hash
+f method._Closure._context = 0xa93d4
+'@0xa93d4'CC _Closure._context
+f method._Closure._delayed_type_arguments = 0xa940c
+'@0xa940c'CC _Closure._delayed_type_arguments
+f method.assert.type.is.Null = 0xa9444
+'@0xa9444'CC assert.type.is.Null
+f method.assert.type.is.Object = 0xa946c
+'@0xa946c'CC assert.type.is.Object
+f method.Object._simpleInstanceOfFalse = 0xa9480
+'@0xa9480'CC Object._simpleInstanceOfFalse
+f method.Object._simpleInstanceOfTrue = 0xa9488
+'@0xa9488'CC Object._simpleInstanceOfTrue
+f method.Object._simpleInstanceOf = 0xa9490
+'@0xa9490'CC Object._simpleInstanceOf
+f method.Object._instanceOf = 0xa950c
+'@0xa950c'CC Object._instanceOf
+f method.Object._haveSameRuntimeType = 0xa9594
+'@0xa9594'CC Object._haveSameRuntimeType
+f method._NativeFinalizer._handleNativeFinalizerMessage = 0xa9708
+'@0xa9708'CC _NativeFinalizer._handleNativeFinalizerMessage
+f method._NativeFinalizer._removeEntries = 0xa973c
+'@0xa973c'CC _NativeFinalizer._removeEntries
+f method.Expando.__ = 0xa986c
+'@0xa986c'CC Expando.__
+f method.new.Expando = 0xa9a70
+'@0xa9a70'CC new.Expando
+f method.assert.type.is.Set_FinalizerEntry_ = 0xa9a7c
+'@0xa9a7c'CC assert.type.is.Set_FinalizerEntry_
+f method._FinalizerImpl._handleFinalizerMessage = 0xa9ae8
+'@0xa9ae8'CC _FinalizerImpl._handleFinalizerMessage
+f method._FinalizerImpl._runFinalizers = 0xa9b1c
+'@0xa9b1c'CC _FinalizerImpl._runFinalizers
+f method.Native._ffi_resolver_function = 0xa9c7c
+'@0xa9c7c'CC Native._ffi_resolver_function
+f method.Native._ffi_resolver_function = 0xa9ce4
+'@0xa9ce4'CC Native._ffi_resolver_function
+f method._objectToString = 0xa9d28
+'@0xa9d28'CC _objectToString
+f method._objectHashCode = 0xa9d7c
+'@0xa9d7c'CC _objectHashCode
+f method._objectEquals = 0xa9dd0
+'@0xa9dd0'CC _objectEquals
+dr x27=`e anal.gp`
+'f PP=x27
+f pp.off_0x0=PP+0x0
+'@PP+0x0'CC pool_entry_0
+
+EOF
+EXPECT_ERR=
+RUN

@@ -19,7 +19,7 @@ typedef struct {
 
 #if 0
 static const DartVerLayout known_layouts[] = {
-	// TODO: populate with known snapshot hashes from your target SDKs.
+	// Known snapshot hashes may be added here.
 	//{"0123456789abcdef0123456789abcdef", 4, 1},
 };
 
@@ -37,7 +37,6 @@ static const DartVerLayout* pick_layout_by_hash(const char* hash) {
 	dvl->heap_object_tag = 4;
 	(void)hash;
 	return dvl;
-	return NULL;
 }
 #endif
 
@@ -283,7 +282,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	return 0;
 }
 // Standalone AOT snapshot/ObjectPool parser (no Dart VM deps)
-// TODO: Implement ELF/Mach-O scan to locate snapshot blobs and decode ObjectPool
+ // Snapshot discovery is implemented in find_snapshots_with_r2; pool decoding is handled in decode_pool_and_emit.
 // For now it’s a stub that returns not implemented.
 
 static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso_data, ut64 *iso_instr) {
