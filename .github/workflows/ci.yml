@@ -21,8 +21,9 @@ jobs:
         wget https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2-dev_${{env.R2V}}_amd64.deb
         sudo dpkg -i radare2_${{env.R2V}}_amd64.deb
         sudo dpkg -i radare2-dev_${{env.R2V}}_amd64.deb
-        sudo pip install frida-tools
     - name: Building fluor2
       run: make
-    - name: Testing r2frida
+    - name: Basic Testing
+      run: make test
+    - name: Radare Testing
       run: r2r -i test/db
