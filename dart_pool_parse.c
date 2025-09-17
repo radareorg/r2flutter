@@ -54,6 +54,7 @@ typedef struct {
 	char snapshot_hash[33];
 	const DartVerLayout *layout;
 	int compressed_word_size; // derived from flags or layout
+	HtUP *name_by_ep; // optional ep->name mapping from data image scan
 } DartCtx;
 
 // Debug/diagnostic controls
@@ -148,6 +149,12 @@ static int emit_it_varint (DartCtx *ctx, ut64 addr,
 		ut64 ep = ctx->iso_instr + pc_acc;
 		char name[128];
 		name[0] = '\0';
+		if (ctx->name_by_ep) {
+			char *ns = (char *)ht_up_find (ctx->name_by_ep, ep, NULL);
+			if (ns && *ns) {
+				snprintf (name, sizeof (name), "%s", ns);
+			}
+		}
 		if (sm_acc > 0 && sm_acc < (1ULL << 31)) {
 			ut64 saddr = data_image_base + sm_acc;
 			char sname[128];
@@ -170,6 +177,121 @@ static int emit_it_varint (DartCtx *ctx, ut64 addr,
 		}
 	}
 	return 0;
+}
+
+typedef struct {
+	ut64 ep_offs[8];
+	int ep_offs_n;
+	ut64 owner_offs[8];
+	int owner_offs_n;
+	ut64 name_offs[8];
+	int name_offs_n;
+} LayoutHints;
+
+static void init_layout_hints(LayoutHints *lh) {
+	memset (lh, 0, sizeof (*lh));
+	// Reasonable defaults for 64-bit object layouts
+	lh->ep_offs[lh->ep_offs_n++] = 0x10;
+	lh->ep_offs[lh->ep_offs_n++] = 0x18;
+	lh->ep_offs[lh->ep_offs_n++] = 0x20;
+	lh->owner_offs[lh->owner_offs_n++] = 0x10;
+	lh->owner_offs[lh->owner_offs_n++] = 0x18;
+	lh->owner_offs[lh->owner_offs_n++] = 0x20;
+	lh->name_offs[lh->name_offs_n++] = 0x10;
+	lh->name_offs[lh->name_offs_n++] = 0x18;
+	lh->name_offs[lh->name_offs_n++] = 0x20;
+}
+
+static void enrich_layout_hints_from_json(LayoutHints *lh, const char *hash) {
+	if (!lh || !hash) return;
+	char *s = r_file_slurp ("r2flutter/offsets.json", NULL);
+	if (!s) s = r_file_slurp ("offsets.json", NULL);
+	if (!s) return;
+	RJson *j = r_json_parse (s);
+	if (!j) { free (s); return; }
+	const RJson *hashes = r_json_get (j, "hashes");
+	const RJson *item = r_json_get (hashes, hash);
+	if (item) {
+		const RJson *arr;
+		arr = r_json_get (item, "code_entry_point_offsets");
+		if (arr && arr->type == R_JSON_ARRAY) {
+			lh->ep_offs_n = 0;
+			size_t n = arr->children.count;
+			for (size_t i = 0; i < n && (int)i < 8; i++) {
+				const RJson *el = r_json_item (arr, i);
+				if (el && el->type == R_JSON_INTEGER) {
+					lh->ep_offs[lh->ep_offs_n++] = (ut64)el->num.u_value;
+				}
+			}
+		}
+		arr = r_json_get (item, "code_owner_offsets");
+		if (arr && arr->type == R_JSON_ARRAY) {
+			lh->owner_offs_n = 0;
+			size_t n = arr->children.count;
+			for (size_t i = 0; i < n && (int)i < 8; i++) {
+				const RJson *el = r_json_item (arr, i);
+				if (el && el->type == R_JSON_INTEGER) {
+					lh->owner_offs[lh->owner_offs_n++] = (ut64)el->num.u_value;
+				}
+			}
+		}
+		arr = r_json_get (item, "function_name_offsets");
+		if (arr && arr->type == R_JSON_ARRAY) {
+			lh->name_offs_n = 0;
+			size_t n = arr->children.count;
+			for (size_t i = 0; i < n && (int)i < 8; i++) {
+				const RJson *el = r_json_item (arr, i);
+				if (el && el->type == R_JSON_INTEGER) {
+					lh->name_offs[lh->name_offs_n++] = (ut64)el->num.u_value;
+				}
+			}
+		}
+	}
+	r_json_free (j);
+	free (s);
+}
+
+static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
+	if (!ctx || !ctx->core) return NULL;
+	LayoutHints lh; init_layout_hints (&lh);
+	enrich_layout_hints_from_json (&lh, ctx->snapshot_hash);
+	HtUP *name_by_ep = ht_up_new0 ();
+	if (!name_by_ep) return NULL;
+	ut64 max_hits = 200;
+	if (data_image_end <= data_image_base) return name_by_ep;
+	for (ut64 a = data_image_base; a + 0x30 < data_image_end; a += 32) {
+		for (int ie = 0; ie < lh.ep_offs_n; ie++) {
+			ut64 ep = 0;
+			if (!read_mem (ctx->core, a + lh.ep_offs[ie], &ep, sizeof (ep))) continue;
+			if (ep < ctx->iso_instr) continue;
+			if (ep - ctx->iso_instr > (1ULL<<24)) continue;
+			for (int io = 0; io < lh.owner_offs_n; io++) {
+				ut64 owner = 0;
+				if (!read_mem (ctx->core, a + lh.owner_offs[io], &owner, sizeof (owner))) continue;
+				if (owner < data_image_base || owner >= data_image_end) continue;
+				for (int in = 0; in < lh.name_offs_n; in++) {
+					ut64 namep = 0;
+					if (!read_mem (ctx->core, owner + lh.name_offs[in], &namep, sizeof (namep))) continue;
+					if (namep < data_image_base || namep >= data_image_end) continue;
+					char sname[128];
+					if (try_read_dart_string (ctx->core, namep, sname, sizeof (sname))) {
+						for (char *q = sname; *q; q++) if ((ut8)*q < 32) *q = ' ';
+						bool looks_ok = false;
+						if (strstr (sname, "package:") || strstr (sname, "dart:")) looks_ok = true;
+						if (!looks_ok && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) looks_ok = true;
+						if (looks_ok) {
+							char *dup = strdup (sname);
+							if (dup) {
+								ht_up_update (name_by_ep, ep, dup);
+								if (--max_hits == 0) return name_by_ep;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return name_by_ep;
 }
 
 // Helpers to decode minimal String objects and extract ASCII names from data image.
@@ -479,9 +601,15 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	// Use 16-byte alignment as a reasonable default on 64-bit.
 	ut64 kAlign = ctx->layout && ctx->layout->max_alignment ? (ut64)ctx->layout->max_alignment : 16;
 	ut64 data_image_base = base + ((total_len + (kAlign - 1)) & ~(kAlign - 1));
+	// Try to guess data image end conservatively as the start of the instructions image.
+	ut64 data_image_end = ctx->iso_instr ? ctx->iso_instr : (data_image_base + (1ULL<<22));
+	if (data_image_end < data_image_base) data_image_end = data_image_base + (1ULL<<22);
+	// Pre-scan data image to recover entrypoint->name mapping from Code/Function objects.
+	ctx->name_by_ep = scan_code_names (ctx, data_image_base, data_image_end);
 	// instruction_table_data_offset is optional; if 0, we can't read rodata entries easily.
 	if (itlen == 0) {
 		// nothing to emit
+		if (ctx->name_by_ep) { ht_up_free (ctx->name_by_ep); ctx->name_by_ep = NULL; }
 		if (sym_by_addr) ht_up_free (sym_by_addr);
 		return 0;
 	}
@@ -595,6 +723,15 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		if (resolved && *resolved) {
 			snprintf (name, sizeof (name), "%s", resolved);
 		} else {
+			if (ctx->name_by_ep) {
+				char *ns = (char *)ht_up_find (ctx->name_by_ep, ep, NULL);
+				if (ns && *ns) {
+					snprintf (name, sizeof (name), "%s", ns);
+					if (on_fn) on_fn (name, (unsigned long long)ep, 0, user);
+					if (G_DUMP_IT) fprintf (stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)ep);
+					continue;
+				}
+			}
 			name[0] = '\0';
 			if (sm_off > 0 && sm_off < (1u<<31)) {
 				ut64 saddr = data_image_base + (ut64)sm_off;
