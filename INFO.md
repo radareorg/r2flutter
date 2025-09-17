@@ -91,3 +91,16 @@ Roadmap / Extending
 - Add more snapshot-hash entries (stable channels and popular Flutter engine versions).
 - Auto-fetch VM sources for a given hash/version, precompute richer layout JSON (beyond compressed pointer + tag), and store it in-tree.
 - Expand architecture coverage and add minimal tests to validate decoding of ObjectPool/Code/Function/String relationships.
+
+  Quick r2 oneliners you can reuse
+
+  - Find snapshot symbols in Mach‑O:
+      - r2 -nnq -c 'is~_kDart' test/bins/ios/Runner.app/Frameworks/App.framework/App
+  - Verify snapshot magic at iso_data:
+      - r2 -nnq -c 's 0x1b9600; px 32' test/bins/ios/Runner.app/Frameworks/App.framework/App
+  - Inspect InstructionTable::Data candidate:
+      - Compute cand = iso_data + roundUp(total, ALIGN) + it_off. Try ALIGN=16, 0x100, 0x1000.
+      - Example (Runner, 16‑byte align): r2 -nnq -c 's 0x23ffa2; px 64' test/bins/ios/Runner.app/Frameworks/App.framework/App
+      - Example (AuthPass): r2 -nnq -c 's 0xa0d5d8; px 32' test/bins/ios/AuthPass.app/Frameworks/App.framework/App
+  - Symbol cross‑check near entrypoints:
+      - r2 -nnq -c 'afl~vm|isolate' test/bins/ios/Runner.app/Frameworks/App.framework/App

@@ -1,0 +1,13 @@
+{
+  "name": "json-ios-authpass",
+  "cwd": "test",
+  "cmd": ["../blutter_r2", "--quiet", "--no-dump", "--dump-snapshot-json", "bins/ios/AuthPass.app"],
+  "timeout": 30,
+  "expect": {
+    "json": {
+      "kind": 3,
+      "hash": "f71c76320d35b65f1164dbaa6d95fe09"
+    }
+  }
+}
+

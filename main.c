@@ -28,6 +28,17 @@ static char *find_lib_in_dir(const char *dir) {
 	struct dirent *ent;
 	// Prefer libapp.so explicitly if present
 	char *preferred = NULL;
+
+	// iOS .app bundle support: look for App.framework/App inside Frameworks
+	if (r_str_endswith (dir, ".app")) {
+		char *path = r_str_newf ("%s/Frameworks/App.framework/App", dir);
+		struct stat st;
+		if (path && stat (path, &st) == 0 && S_ISREG (st.st_mode)) {
+			closedir (d);
+			return path;
+		}
+		free (path);
+	}
 	while ((ent = readdir(d)) != NULL) {
 		if (ent->d_name[0] == '.') {
 			continue;

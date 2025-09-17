@@ -104,6 +104,136 @@ static bool read_uleb128_at(RCore *core, ut64 addr, ut64 *out_val, ut64 *out_nex
 	return false;
 }
 
+// Forward decl for minimal string reader
+static bool try_read_dart_string (RCore *core, ut64 addr, char *out, int outsz);
+
+// Parse a packed/varint InstructionsTable::Data format.
+// Heuristic format:
+//   header_len:   uleb128
+//   first_with_code: uleb128
+//   then header_len entries of two uleb128 values each:
+//     pc_offset_delta, sm_off_delta (both non-negative), accumulated over the stream
+// We only emit entries starting at first_with_code.
+static int emit_it_varint (DartCtx *ctx, ut64 addr,
+		ut64 data_image_base, ut64 itlen, ut64 cap,
+		HtUP *sym_by_addr,
+		void (*on_fn)(const char* name, unsigned long long addr, unsigned long long size, void* user),
+		void *user) {
+	if (!ctx || !ctx->core || !on_fn) {
+		return -1;
+	}
+	ut64 p = addr;
+	ut64 header_len = 0, first_with_code = 0;
+	if (!read_uleb128_at (ctx->core, p, &header_len, &p)) return -1;
+	if (!read_uleb128_at (ctx->core, p, &first_with_code, &p)) return -1;
+	if (header_len == 0 || header_len > (1ULL << 26)) return -1;
+	if (first_with_code >= header_len) return -1;
+	// Walk entries accumulating deltas. Keep bounds tight.
+	ut64 pc_acc = 0;
+	ut64 sm_acc = 0;
+	ut64 limit = itlen > cap ? cap : itlen;
+	for (ut64 idx = 0; idx < header_len; idx++) {
+		ut64 dpc = 0, dsm = 0;
+		if (!read_uleb128_at (ctx->core, p, &dpc, &p)) return -1;
+		if (!read_uleb128_at (ctx->core, p, &dsm, &p)) return -1;
+		pc_acc += dpc;
+		sm_acc += dsm;
+		if (idx < first_with_code) {
+			continue;
+		}
+		ut64 i = idx - first_with_code;
+		if (i >= limit) {
+			break;
+		}
+		ut64 ep = ctx->iso_instr + pc_acc;
+		char name[128];
+		name[0] = '\0';
+		if (sm_acc > 0 && sm_acc < (1ULL << 31)) {
+			ut64 saddr = data_image_base + sm_acc;
+			char sname[128];
+			if (try_read_dart_string (ctx->core, saddr, sname, sizeof (sname))) {
+				for (char *q = sname; *q; q++) if ((ut8)*q < 32) *q = ' ';
+				bool looks_ok = false;
+				if (strstr (sname, "package:") || strstr (sname, "dart:")) looks_ok = true;
+				if (!looks_ok && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) looks_ok = true;
+				if (looks_ok) {
+					snprintf (name, sizeof (name), "%s", sname);
+				}
+			}
+		}
+		if (!*name) {
+			snprintf (name, sizeof (name), "method.fn_%"PRIu64, (uint64_t)i);
+		}
+		on_fn (name, (unsigned long long)ep, 0, user);
+		if (G_DUMP_IT) {
+			fprintf (stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)ep);
+		}
+	}
+	return 0;
+}
+
+// Helpers to decode minimal String objects and extract ASCII names from data image.
+static bool is_print_ascii (ut8 ch) {
+	return (ch >= 32 && ch < 127) || ch == '\t';
+}
+
+// Attempt to decode a OneByteString-like object at or near addr.
+// Layout heuristic (64-bit words): tags, length(Smi), hash, then bytes.
+// We try small offsets (0, 8, 16) to account for header variants.
+static bool try_read_dart_string (RCore *core, ut64 addr, char *out, int outsz) {
+	if (!core || !out || outsz <= 1) {
+		return false;
+	}
+	ut8 hdr[32];
+	if (!read_mem (core, addr, hdr, sizeof (hdr))) {
+		return false;
+	}
+	for (int off = 0; off <= 16; off += 8) {
+		ut64 len_smi = *(ut64 *)(hdr + off + 8);
+		ut64 len = 0;
+		if ((len_smi & 1ULL) == 0) {
+			len = len_smi >> 1; // assume SmiTag=0 -> shift 1
+		} else {
+			len = len_smi & 0xffffffffULL; // fallback: 32-bit length
+		}
+		if (len == 0 || len > 1024) {
+			continue;
+		}
+		ut64 str_addr = addr + off + 24; // payload start guess
+		int ok = 1;
+		for (ut64 i = 0; i < len; i++) {
+			ut8 b2 = 0;
+			if (!read_mem (core, str_addr + i, &b2, 1)) { ok = 0; break; }
+			if (!is_print_ascii (b2)) { ok = 0; break; }
+		}
+		if (!ok) {
+			continue;
+		}
+		ut64 cplen = len < (ut64)(outsz - 1) ? len : (ut64)(outsz - 1);
+		if (!read_mem (core, str_addr, (ut8 *)out, (int)cplen)) {
+			continue;
+		}
+		out[cplen] = '\0';
+		return true;
+	}
+	ut8 tmp[256];
+	if (read_mem (core, addr, tmp, sizeof (tmp))) {
+		int start = -1, end = -1;
+		for (int i = 0; i < (int)sizeof (tmp); i++) {
+			if (is_print_ascii (tmp[i])) { if (start < 0) start = i; end = i; }
+			else if (start >= 0) break;
+		}
+		if (start >= 0 && end >= start) {
+			int n = end - start + 1;
+			if (n >= outsz) n = outsz - 1;
+			memcpy (out, tmp + start, n);
+			out[n] = '\0';
+			return true;
+		}
+	}
+	return false;
+}
+
 // Try to classify a snapshot header at base as DATA snapshot by attempting to
 // parse the clustered header fields that only exist in DATA snapshots.
 // Returns true if it looks like a DATA snapshot; false otherwise.
@@ -321,6 +451,8 @@ static int decode_pool_and_emit(DartCtx *ctx,
 				(unsigned long long)total_len,
 				ctx->compressed_word_size);
 	}
+
+
 	// Build symbol cache for name lookup using r_bin APIs (faster than core JSON)
 	HtUP *sym_by_addr = ht_up_new0 ();
 	if (ctx->core && ctx->core->bin && sym_by_addr) {
@@ -360,16 +492,8 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		ut64 limit2 = itlen > cap2 ? cap2 : itlen;
 		for (ut64 i = 0; i < limit2; i++) {
 			ut64 ep = ctx->iso_instr + (i * 4);
-			const char *resolved = NULL;
-			if (sym_by_addr) {
-				RBinSymbol *bs = (RBinSymbol *)ht_up_find (sym_by_addr, ep, NULL);
-				if (bs && bs->name) {
-					resolved = r_bin_name_tostring (bs->name);
-				}
-			}
-			char name[128];
-			if (resolved && *resolved) snprintf (name, sizeof (name), "%s", resolved);
-			else snprintf (name, sizeof (name), "method.fn_%"PRIu64, (uint64_t)i);
+			char name[64];
+			snprintf (name, sizeof (name), "method.fn_%"PRIu64, (uint64_t)i);
 			if (on_fn) on_fn (name, (unsigned long long)ep, 0, user);
 			if (G_DUMP_IT) {
 				fprintf (stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)(ctx->iso_instr + (i * 4)));
@@ -398,7 +522,31 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		}
 	}
 	if (!found) {
+		// Try varint/packed table
+		ut64 cap2 = ctx->layout && ctx->layout->it_cap ? ctx->layout->it_cap : 20000;
+		if (cap2 > 256) cap2 = 256; // keep outputs small/deterministic
+		int okv = -1;
+		for (int delta = -64; delta <= 64; delta += 4) {
+			okv = emit_it_varint (ctx, cand + delta, data_image_base, itlen, cap2, sym_by_addr, on_fn, user);
+			if (okv == 0) break;
+		}
+		if (okv == 0) {
+			if (sym_by_addr) ht_up_free (sym_by_addr);
+			return 0;
+		}
 		fprintf(stderr, "[r2flutter] Could not locate InstructionsTable::Data at 0x%"PFMT64x"\n", (ut64)(data_image_base + itdata));
+		// Fallback: sequential entrypoints when table is not found
+		ut64 limit2 = itlen > cap2 ? cap2 : itlen;
+		for (ut64 i = 0; i < limit2; i++) {
+			ut64 ep = ctx->iso_instr + (i * 4);
+			char name[64];
+			snprintf (name, sizeof (name), "method.fn_%"PRIu64, (uint64_t)i);
+			if (on_fn) on_fn (name, (unsigned long long)ep, 0, user);
+			if (G_DUMP_IT) {
+				fprintf (stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)(ctx->iso_instr + (i * 4)));
+			}
+		}
+		if (sym_by_addr) ht_up_free (sym_by_addr);
 		return 0;
 	}
 	// Read DataEntry array (header_len entries), each entry is {uint32 pc_offset; uint32 sm_offset}
@@ -406,6 +554,21 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	ut64 entries_addr = cand + 8;
 	// Sanity cap
 	if (header_len > 200000) header_len = 200000;
+	if (first_with_code >= header_len) {
+		// Bad header; fall back to sequential enumeration
+		ut64 cap2 = ctx->layout && ctx->layout->it_cap ? ctx->layout->it_cap : 20000;
+		if (cap2 > 256) cap2 = 256;
+		ut64 limit2 = itlen > cap2 ? cap2 : itlen;
+		for (ut64 i = 0; i < limit2; i++) {
+			ut64 ep = ctx->iso_instr + (i * 4);
+			char name[64];
+			snprintf (name, sizeof (name), "method.fn_%"PRIu64, (uint64_t)i);
+			if (on_fn) on_fn (name, (unsigned long long)ep, 0, user);
+			if (G_DUMP_IT) fprintf (stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)ep);
+		}
+		if (sym_by_addr) ht_up_free (sym_by_addr);
+		return 0;
+	}
 	// We need pc offsets for indices first_with_code .. first_with_code + itlen - 1
 	// We'll read those selectively instead of allocating the whole array.
 	ut64 cap = ctx->layout && ctx->layout->it_cap ? ctx->layout->it_cap : 20000;
@@ -419,7 +582,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			break;
 		}
 		uint32_t pc_offset = *(uint32_t*)(ebuf + 0);
-		// uint32_t sm_off = *(uint32_t*)(ebuf + 4);
+		uint32_t sm_off = *(uint32_t*)(ebuf + 4);
 		ut64 ep = ctx->iso_instr + (ut64)pc_offset;
 		const char *resolved = NULL;
 		if (sym_by_addr) {
@@ -429,8 +592,33 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			}
 		}
 		char name[128];
-		if (resolved && *resolved) snprintf(name, sizeof(name), "%s", resolved);
-		else snprintf(name, sizeof(name), "method.fn_%"PRIu64, (uint64_t)i);
+		if (resolved && *resolved) {
+			snprintf (name, sizeof (name), "%s", resolved);
+		} else {
+			name[0] = '\0';
+			if (sm_off > 0 && sm_off < (1u<<31)) {
+				ut64 saddr = data_image_base + (ut64)sm_off;
+				char sname[128];
+				if (try_read_dart_string (ctx->core, saddr, sname, sizeof (sname))) {
+					for (char *p = sname; *p; p++) if ((ut8)*p < 32) *p = ' ';
+					bool looks_ok = false;
+					if (strstr (sname, "package:") || strstr (sname, "dart:")) {
+						looks_ok = true;
+					}
+					if (!looks_ok) {
+						if (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':')) {
+							looks_ok = true;
+						}
+					}
+					if (looks_ok) {
+						snprintf (name, sizeof (name), "%s", sname);
+					}
+				}
+			}
+			if (!*name) {
+				snprintf (name, sizeof (name), "method.fn_%"PRIu64, (uint64_t)i);
+			}
+		}
 		if (on_fn) on_fn(name, (unsigned long long)ep, 0, user);
 		if (G_DUMP_IT) {
 			fprintf(stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)ep);

@@ -1,0 +1,12 @@
+{
+  "name": "dump-fns-ios-runner",
+  "cwd": "test",
+  "cmd": ["../blutter_r2", "--quiet", "--no-dump", "--no-stubs", "--dump-fns", "10", "bins/ios/Runner.app"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "method.fn_0"
+    ]
+  }
+}
+

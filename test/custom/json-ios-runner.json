@@ -1,0 +1,13 @@
+{
+  "name": "json-ios-runner",
+  "cwd": "test",
+  "cmd": ["../blutter_r2", "--quiet", "--no-dump", "--dump-snapshot-json", "bins/ios/Runner.app"],
+  "timeout": 30,
+  "expect": {
+    "json": {
+      "kind": 3,
+      "hash": "d20a1be77c3d3c41b2a5accaee1ce549"
+    }
+  }
+}
+
