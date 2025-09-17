@@ -12,12 +12,12 @@
 // This file will progressively implement decoding without Dart VM deps.
 
 typedef struct {
-    char hash[33]; // snapshot hash as ASCII (32 chars)
-    int compressed_word_size; // 4 or 8
-    int heap_object_tag;      // usually 1
-    int max_alignment;        // alignment for DataImage rounding (default 16)
-    ut64 it_cap;              // cap for instruction table entries to emit
-                              // Future: offsets for Code.entry_point, Code.size, Function.name, etc.
+	char hash[33]; // snapshot hash as ASCII (32 chars)
+	int compressed_word_size; // 4 or 8
+	int heap_object_tag;      // usually 1
+	int max_alignment;        // alignment for DataImage rounding (default 16)
+	ut64 it_cap;              // cap for instruction table entries to emit
+				  // Future: offsets for Code.entry_point, Code.size, Function.name, etc.
 } DartVerLayout;
 
 #if 0
@@ -35,25 +35,25 @@ static const DartVerLayout* pick_layout_by_hash(const char* hash) {
 }
 #else
 static const DartVerLayout* pick_layout_by_hash(const char* hash) {
-    DartVerLayout *dvl = R_NEW0 (DartVerLayout);
-    dvl->compressed_word_size = 4;
-    dvl->heap_object_tag = 4;
-    dvl->max_alignment = 16;
-    dvl->it_cap = 20000;
-    (void)hash;
-    return dvl;
+	DartVerLayout *dvl = R_NEW0 (DartVerLayout);
+	dvl->compressed_word_size = 4;
+	dvl->heap_object_tag = 4;
+	dvl->max_alignment = 16;
+	dvl->it_cap = 20000;
+	(void)hash;
+	return dvl;
 }
 #endif
 
 typedef struct {
-    RCore *core;
-    ut64 vm_data;
-    ut64 vm_instr;
-    ut64 iso_data;
-    ut64 iso_instr;
-    char snapshot_hash[33];
-    const DartVerLayout *layout;
-    int compressed_word_size; // derived from flags or layout
+	RCore *core;
+	ut64 vm_data;
+	ut64 vm_instr;
+	ut64 iso_data;
+	ut64 iso_instr;
+	char snapshot_hash[33];
+	const DartVerLayout *layout;
+	int compressed_word_size; // derived from flags or layout
 } DartCtx;
 
 // Debug/diagnostic controls
@@ -122,14 +122,14 @@ static const DartVerLayout* load_layout_from_json(const char *hash, DartVerLayou
 	if (h && *h) strncpy(out->hash, h, 32);
 	else strncpy(out->hash, hash, 32);
 	out->hash[32] = '\0';
-    out->compressed_word_size = (int)r_json_get_num(item, "compressed_word_size");
-    out->heap_object_tag = (int)r_json_get_num(item, "heap_object_tag");
-    int mal = (int)r_json_get_num(item, "max_alignment");
-    out->max_alignment = mal > 0 ? mal : 16;
-    ut64 cap = (ut64)r_json_get_num(item, "it_cap");
-    out->it_cap = cap > 0 ? cap : 20000;
-    r_json_free(j);
-    return out;
+	out->compressed_word_size = (int)r_json_get_num(item, "compressed_word_size");
+	out->heap_object_tag = (int)r_json_get_num(item, "heap_object_tag");
+	int mal = (int)r_json_get_num(item, "max_alignment");
+	out->max_alignment = mal > 0 ? mal : 16;
+	ut64 cap = (ut64)r_json_get_num(item, "it_cap");
+	out->it_cap = cap > 0 ? cap : 20000;
+	r_json_free(j);
+	return out;
 }
 
 static bool read_string_at(RCore *core, ut64 addr, char *out, int maxlen) {
@@ -154,10 +154,10 @@ static void extract_snapshot_hash_flags(RCore *core, ut64 vm_data, char out_hash
 		memcpy(out_hash, buf + 20, 32);
 		out_hash[32] = '\0';
 	}
-    const char *flags = (const char *)(buf + 20 + 32);
-    if (G_VERBOSE > 0) {
-        fprintf(stderr, "[r2flutter] snapshot_hash=%.*s flags=%.128s\n", 32, (const char*)(buf + 20), flags);
-    }
+	const char *flags = (const char *)(buf + 20 + 32);
+	if (G_VERBOSE > 0) {
+		fprintf(stderr, "[r2flutter] snapshot_hash=%.*s flags=%.128s\n", 32, (const char*)(buf + 20), flags);
+	}
 }
 
 static void derive_layout_from_flags(DartCtx *ctx) {
@@ -206,46 +206,46 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	// length (excluding magic) + magic size yields total
 	uint64_t length_ex_magic = *(uint64_t*)(hdr + 4);
 	uint64_t total_len = length_ex_magic + 4;
-    uint64_t kind = *(uint64_t*)(hdr + 12);
-    // Skip version+features header.
-    // In AOT, the version string is NOT guaranteed to be NUL-terminated,
-    // while the features string IS NUL-terminated and follows immediately.
-    // So from the position after header, we advance to the first NUL byte,
-    // which marks the end of the features string.
-    ut64 cursor = base + 4 + 8 + 8; // after header
-    // Scan up to a reasonable cap to find the 0 terminator of features
-    const int max_scan = 1024;
-    ut8 b = 0;
-    int scanned = 0;
-    while (scanned < max_scan) {
-        if (!read_mem(ctx->core, cursor + scanned, &b, 1)) {
-            break;
-        }
-        if (b == '\0') {
-            break;
-        }
-        scanned++;
-    }
-    if (b != '\0') {
-        // couldn't find terminator; continue, but LEB128 parsing may fail
-        if (G_VERBOSE > 0) {
-            eprintf("[r2flutter] warning: could not find features terminator within %d bytes\n", max_scan);
-        }
-    } else if (G_VERBOSE > 1) {
-        // For debugging, try to print a tail of what we scanned (it's the end of features)
-        int toshow = scanned > 128 ? 128 : scanned;
-        char feat[129];
-        memset(feat, 0, sizeof(feat));
-        // read up to toshow bytes ending at scanned position
-        int start = scanned - toshow;
-        for (int i = 0; i < toshow; i++) {
-            ut8 ch = 0;
-            if (!read_mem(ctx->core, cursor + start + i, &ch, 1)) break;
-            feat[i] = (ch >= 32 && ch < 127) ? (char)ch : '.';
-        }
-        eprintf("[r2flutter] features tail: %s\n", feat);
-    }
-    cursor += (ut64)(scanned + 1);
+	uint64_t kind = *(uint64_t*)(hdr + 12);
+	// Skip version+features header.
+	// In AOT, the version string is NOT guaranteed to be NUL-terminated,
+	// while the features string IS NUL-terminated and follows immediately.
+	// So from the position after header, we advance to the first NUL byte,
+	// which marks the end of the features string.
+	ut64 cursor = base + 4 + 8 + 8; // after header
+					// Scan up to a reasonable cap to find the 0 terminator of features
+	const int max_scan = 1024;
+	ut8 b = 0;
+	int scanned = 0;
+	while (scanned < max_scan) {
+		if (!read_mem(ctx->core, cursor + scanned, &b, 1)) {
+			break;
+		}
+		if (b == '\0') {
+			break;
+		}
+		scanned++;
+	}
+	if (b != '\0') {
+		// couldn't find terminator; continue, but LEB128 parsing may fail
+		if (G_VERBOSE > 0) {
+			eprintf("[r2flutter] warning: could not find features terminator within %d bytes\n", max_scan);
+		}
+	} else if (G_VERBOSE > 1) {
+		// For debugging, try to print a tail of what we scanned (it's the end of features)
+		int toshow = scanned > 128 ? 128 : scanned;
+		char feat[129];
+		memset(feat, 0, sizeof(feat));
+		// read up to toshow bytes ending at scanned position
+		int start = scanned - toshow;
+		for (int i = 0; i < toshow; i++) {
+			ut8 ch = 0;
+			if (!read_mem(ctx->core, cursor + start + i, &ch, 1)) break;
+			feat[i] = (ch >= 32 && ch < 127) ? (char)ch : '.';
+		}
+		eprintf("[r2flutter] features tail: %s\n", feat);
+	}
+	cursor += (ut64)(scanned + 1);
 	// Now clustered header (Deserializer::Deserialize):
 	// num_base_objects, num_objects, num_clusters, instructions_table_len, instruction_table_data_offset
 	// These are encoded as unsigned LEB128 in Dart snapshot streams.
@@ -257,31 +257,45 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	if (!read_uleb128_at(ctx->core, next, &nc, &next)) return -1;
 	if (!read_uleb128_at(ctx->core, next, &itlen, &next)) return -1;
 	if (!read_uleb128_at(ctx->core, next, &itdata, &next)) return -1;
-    if (G_VERBOSE > 0) {
-        fprintf(stderr, "[r2flutter] snapshot clustered header: base_objs=%"PRIu64" objs=%"PRIu64" clusters=%"PRIu64" it_len=%"PRIu64" it_data_off=%"PRIu64" total_len=%"PRIu64"\n",
-            (uint64_t)nb,(uint64_t)no,(uint64_t)nc,(uint64_t)itlen,(uint64_t)itdata,(uint64_t)total_len);
-    }
+	if (G_VERBOSE > 0) {
+		fprintf(stderr, "[r2flutter] snapshot clustered header: base_objs=%"PRIu64" objs=%"PRIu64" clusters=%"PRIu64" it_len=%"PRIu64" it_data_off=%"PRIu64" total_len=%"PRIu64"\n",
+				(uint64_t)nb,(uint64_t)no,(uint64_t)nc,(uint64_t)itlen,(uint64_t)itdata,(uint64_t)total_len);
+	}
 
-    if (G_DUMP_SNAPSHOT_JSON) {
-        // Emit a compact single-line JSON with basic snapshot info
-        printf("{\"kind\":%llu,\"hash\":\"%s\",\"vm_data\":%llu,\"vm_instr\":%llu,\"iso_data\":%llu,\"iso_instr\":%llu,\"cluster\":{\"base\":%llu,\"objs\":%llu,\"clusters\":%llu,\"it_len\":%llu,\"it_off\":%llu,\"total\":%llu},\"cws\":%d}\n",
-            (unsigned long long)kind,
-            ctx->snapshot_hash,
-            (unsigned long long)ctx->vm_data,
-            (unsigned long long)ctx->vm_instr,
-            (unsigned long long)ctx->iso_data,
-            (unsigned long long)ctx->iso_instr,
-            (unsigned long long)nb,
-            (unsigned long long)no,
-            (unsigned long long)nc,
-            (unsigned long long)itlen,
-            (unsigned long long)itdata,
-            (unsigned long long)total_len,
-            ctx->compressed_word_size);
-    }
-	// Build symbol cache for name lookup
-	char *is = r_core_cmd_str(ctx->core, "isj");
-	RJson *jsyms = is ? r_json_parse(is) : NULL;
+	if (G_DUMP_SNAPSHOT_JSON) {
+		// Emit a compact single-line JSON with basic snapshot info
+		printf("{\"kind\":%llu,\"hash\":\"%s\",\"vm_data\":%llu,\"vm_instr\":%llu,\"iso_data\":%llu,\"iso_instr\":%llu,\"cluster\":{\"base\":%llu,\"objs\":%llu,\"clusters\":%llu,\"it_len\":%llu,\"it_off\":%llu,\"total\":%llu},\"cws\":%d}\n",
+				(unsigned long long)kind,
+				ctx->snapshot_hash,
+				(unsigned long long)ctx->vm_data,
+				(unsigned long long)ctx->vm_instr,
+				(unsigned long long)ctx->iso_data,
+				(unsigned long long)ctx->iso_instr,
+				(unsigned long long)nb,
+				(unsigned long long)no,
+				(unsigned long long)nc,
+				(unsigned long long)itlen,
+				(unsigned long long)itdata,
+				(unsigned long long)total_len,
+				ctx->compressed_word_size);
+	}
+	// Build symbol cache for name lookup using r_bin APIs (faster than core JSON)
+	HtUP *sym_by_addr = ht_up_new0 ();
+	if (ctx->core && ctx->core->bin && sym_by_addr) {
+		RVecRBinSymbol *v = r_bin_get_symbols_vec (ctx->core->bin);
+		if (v) {
+			RBinSymbol *sym;
+			R_VEC_FOREACH (v, sym) {
+				if (!sym) continue;
+				if (sym->type && strcmp (sym->type, R_BIN_TYPE_FUNC_STR)) {
+					continue;
+				}
+				if (sym->vaddr) {
+					ht_up_insert (sym_by_addr, sym->vaddr, sym);
+				}
+			}
+		}
+	}
 	// Attempt to enumerate code entrypoints using InstructionsTable rodata.
 	if (!ctx->iso_instr) {
 		// Without instructions image base, we cannot map pc_offsets to addresses.
@@ -289,39 +303,40 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	}
 	// Compute data image base = iso_data + RoundUp(total_len, kMaxObjectAlignment)
 	// Use 16-byte alignment as a reasonable default on 64-bit.
-    ut64 kAlign = ctx->layout && ctx->layout->max_alignment ? (ut64)ctx->layout->max_alignment : 16;
+	ut64 kAlign = ctx->layout && ctx->layout->max_alignment ? (ut64)ctx->layout->max_alignment : 16;
 	ut64 data_image_base = base + ((total_len + (kAlign - 1)) & ~(kAlign - 1));
 	// instruction_table_data_offset is optional; if 0, we can't read rodata entries easily.
 	if (itlen == 0) {
 		// nothing to emit
+		if (sym_by_addr) ht_up_free (sym_by_addr);
 		return 0;
 	}
 	if (itdata == 0) {
 		// We don't have rodata pointer. Emit sequential functions with a fixed stride as last resort.
-        for (ut64 i = 0; i < itlen; i++) {
-		ut64 ep = ctx->iso_instr + (i * 4);
-		// try lookup symbol name at address
-		const char *resolved = NULL;
-		if (jsyms) {
-			for (size_t si = 0;; si++) {
-				const RJson *it = r_json_item(jsyms, si);
-				if (!it) break;
-				const char *t = r_json_get_str(it, "type");
-				if (!t || strcmp(t, "FUNC")) continue;
-				ut64 sa = (ut64)r_json_get_num(it, "vaddr"); if (!sa) sa = (ut64)r_json_get_num(it, "plt");
-				if (sa == ep) { resolved = r_json_get_str(it, "name"); break; }
+		ut64 cap2 = ctx->layout && ctx->layout->it_cap ? ctx->layout->it_cap : 20000;
+		ut64 limit2 = itlen > cap2 ? cap2 : itlen;
+		// Use RBin APIs and caching for symbol lookups to improve performance
+		for (ut64 i = 0; i < limit2; i++) {
+			ut64 ep = ctx->iso_instr + (i * 4);
+			// try lookup symbol name at address via r_bin cache
+			const char *resolved = NULL;
+			if (sym_by_addr) {
+				RBinSymbol *bs = (RBinSymbol *)ht_up_find (sym_by_addr, ep, NULL);
+				if (bs && bs->name) {
+					resolved = bs->name->name ? bs->name->name : (bs->name->oname ? bs->name->oname : bs->name->fname);
+				}
+			}
+			char name[128];
+			if (resolved && *resolved) snprintf(name, sizeof(name), "%s", resolved);
+			else snprintf(name, sizeof(name), "method.fn_%"PRIu64, (uint64_t)i);
+			if (on_fn) on_fn(name, (unsigned long long)ep, 0, user);
+			if (G_DUMP_IT) {
+				fprintf(stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)(ctx->iso_instr + (i * 4)));
 			}
 		}
-		char name[128];
-		if (resolved && *resolved) snprintf(name, sizeof(name), "%s", resolved);
-		else snprintf(name, sizeof(name), "method.fn_%"PRIu64, (uint64_t)i);
-		if (on_fn) on_fn(name, (unsigned long long)ep, 0, user);
-            if (G_DUMP_IT) {
-                fprintf(stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)(ctx->iso_instr + (i * 4)));
-            }
-        }
-        return 0;
-    }
+		if (sym_by_addr) ht_up_free (sym_by_addr);
+		return 0;
+	}
 	// Try to locate InstructionsTable::Data bytes. It's stored in a String object.
 	// We heuristically scan around data_image_base + itdata to find a header where
 	//   header.length is reasonable and header.first_entry_with_code < header.length.
@@ -350,45 +365,41 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	ut64 entries_addr = cand + 8;
 	// Sanity cap
 	if (header_len > 200000) header_len = 200000;
-    // We need pc offsets for indices first_with_code .. first_with_code + itlen - 1
-    // We'll read those selectively instead of allocating the whole array.
-    ut64 cap = ctx->layout && ctx->layout->it_cap ? ctx->layout->it_cap : 20000;
-    ut64 limit = itlen > cap ? cap : itlen;
-    for (ut64 i = 0; i < limit; i++) {
-        ut64 idx = (ut64)first_with_code + i;
-        if (idx >= header_len) break;
-        ut64 entry_addr = entries_addr + idx * 8;
-        ut8 ebuf[8];
-        if (!read_mem(ctx->core, entry_addr, ebuf, sizeof(ebuf))) {
-            break;
-        }
-        uint32_t pc_offset = *(uint32_t*)(ebuf + 0);
-        // uint32_t sm_off = *(uint32_t*)(ebuf + 4);
-        ut64 ep = ctx->iso_instr + (ut64)pc_offset;
-        const char *resolved = NULL;
-        if (jsyms) {
-            for (size_t si = 0;; si++) {
-                const RJson *it = r_json_item(jsyms, si);
-                if (!it) break;
-                const char *t = r_json_get_str(it, "type");
-                if (!t || strcmp(t, "FUNC")) continue;
-                ut64 sa = (ut64)r_json_get_num(it, "vaddr"); if (!sa) sa = (ut64)r_json_get_num(it, "plt");
-                if (sa == ep) { resolved = r_json_get_str(it, "name"); break; }
-            }
-        }
-        char name[128];
-        if (resolved && *resolved) snprintf(name, sizeof(name), "%s", resolved);
-        else snprintf(name, sizeof(name), "method.fn_%"PRIu64, (uint64_t)i);
-        if (on_fn) on_fn(name, (unsigned long long)ep, 0, user);
-        if (G_DUMP_IT) {
-            fprintf(stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)ep);
-        }
-    }
-    if (jsyms) { r_json_free(jsyms); free(is); }
-    return 0;
+	// We need pc offsets for indices first_with_code .. first_with_code + itlen - 1
+	// We'll read those selectively instead of allocating the whole array.
+	ut64 cap = ctx->layout && ctx->layout->it_cap ? ctx->layout->it_cap : 20000;
+	ut64 limit = itlen > cap ? cap : itlen;
+	for (ut64 i = 0; i < limit; i++) {
+		ut64 idx = (ut64)first_with_code + i;
+		if (idx >= header_len) break;
+		ut64 entry_addr = entries_addr + idx * 8;
+		ut8 ebuf[8];
+		if (!read_mem(ctx->core, entry_addr, ebuf, sizeof(ebuf))) {
+			break;
+		}
+		uint32_t pc_offset = *(uint32_t*)(ebuf + 0);
+		// uint32_t sm_off = *(uint32_t*)(ebuf + 4);
+		ut64 ep = ctx->iso_instr + (ut64)pc_offset;
+		const char *resolved = NULL;
+		if (sym_by_addr) {
+			RBinSymbol *bs = (RBinSymbol *)ht_up_find (sym_by_addr, ep, NULL);
+			if (bs && bs->name) {
+				resolved = bs->name->name ? bs->name->name : (bs->name->oname ? bs->name->oname : bs->name->fname);
+			}
+		}
+		char name[128];
+		if (resolved && *resolved) snprintf(name, sizeof(name), "%s", resolved);
+		else snprintf(name, sizeof(name), "method.fn_%"PRIu64, (uint64_t)i);
+		if (on_fn) on_fn(name, (unsigned long long)ep, 0, user);
+		if (G_DUMP_IT) {
+			fprintf(stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)ep);
+		}
+	}
+	if (sym_by_addr) ht_up_free (sym_by_addr);
+	return 0;
 }
 // Standalone AOT snapshot/ObjectPool parser (no Dart VM deps)
- // Snapshot discovery is implemented in find_snapshots_with_r2; pool decoding is handled in decode_pool_and_emit.
+// Snapshot discovery is implemented in find_snapshots_with_r2; pool decoding is handled in decode_pool_and_emit.
 // For now it’s a stub that returns not implemented.
 
 static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso_data, ut64 *iso_instr) {
@@ -552,80 +563,80 @@ static void emit_stub_symbols(RCore *core,
 }
 
 static bool parse_num_from_str(const char *s, ut64 *out) {
-    if (!s || !*s || !out) return false;
-    // supports 0x... or decimal
-    if (!strncmp(s, "0x", 2) || !strncmp(s, "0X", 2)) {
-        *out = (ut64)strtoull(s + 2, NULL, 16);
-        return true;
-    }
-    *out = (ut64)strtoull(s, NULL, 10);
-    return true;
+	if (!s || !*s || !out) return false;
+	// supports 0x... or decimal
+	if (!strncmp(s, "0x", 2) || !strncmp(s, "0X", 2)) {
+		*out = (ut64)strtoull(s + 2, NULL, 16);
+		return true;
+	}
+	*out = (ut64)strtoull(s, NULL, 10);
+	return true;
 }
 
 static ut64 find_pp_base_via_r2(RCore *core, ut64 iso_instr) {
-    if (!core || !iso_instr) return 0;
-    // Try a handful of candidate PCs around iso_instr for prologues setting x27.
-    for (int k = 0; k < 256; k++) {
-        ut64 pc = iso_instr + (ut64)(k * 4 * 8);
-        char cmd[128];
-        snprintf(cmd, sizeof(cmd), "pdj 6 @ 0x%"PFMT64x, (uint64_t)pc);
-        char *s = r_core_cmd_str(core, cmd);
-        if (!s) continue;
-        RJson *j = r_json_parse(s);
-        free(s);
-        if (!j) continue;
-        // Look for pattern: adrp x27, <addr>; add x27, x27, <imm>
-        const char *adrp_addr = NULL;
-        const char *add_imm = NULL;
-        for (int i = 0; i < 6; i++) {
-            const RJson *item = r_json_item(j, i);
-            if (!item) break;
-            const char *op = r_json_get_str(item, "op");
-            const char *opstr = r_json_get_str(item, "opstr");
-            if (!op && !opstr) continue;
-            const char *suse = opstr ? opstr : op;
-            if (!suse) continue;
-            if (!adrp_addr) {
-                const char *p = strstr(suse, "adrp x27, ");
-                if (p) {
-                    p += strlen("adrp x27, ");
-                    adrp_addr = strdup(p);
-                    break; // need parse again to get clean
-                }
-            }
-        }
-        if (adrp_addr) {
-            // reparse to find add imm
-            for (int i = 0; i < 6; i++) {
-                const RJson *item = r_json_item(j, i);
-                if (!item) break;
-                const char *opstr = r_json_get_str(item, "opstr");
-                if (!opstr) opstr = r_json_get_str(item, "op");
-                if (!opstr) continue;
-                const char *p = strstr(opstr, "add x27, x27, ");
-                if (p) {
-                    p += strlen("add x27, x27, ");
-                    add_imm = strdup(p);
-                    break;
-                }
-            }
-        }
-        r_json_free(j);
-        if (adrp_addr && add_imm) {
-            // trim tokens
-            char *comma = strchr((char*)adrp_addr, ' ');
-            if (comma) *comma = 0;
-            ut64 page_base = 0, imm = 0;
-            if (parse_num_from_str(adrp_addr, &page_base) && parse_num_from_str(add_imm, &imm)) {
-                free((void*)adrp_addr); free((void*)add_imm);
-                return page_base + imm;
-            }
-            free((void*)adrp_addr); free((void*)add_imm);
-        } else {
-            free((void*)adrp_addr); free((void*)add_imm);
-        }
-    }
-    return 0;
+	if (!core || !iso_instr) return 0;
+	// Try a handful of candidate PCs around iso_instr for prologues setting x27.
+	for (int k = 0; k < 256; k++) {
+		ut64 pc = iso_instr + (ut64)(k * 4 * 8);
+		char cmd[128];
+		snprintf(cmd, sizeof(cmd), "pdj 6 @ 0x%"PFMT64x, (uint64_t)pc);
+		char *s = r_core_cmd_str(core, cmd);
+		if (!s) continue;
+		RJson *j = r_json_parse(s);
+		free(s);
+		if (!j) continue;
+		// Look for pattern: adrp x27, <addr>; add x27, x27, <imm>
+		const char *adrp_addr = NULL;
+		const char *add_imm = NULL;
+		for (int i = 0; i < 6; i++) {
+			const RJson *item = r_json_item(j, i);
+			if (!item) break;
+			const char *op = r_json_get_str(item, "op");
+			const char *opstr = r_json_get_str(item, "opstr");
+			if (!op && !opstr) continue;
+			const char *suse = opstr ? opstr : op;
+			if (!suse) continue;
+			if (!adrp_addr) {
+				const char *p = strstr(suse, "adrp x27, ");
+				if (p) {
+					p += strlen("adrp x27, ");
+					adrp_addr = strdup(p);
+					break; // need parse again to get clean
+				}
+			}
+		}
+		if (adrp_addr) {
+			// reparse to find add imm
+			for (int i = 0; i < 6; i++) {
+				const RJson *item = r_json_item(j, i);
+				if (!item) break;
+				const char *opstr = r_json_get_str(item, "opstr");
+				if (!opstr) opstr = r_json_get_str(item, "op");
+				if (!opstr) continue;
+				const char *p = strstr(opstr, "add x27, x27, ");
+				if (p) {
+					p += strlen("add x27, x27, ");
+					add_imm = strdup(p);
+					break;
+				}
+			}
+		}
+		r_json_free(j);
+		if (adrp_addr && add_imm) {
+			// trim tokens
+			char *comma = strchr((char*)adrp_addr, ' ');
+			if (comma) *comma = 0;
+			ut64 page_base = 0, imm = 0;
+			if (parse_num_from_str(adrp_addr, &page_base) && parse_num_from_str(add_imm, &imm)) {
+				free((void*)adrp_addr); free((void*)add_imm);
+				return page_base + imm;
+			}
+			free((void*)adrp_addr); free((void*)add_imm);
+		} else {
+			free((void*)adrp_addr); free((void*)add_imm);
+		}
+	}
+	return 0;
 }
 
 int dart_pool_enumerate(RCore *core, const char* libapp_path,
@@ -654,21 +665,21 @@ int dart_pool_enumerate(RCore *core, const char* libapp_path,
 			ctx.layout = pick_layout_by_hash(ctx.snapshot_hash);
 		}
 		derive_layout_from_flags(&ctx);
-        // Debug: dump first 32 bytes of isolate snapshot data
-        if (G_VERBOSE > 1) {
-            ut8 peek[32] = {0};
-            if (read_mem(core, iso_data, peek, sizeof(peek))) {
-                fprintf(stderr, "[r2flutter] iso_data[0..32]: ");
-                for (int i = 0; i < 32; i++) {
-                    fprintf(stderr, "%02x", (unsigned int)peek[i]);
-                }
-                fprintf(stderr, "\n");
-            }
-        }
-        // Emit FUNC symbols available in the binary (e.g., VM stubs)
-        if (!G_NO_STUBS) {
-            emit_stub_symbols (core, on_fn, user);
-        }
+		// Debug: dump first 32 bytes of isolate snapshot data
+		if (G_VERBOSE > 1) {
+			ut8 peek[32] = {0};
+			if (read_mem(core, iso_data, peek, sizeof(peek))) {
+				fprintf(stderr, "[r2flutter] iso_data[0..32]: ");
+				for (int i = 0; i < 32; i++) {
+					fprintf(stderr, "%02x", (unsigned int)peek[i]);
+				}
+				fprintf(stderr, "\n");
+			}
+		}
+		// Emit FUNC symbols available in the binary (e.g., VM stubs)
+		if (!G_NO_STUBS) {
+			emit_stub_symbols (core, on_fn, user);
+		}
 		// Decode and emit functions from ObjectPool if layout is known (WIP)
 		(void)decode_pool_and_emit (&ctx, on_fn, user);
 		// Try to guess PP base (global ObjectPool) using adrp/add prologue pattern

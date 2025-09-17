@@ -7,6 +7,14 @@ Build
 - Requires radare2 dev headers (`r_core`) and `pkg-config`.
 - Build with `make` (uses pkg-config to resolve r2 includes/libs).
 
+Coding Rules
+- `R_NEW`/`R_NEW0` macros never return NULL
+- Do not check for null before calling free methods
+- The `r_json_parse` does not own the string passed, we must free it after freeing the parser
+- Function calls require a space before the parenthesis. (p.ex: Use `foo ()` instead of `foo()`)
+- Use tabs instead of spaces to indent the code
+- Follow the `radare2` coding style
+
 Reference Sources
 - Third party code is found in the `./third_party` directory
 - radare2 source code `./third_party/radare2` see the `libr/include` directory for the headers
