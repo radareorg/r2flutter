@@ -107,14 +107,19 @@ char *dart_dumper_dump4radare2(DartApp* app) {
 	if (app->functions) {
 		RListIter *it;
 		DartFunction *fn;
-		r_list_foreach (app->functions, it, fn) {
-			if (!fn || !fn->name) {
-				continue;
-			}
-			r_strf_var (safe, 1024, "%s", fn->name);
-			r_name_filter (safe, 0);
+	r_list_foreach (app->functions, it, fn) {
+		if (!fn || !fn->name) {
+			continue;
+		}
+		r_strf_var (safe, 1024, "%s", fn->name);
+		r_name_filter (safe, 0);
+		// Avoid double 'method.' prefix if the name already includes it
+		if (r_str_startswith (safe, "method.")) {
+			r_strbuf_appendf (sb, "f %s = 0x%"PFMT64x"\n", safe, (uint64_t)fn->addr);
+		} else {
 			r_strbuf_appendf (sb, "f method.%s = 0x%"PFMT64x"\n", safe, (uint64_t)fn->addr);
-			r_strbuf_appendf (sb, "'@0x%"PFMT64x"'CC %s\n", (uint64_t)fn->addr, fn->name);
+		}
+		r_strbuf_appendf (sb, "'@0x%"PFMT64x"'CC %s\n", (uint64_t)fn->addr, fn->name);
 		}
 	}
 

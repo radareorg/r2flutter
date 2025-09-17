@@ -9,7 +9,7 @@ EXPECT=<<EOF
 libapp is loaded at 0x0
 Dart heap at 0x0
 app->file_path = bins/android/first//libapp.so
-Found 1477 functions (from Dart ObjectPool)
+Found 1727 functions (from Dart ObjectPool)
 Dumping for radare2
 # create flags for libraries, classes and methods
 e emu.str=true
@@ -2969,6 +2969,506 @@ f method._objectHashCode = 0xa9d7c
 '@0xa9d7c'CC _objectHashCode
 f method._objectEquals = 0xa9dd0
 '@0xa9dd0'CC _objectEquals
+f method.fn_0 = 0x66700
+'@0x66700'CC method.fn_0
+f method.fn_1 = 0x66704
+'@0x66704'CC method.fn_1
+f method.fn_2 = 0x66708
+'@0x66708'CC method.fn_2
+f method.fn_3 = 0x6670c
+'@0x6670c'CC method.fn_3
+f method.fn_4 = 0x66710
+'@0x66710'CC method.fn_4
+f method.fn_5 = 0x66714
+'@0x66714'CC method.fn_5
+f method.fn_6 = 0x66718
+'@0x66718'CC method.fn_6
+f method.fn_7 = 0x6671c
+'@0x6671c'CC method.fn_7
+f method.fn_8 = 0x66720
+'@0x66720'CC method.fn_8
+f method.fn_9 = 0x66724
+'@0x66724'CC method.fn_9
+f method.fn_10 = 0x66728
+'@0x66728'CC method.fn_10
+f method.fn_11 = 0x6672c
+'@0x6672c'CC method.fn_11
+f method.fn_12 = 0x66730
+'@0x66730'CC method.fn_12
+f method.fn_13 = 0x66734
+'@0x66734'CC method.fn_13
+f method.fn_14 = 0x66738
+'@0x66738'CC method.fn_14
+f method.fn_15 = 0x6673c
+'@0x6673c'CC method.fn_15
+f method.fn_16 = 0x66740
+'@0x66740'CC method.fn_16
+f method.fn_17 = 0x66744
+'@0x66744'CC method.fn_17
+f method.fn_18 = 0x66748
+'@0x66748'CC method.fn_18
+f method.fn_19 = 0x6674c
+'@0x6674c'CC method.fn_19
+f method.fn_20 = 0x66750
+'@0x66750'CC method.fn_20
+f method.fn_21 = 0x66754
+'@0x66754'CC method.fn_21
+f method.fn_22 = 0x66758
+'@0x66758'CC method.fn_22
+f method.fn_23 = 0x6675c
+'@0x6675c'CC method.fn_23
+f method.fn_24 = 0x66760
+'@0x66760'CC method.fn_24
+f method.fn_25 = 0x66764
+'@0x66764'CC method.fn_25
+f method.fn_27 = 0x6676c
+'@0x6676c'CC method.fn_27
+f method.fn_28 = 0x66770
+'@0x66770'CC method.fn_28
+f method.fn_29 = 0x66774
+'@0x66774'CC method.fn_29
+f method.fn_30 = 0x66778
+'@0x66778'CC method.fn_30
+f method.fn_31 = 0x6677c
+'@0x6677c'CC method.fn_31
+f method.fn_32 = 0x66780
+'@0x66780'CC method.fn_32
+f method.fn_33 = 0x66784
+'@0x66784'CC method.fn_33
+f method.fn_34 = 0x66788
+'@0x66788'CC method.fn_34
+f method.fn_35 = 0x6678c
+'@0x6678c'CC method.fn_35
+f method.fn_36 = 0x66790
+'@0x66790'CC method.fn_36
+f method.fn_38 = 0x66798
+'@0x66798'CC method.fn_38
+f method.fn_39 = 0x6679c
+'@0x6679c'CC method.fn_39
+f method.fn_41 = 0x667a4
+'@0x667a4'CC method.fn_41
+f method.fn_42 = 0x667a8
+'@0x667a8'CC method.fn_42
+f method.fn_43 = 0x667ac
+'@0x667ac'CC method.fn_43
+f method.fn_44 = 0x667b0
+'@0x667b0'CC method.fn_44
+f method.fn_45 = 0x667b4
+'@0x667b4'CC method.fn_45
+f method.fn_46 = 0x667b8
+'@0x667b8'CC method.fn_46
+f method.fn_47 = 0x667bc
+'@0x667bc'CC method.fn_47
+f method.fn_48 = 0x667c0
+'@0x667c0'CC method.fn_48
+f method.fn_49 = 0x667c4
+'@0x667c4'CC method.fn_49
+f method.fn_50 = 0x667c8
+'@0x667c8'CC method.fn_50
+f method.fn_51 = 0x667cc
+'@0x667cc'CC method.fn_51
+f method.fn_52 = 0x667d0
+'@0x667d0'CC method.fn_52
+f method.fn_53 = 0x667d4
+'@0x667d4'CC method.fn_53
+f method.fn_54 = 0x667d8
+'@0x667d8'CC method.fn_54
+f method.fn_55 = 0x667dc
+'@0x667dc'CC method.fn_55
+f method.fn_56 = 0x667e0
+'@0x667e0'CC method.fn_56
+f method.fn_57 = 0x667e4
+'@0x667e4'CC method.fn_57
+f method.fn_58 = 0x667e8
+'@0x667e8'CC method.fn_58
+f method.fn_59 = 0x667ec
+'@0x667ec'CC method.fn_59
+f method.fn_60 = 0x667f0
+'@0x667f0'CC method.fn_60
+f method.fn_61 = 0x667f4
+'@0x667f4'CC method.fn_61
+f method.fn_62 = 0x667f8
+'@0x667f8'CC method.fn_62
+f method.fn_63 = 0x667fc
+'@0x667fc'CC method.fn_63
+f method.fn_64 = 0x66800
+'@0x66800'CC method.fn_64
+f method.fn_66 = 0x66808
+'@0x66808'CC method.fn_66
+f method.fn_67 = 0x6680c
+'@0x6680c'CC method.fn_67
+f method.fn_68 = 0x66810
+'@0x66810'CC method.fn_68
+f method.fn_69 = 0x66814
+'@0x66814'CC method.fn_69
+f method.fn_70 = 0x66818
+'@0x66818'CC method.fn_70
+f method.fn_71 = 0x6681c
+'@0x6681c'CC method.fn_71
+f method.fn_72 = 0x66820
+'@0x66820'CC method.fn_72
+f method.fn_73 = 0x66824
+'@0x66824'CC method.fn_73
+f method.fn_74 = 0x66828
+'@0x66828'CC method.fn_74
+f method.fn_75 = 0x6682c
+'@0x6682c'CC method.fn_75
+f method.fn_76 = 0x66830
+'@0x66830'CC method.fn_76
+f method.fn_77 = 0x66834
+'@0x66834'CC method.fn_77
+f method.fn_78 = 0x66838
+'@0x66838'CC method.fn_78
+f method.fn_79 = 0x6683c
+'@0x6683c'CC method.fn_79
+f method.fn_80 = 0x66840
+'@0x66840'CC method.fn_80
+f method.fn_81 = 0x66844
+'@0x66844'CC method.fn_81
+f method.fn_82 = 0x66848
+'@0x66848'CC method.fn_82
+f method.fn_83 = 0x6684c
+'@0x6684c'CC method.fn_83
+f method.fn_84 = 0x66850
+'@0x66850'CC method.fn_84
+f method.fn_85 = 0x66854
+'@0x66854'CC method.fn_85
+f method.fn_86 = 0x66858
+'@0x66858'CC method.fn_86
+f method.fn_87 = 0x6685c
+'@0x6685c'CC method.fn_87
+f method.fn_88 = 0x66860
+'@0x66860'CC method.fn_88
+f method.fn_89 = 0x66864
+'@0x66864'CC method.fn_89
+f method.fn_90 = 0x66868
+'@0x66868'CC method.fn_90
+f method.fn_91 = 0x6686c
+'@0x6686c'CC method.fn_91
+f method.fn_92 = 0x66870
+'@0x66870'CC method.fn_92
+f method.fn_93 = 0x66874
+'@0x66874'CC method.fn_93
+f method.fn_94 = 0x66878
+'@0x66878'CC method.fn_94
+f method.fn_95 = 0x6687c
+'@0x6687c'CC method.fn_95
+f method.fn_96 = 0x66880
+'@0x66880'CC method.fn_96
+f method.fn_97 = 0x66884
+'@0x66884'CC method.fn_97
+f method.fn_98 = 0x66888
+'@0x66888'CC method.fn_98
+f method.fn_99 = 0x6688c
+'@0x6688c'CC method.fn_99
+f method.fn_100 = 0x66890
+'@0x66890'CC method.fn_100
+f method.fn_101 = 0x66894
+'@0x66894'CC method.fn_101
+f method.fn_102 = 0x66898
+'@0x66898'CC method.fn_102
+f method.fn_103 = 0x6689c
+'@0x6689c'CC method.fn_103
+f method.fn_104 = 0x668a0
+'@0x668a0'CC method.fn_104
+f method.fn_105 = 0x668a4
+'@0x668a4'CC method.fn_105
+f method.fn_106 = 0x668a8
+'@0x668a8'CC method.fn_106
+f method.fn_107 = 0x668ac
+'@0x668ac'CC method.fn_107
+f method.fn_108 = 0x668b0
+'@0x668b0'CC method.fn_108
+f method.fn_109 = 0x668b4
+'@0x668b4'CC method.fn_109
+f method.fn_110 = 0x668b8
+'@0x668b8'CC method.fn_110
+f method.fn_111 = 0x668bc
+'@0x668bc'CC method.fn_111
+f method.fn_112 = 0x668c0
+'@0x668c0'CC method.fn_112
+f method.fn_113 = 0x668c4
+'@0x668c4'CC method.fn_113
+f method.fn_114 = 0x668c8
+'@0x668c8'CC method.fn_114
+f method.fn_115 = 0x668cc
+'@0x668cc'CC method.fn_115
+f method.fn_116 = 0x668d0
+'@0x668d0'CC method.fn_116
+f method.fn_117 = 0x668d4
+'@0x668d4'CC method.fn_117
+f method.fn_118 = 0x668d8
+'@0x668d8'CC method.fn_118
+f method.fn_119 = 0x668dc
+'@0x668dc'CC method.fn_119
+f method.fn_120 = 0x668e0
+'@0x668e0'CC method.fn_120
+f method.fn_121 = 0x668e4
+'@0x668e4'CC method.fn_121
+f method.fn_122 = 0x668e8
+'@0x668e8'CC method.fn_122
+f method.fn_123 = 0x668ec
+'@0x668ec'CC method.fn_123
+f method.fn_124 = 0x668f0
+'@0x668f0'CC method.fn_124
+f method.fn_125 = 0x668f4
+'@0x668f4'CC method.fn_125
+f method.fn_126 = 0x668f8
+'@0x668f8'CC method.fn_126
+f method.fn_127 = 0x668fc
+'@0x668fc'CC method.fn_127
+f method.fn_128 = 0x66900
+'@0x66900'CC method.fn_128
+f method.fn_129 = 0x66904
+'@0x66904'CC method.fn_129
+f method.fn_130 = 0x66908
+'@0x66908'CC method.fn_130
+f method.fn_131 = 0x6690c
+'@0x6690c'CC method.fn_131
+f method.fn_132 = 0x66910
+'@0x66910'CC method.fn_132
+f method.fn_133 = 0x66914
+'@0x66914'CC method.fn_133
+f method.fn_134 = 0x66918
+'@0x66918'CC method.fn_134
+f method.fn_135 = 0x6691c
+'@0x6691c'CC method.fn_135
+f method.fn_136 = 0x66920
+'@0x66920'CC method.fn_136
+f method.fn_137 = 0x66924
+'@0x66924'CC method.fn_137
+f method.fn_138 = 0x66928
+'@0x66928'CC method.fn_138
+f method.fn_139 = 0x6692c
+'@0x6692c'CC method.fn_139
+f method.fn_140 = 0x66930
+'@0x66930'CC method.fn_140
+f method.fn_141 = 0x66934
+'@0x66934'CC method.fn_141
+f method.fn_142 = 0x66938
+'@0x66938'CC method.fn_142
+f method.fn_143 = 0x6693c
+'@0x6693c'CC method.fn_143
+f method.fn_144 = 0x66940
+'@0x66940'CC method.fn_144
+f method.fn_145 = 0x66944
+'@0x66944'CC method.fn_145
+f method.fn_146 = 0x66948
+'@0x66948'CC method.fn_146
+f method.fn_147 = 0x6694c
+'@0x6694c'CC method.fn_147
+f method.fn_148 = 0x66950
+'@0x66950'CC method.fn_148
+f method.fn_149 = 0x66954
+'@0x66954'CC method.fn_149
+f method.fn_150 = 0x66958
+'@0x66958'CC method.fn_150
+f method.fn_151 = 0x6695c
+'@0x6695c'CC method.fn_151
+f method.fn_152 = 0x66960
+'@0x66960'CC method.fn_152
+f method.fn_153 = 0x66964
+'@0x66964'CC method.fn_153
+f method.fn_154 = 0x66968
+'@0x66968'CC method.fn_154
+f method.fn_155 = 0x6696c
+'@0x6696c'CC method.fn_155
+f method.fn_156 = 0x66970
+'@0x66970'CC method.fn_156
+f method.fn_157 = 0x66974
+'@0x66974'CC method.fn_157
+f method.fn_158 = 0x66978
+'@0x66978'CC method.fn_158
+f method.fn_159 = 0x6697c
+'@0x6697c'CC method.fn_159
+f method.fn_160 = 0x66980
+'@0x66980'CC method.fn_160
+f method.fn_161 = 0x66984
+'@0x66984'CC method.fn_161
+f method.fn_162 = 0x66988
+'@0x66988'CC method.fn_162
+f method.fn_163 = 0x6698c
+'@0x6698c'CC method.fn_163
+f method.fn_164 = 0x66990
+'@0x66990'CC method.fn_164
+f method.fn_165 = 0x66994
+'@0x66994'CC method.fn_165
+f method.fn_166 = 0x66998
+'@0x66998'CC method.fn_166
+f method.fn_167 = 0x6699c
+'@0x6699c'CC method.fn_167
+f method.fn_168 = 0x669a0
+'@0x669a0'CC method.fn_168
+f method.fn_169 = 0x669a4
+'@0x669a4'CC method.fn_169
+f method.fn_170 = 0x669a8
+'@0x669a8'CC method.fn_170
+f method.fn_171 = 0x669ac
+'@0x669ac'CC method.fn_171
+f method.fn_172 = 0x669b0
+'@0x669b0'CC method.fn_172
+f method.fn_174 = 0x669b8
+'@0x669b8'CC method.fn_174
+f method.fn_175 = 0x669bc
+'@0x669bc'CC method.fn_175
+f method.fn_176 = 0x669c0
+'@0x669c0'CC method.fn_176
+f method.fn_177 = 0x669c4
+'@0x669c4'CC method.fn_177
+f method.fn_178 = 0x669c8
+'@0x669c8'CC method.fn_178
+f method.fn_179 = 0x669cc
+'@0x669cc'CC method.fn_179
+f method.fn_180 = 0x669d0
+'@0x669d0'CC method.fn_180
+f method.fn_181 = 0x669d4
+'@0x669d4'CC method.fn_181
+f method.fn_182 = 0x669d8
+'@0x669d8'CC method.fn_182
+f method.fn_183 = 0x669dc
+'@0x669dc'CC method.fn_183
+f method.fn_184 = 0x669e0
+'@0x669e0'CC method.fn_184
+f method.fn_185 = 0x669e4
+'@0x669e4'CC method.fn_185
+f method.fn_186 = 0x669e8
+'@0x669e8'CC method.fn_186
+f method.fn_187 = 0x669ec
+'@0x669ec'CC method.fn_187
+f method.fn_188 = 0x669f0
+'@0x669f0'CC method.fn_188
+f method.fn_189 = 0x669f4
+'@0x669f4'CC method.fn_189
+f method.fn_190 = 0x669f8
+'@0x669f8'CC method.fn_190
+f method.fn_191 = 0x669fc
+'@0x669fc'CC method.fn_191
+f method.fn_192 = 0x66a00
+'@0x66a00'CC method.fn_192
+f method.fn_193 = 0x66a04
+'@0x66a04'CC method.fn_193
+f method.fn_194 = 0x66a08
+'@0x66a08'CC method.fn_194
+f method.fn_195 = 0x66a0c
+'@0x66a0c'CC method.fn_195
+f method.fn_196 = 0x66a10
+'@0x66a10'CC method.fn_196
+f method.fn_197 = 0x66a14
+'@0x66a14'CC method.fn_197
+f method.fn_198 = 0x66a18
+'@0x66a18'CC method.fn_198
+f method.fn_199 = 0x66a1c
+'@0x66a1c'CC method.fn_199
+f method.fn_200 = 0x66a20
+'@0x66a20'CC method.fn_200
+f method.fn_201 = 0x66a24
+'@0x66a24'CC method.fn_201
+f method.fn_202 = 0x66a28
+'@0x66a28'CC method.fn_202
+f method.fn_203 = 0x66a2c
+'@0x66a2c'CC method.fn_203
+f method.fn_204 = 0x66a30
+'@0x66a30'CC method.fn_204
+f method.fn_205 = 0x66a34
+'@0x66a34'CC method.fn_205
+f method.fn_206 = 0x66a38
+'@0x66a38'CC method.fn_206
+f method.fn_207 = 0x66a3c
+'@0x66a3c'CC method.fn_207
+f method.fn_208 = 0x66a40
+'@0x66a40'CC method.fn_208
+f method.fn_209 = 0x66a44
+'@0x66a44'CC method.fn_209
+f method.fn_210 = 0x66a48
+'@0x66a48'CC method.fn_210
+f method.fn_211 = 0x66a4c
+'@0x66a4c'CC method.fn_211
+f method.fn_212 = 0x66a50
+'@0x66a50'CC method.fn_212
+f method.fn_213 = 0x66a54
+'@0x66a54'CC method.fn_213
+f method.fn_214 = 0x66a58
+'@0x66a58'CC method.fn_214
+f method.fn_215 = 0x66a5c
+'@0x66a5c'CC method.fn_215
+f method.fn_216 = 0x66a60
+'@0x66a60'CC method.fn_216
+f method.fn_217 = 0x66a64
+'@0x66a64'CC method.fn_217
+f method.fn_218 = 0x66a68
+'@0x66a68'CC method.fn_218
+f method.fn_219 = 0x66a6c
+'@0x66a6c'CC method.fn_219
+f method.fn_220 = 0x66a70
+'@0x66a70'CC method.fn_220
+f method.fn_221 = 0x66a74
+'@0x66a74'CC method.fn_221
+f method.fn_222 = 0x66a78
+'@0x66a78'CC method.fn_222
+f method.fn_223 = 0x66a7c
+'@0x66a7c'CC method.fn_223
+f method.fn_224 = 0x66a80
+'@0x66a80'CC method.fn_224
+f method.fn_225 = 0x66a84
+'@0x66a84'CC method.fn_225
+f method.fn_226 = 0x66a88
+'@0x66a88'CC method.fn_226
+f method.fn_227 = 0x66a8c
+'@0x66a8c'CC method.fn_227
+f method.fn_228 = 0x66a90
+'@0x66a90'CC method.fn_228
+f method.fn_229 = 0x66a94
+'@0x66a94'CC method.fn_229
+f method.fn_231 = 0x66a9c
+'@0x66a9c'CC method.fn_231
+f method.fn_232 = 0x66aa0
+'@0x66aa0'CC method.fn_232
+f method.fn_233 = 0x66aa4
+'@0x66aa4'CC method.fn_233
+f method.fn_234 = 0x66aa8
+'@0x66aa8'CC method.fn_234
+f method.fn_235 = 0x66aac
+'@0x66aac'CC method.fn_235
+f method.fn_236 = 0x66ab0
+'@0x66ab0'CC method.fn_236
+f method.fn_237 = 0x66ab4
+'@0x66ab4'CC method.fn_237
+f method.fn_238 = 0x66ab8
+'@0x66ab8'CC method.fn_238
+f method.fn_239 = 0x66abc
+'@0x66abc'CC method.fn_239
+f method.fn_240 = 0x66ac0
+'@0x66ac0'CC method.fn_240
+f method.fn_241 = 0x66ac4
+'@0x66ac4'CC method.fn_241
+f method.fn_242 = 0x66ac8
+'@0x66ac8'CC method.fn_242
+f method.fn_243 = 0x66acc
+'@0x66acc'CC method.fn_243
+f method.fn_244 = 0x66ad0
+'@0x66ad0'CC method.fn_244
+f method.fn_245 = 0x66ad4
+'@0x66ad4'CC method.fn_245
+f method.fn_246 = 0x66ad8
+'@0x66ad8'CC method.fn_246
+f method.fn_247 = 0x66adc
+'@0x66adc'CC method.fn_247
+f method.fn_248 = 0x66ae0
+'@0x66ae0'CC method.fn_248
+f method.fn_249 = 0x66ae4
+'@0x66ae4'CC method.fn_249
+f method.fn_250 = 0x66ae8
+'@0x66ae8'CC method.fn_250
+f method.fn_251 = 0x66aec
+'@0x66aec'CC method.fn_251
+f method.fn_252 = 0x66af0
+'@0x66af0'CC method.fn_252
+f method.fn_253 = 0x66af4
+'@0x66af4'CC method.fn_253
+f method.fn_254 = 0x66af8
+'@0x66af8'CC method.fn_254
+f method.fn_255 = 0x66afc
+'@0x66afc'CC method.fn_255
 dr x27=`e anal.gp`
 'f PP=x27
 
