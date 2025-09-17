@@ -14,7 +14,9 @@
       "heap_object_tag": 1,
       "max_alignment": 16,
       "it_cap": 20000,
-      "notes": "iOS Runner.app; packed InstructionsTable varint layout"
+      "code_entry_point_offsets": [],
+      "code_owner_offsets": [],
+      "function_name_offsets": []
     },
     "f71c76320d35b65f1164dbaa6d95fe09": {
       "hash": "f71c76320d35b65f1164dbaa6d95fe09",
@@ -22,7 +24,9 @@
       "heap_object_tag": 1,
       "max_alignment": 16,
       "it_cap": 20000,
-      "notes": "iOS AuthPass.app; plain 8-byte DataEntry layout"
+      "code_entry_point_offsets": [],
+      "code_owner_offsets": [],
+      "function_name_offsets": []
     }
   }
 }

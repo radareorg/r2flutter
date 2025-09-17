@@ -26,6 +26,10 @@ int dart_pool_is_quiet(void);
 void dart_pool_set_dump_fns(int n);
 int dart_pool_get_dump_fns(void);
 
+// If true, map generic entries to human-readable names found in data image
+void dart_pool_set_use_name_pool(int on);
+int dart_pool_get_use_name_pool(void);
+
 #ifdef __cplusplus
 }
 #endif

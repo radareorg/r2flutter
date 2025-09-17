@@ -74,6 +74,7 @@ static void print_usage(const char* argv0) {
     printf("  --quiet                    Suppress non-essential stdout (only JSON if requested)\n");
     printf("  --no-dump                  Do not emit radare2 flags/script to stdout\n");
     printf("  --dump-fns N               Print first N functions (addr name) to stdout\n");
+    printf("  --use-name-pool            Assign names from data image strings when unknown\n");
 }
 
 int main(int argc, char** argv) {
@@ -111,6 +112,8 @@ int main(int argc, char** argv) {
                 dart_pool_set_quiet(1);
             } else if (!strcmp(a, "--no-dump")) {
                 opt_no_dump = 1;
+            } else if (!strcmp(a, "--use-name-pool")) {
+                dart_pool_set_use_name_pool(1);
             } else if (!strncmp(a, "--dump-fns=", 11)) {
                 int n = atoi(a + 11);
                 if (n > 0) dart_pool_set_dump_fns(n);

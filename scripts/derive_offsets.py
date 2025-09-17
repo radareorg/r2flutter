@@ -65,6 +65,7 @@ def derive_offsets(target):
     align = 16
     base = iso_data + round_up(total, align)
     end = iso_instr if iso_instr > base else base + (1<<22)
+    # Candidate offsets within Code and Function objects (64-bit typical)
     ep_cands = [0x10,0x18,0x20,0x28,0x30]
     owner_cands = [0x10,0x18,0x20,0x28,0x30]
     name_cands = [0x10,0x18,0x20,0x28,0x30]
@@ -77,25 +78,53 @@ def derive_offsets(target):
         addrs = search_hex(target, base, end, hexpat)
         names.extend(addrs)
 
-    # For each name address, search for pointers to it within data image
+    # For each candidate String address, locate owner(Function) via pointers.
+    # Consider both 64-bit and 32-bit compressed pointers.
     max_hits = 800
     for sa in names[:200]:  # cap initial string candidates
-        le = sa.to_bytes(8, 'little').hex()
-        ptrs = search_hex(target, base, end, le)
-        for p in ptrs[:8]:  # cap per-name refs
-            for no in name_cands:
-                owner = p - no
+        le_name = sa.to_bytes(8, 'little').hex()
+        owner_ptrs = search_hex(target, base, end, le_name)
+        # also try 32-bit compressed encodings for (sa-base)
+        rel = sa - base
+        for sh in (0,1,2,3):
+            enc = (rel >> sh) & 0xffffffff
+            for tag in (0,1,3,7):
+                val = (enc | tag) & 0xffffffff
+                le4 = val.to_bytes(4, 'little').hex()
+                owner_ptrs += search_hex(target, base, end, le4)
+        # Each owner_ptr is at (owner + name_off)
+        for owner_ptr in owner_ptrs[:12]:  # cap per-name refs
+            for name_off in name_cands:
+                owner = owner_ptr - name_off
                 if owner < base or owner >= end:
                     continue
-                for eo in ep_cands:
-                    ep = read_qword(target, owner + eo)
-                    if ep >= iso_instr and ep - iso_instr < (1<<26) and (ep & 3) == 0:
-                        good_ep.add(eo)
-                        good_owner.add(no)
-                        good_name.add(no)
-                        max_hits -= 1
+                # Find Code.owner refs: pointers to 'owner' within range (64-bit and 32-bit compressed)
+                le_owner = owner.to_bytes(8, 'little').hex()
+                code_owner_ptrs = search_hex(target, base, end, le_owner)
+                rel_owner = owner - base
+                for sh2 in (0,1,2,3):
+                    enc2 = (rel_owner >> sh2) & 0xffffffff
+                    for tag2 in (0,1,3,7):
+                        val2 = (enc2 | tag2) & 0xffffffff
+                        code_owner_ptrs += search_hex(target, base, end, val2.to_bytes(4, 'little').hex())
+                for cop in code_owner_ptrs[:16]:
+                    # cop == (code_base + owner_off)
+                    for owner_off in owner_cands:
+                        code_base = cop - owner_off
+                        if code_base < base or code_base >= end:
+                            continue
+                        for ep_off in ep_cands:
+                            ep = read_qword(target, code_base + ep_off)
+                            if iso_instr <= ep < iso_instr + (1<<26) and (ep & 3) == 0:
+                                good_owner.add(owner_off)
+                                good_name.add(name_off)
+                                good_ep.add(ep_off)
+                                max_hits -= 1
+                                break
                         if max_hits <= 0:
                             break
+                    if max_hits <= 0:
+                        break
                 if max_hits <= 0:
                     break
             if max_hits <= 0:

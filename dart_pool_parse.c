@@ -6,6 +6,7 @@
 #include <r_io.h>
 #include <r_util/r_json.h>
 #include <r_util/r_file.h>
+#include <r_list.h>
 #include "dart_pool_parse.h"
 
 // Minimal, standalone AOT snapshot/ObjectPool decoder scaffolding.
@@ -55,6 +56,8 @@ typedef struct {
 	const DartVerLayout *layout;
 	int compressed_word_size; // derived from flags or layout
 	HtUP *name_by_ep; // optional ep->name mapping from data image scan
+	RList *name_pool; // optional pool of discovered names (strings)
+	int name_pool_idx;
 } DartCtx;
 
 // Debug/diagnostic controls
@@ -64,6 +67,7 @@ static int G_DUMP_SNAPSHOT_JSON = 0;
 static int G_DUMP_IT = 0;
 static int G_QUIET = 0;
 static int G_DUMP_FNS = 0;
+static int G_USE_NAME_POOL = 0;
 
 void dart_pool_set_verbose(int level) { G_VERBOSE = level; }
 void dart_pool_set_no_stubs(int on) { G_NO_STUBS = on ? 1 : 0; }
@@ -73,6 +77,8 @@ void dart_pool_set_quiet(int on) { G_QUIET = on ? 1 : 0; }
 int dart_pool_is_quiet(void) { return G_QUIET; }
 void dart_pool_set_dump_fns(int n) { G_DUMP_FNS = n; }
 int dart_pool_get_dump_fns(void) { return G_DUMP_FNS; }
+void dart_pool_set_use_name_pool(int on) { G_USE_NAME_POOL = on ? 1 : 0; }
+int dart_pool_get_use_name_pool(void) { return G_USE_NAME_POOL; }
 
 static bool read_mem(RCore *core, ut64 addr, void *buf, int len) {
 	if (!core || !buf || len <= 0) return false;
@@ -251,6 +257,40 @@ static void enrich_layout_hints_from_json(LayoutHints *lh, const char *hash) {
 	free (s);
 }
 
+static bool read_heap_ptr(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 *out_abs) {
+	if (!ctx || !out_abs) return false;
+	if (ctx->compressed_word_size == 4) {
+		// Try 64-bit absolute pointer first in case fields are widened
+		ut64 v64_abs = 0;
+		if (read_mem (ctx->core, addr, &v64_abs, sizeof (v64_abs))) {
+			if (v64_abs >= data_image_base && v64_abs < data_image_base + (1ULL<<34)) {
+				*out_abs = v64_abs;
+				return true;
+			}
+		}
+		ut32 v32 = 0;
+		if (!read_mem (ctx->core, addr, &v32, sizeof (v32))) return false;
+		// Try a few common decompression patterns
+		const ut64 masks[] = {0ULL, 1ULL, 3ULL, 7ULL};
+		const ut64 shifts[] = {0ULL, 1ULL, 2ULL, 3ULL};
+		for (int im = 0; im < 4; im++) {
+			for (int is = 0; is < 4; is++) {
+				ut64 off = ((ut64)v32 & ~masks[im]) << shifts[is];
+				ut64 abs = data_image_base + off;
+				if (abs >= data_image_base && abs < data_image_base + (1ULL<<34)) {
+					*out_abs = abs;
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	ut64 v64 = 0;
+	if (!read_mem (ctx->core, addr, &v64, sizeof (v64))) return false;
+	*out_abs = v64;
+	return true;
+}
+
 static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
 	if (!ctx || !ctx->core) return NULL;
 	LayoutHints lh; init_layout_hints (&lh);
@@ -259,7 +299,7 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 	if (!name_by_ep) return NULL;
 	ut64 max_hits = 200;
 	if (data_image_end <= data_image_base) return name_by_ep;
-	for (ut64 a = data_image_base; a + 0x30 < data_image_end; a += 32) {
+	for (ut64 a = data_image_base; a + 0x30 < data_image_end; a += 16) {
 		for (int ie = 0; ie < lh.ep_offs_n; ie++) {
 			ut64 ep = 0;
 			if (!read_mem (ctx->core, a + lh.ep_offs[ie], &ep, sizeof (ep))) continue;
@@ -267,11 +307,11 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 			if (ep - ctx->iso_instr > (1ULL<<24)) continue;
 			for (int io = 0; io < lh.owner_offs_n; io++) {
 				ut64 owner = 0;
-				if (!read_mem (ctx->core, a + lh.owner_offs[io], &owner, sizeof (owner))) continue;
+				if (!read_heap_ptr (ctx, a + lh.owner_offs[io], data_image_base, &owner)) continue;
 				if (owner < data_image_base || owner >= data_image_end) continue;
 				for (int in = 0; in < lh.name_offs_n; in++) {
 					ut64 namep = 0;
-					if (!read_mem (ctx->core, owner + lh.name_offs[in], &namep, sizeof (namep))) continue;
+					if (!read_heap_ptr (ctx, owner + lh.name_offs[in], data_image_base, &namep)) continue;
 					if (namep < data_image_base || namep >= data_image_end) continue;
 					char sname[128];
 					if (try_read_dart_string (ctx->core, namep, sname, sizeof (sname))) {
@@ -292,6 +332,104 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 		}
 	}
 	return name_by_ep;
+}
+
+static RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
+	if (!ctx || !ctx->core) return NULL;
+	const char *needle1 = "package:";
+	const char *needle2 = "dart:";
+	const int chunk = 4096;
+	ut8 buf[chunk];
+	RList *out = r_list_newf (free);
+	if (!out) return NULL;
+	ut64 limit = data_image_end - data_image_base;
+	if (limit > (1ULL<<22)) limit = (1ULL<<22);
+	ut64 cap = 512;
+	for (ut64 off = 0; off < limit; off += (chunk - 8)) {
+		ut64 addr = data_image_base + off;
+		int toread = (int)((off + chunk <= limit) ? chunk : (limit - off));
+		if (toread <= 0) break;
+		if (r_io_read_at (ctx->core->io, addr, buf, toread) != toread) break;
+		for (int i = 0; i + 8 < toread; i++) {
+			if (buf[i] == 'p') {
+				if (i + 8 < toread && !memcmp (buf + i, needle1, 8)) {
+					char s[128]; int k = 0;
+					for (int j = i; j < toread && k < (int)sizeof (s) - 1; j++) {
+						ut8 ch = buf[j];
+						if (ch == '\0') break;
+						if ((ch >= 32 && ch < 127) || ch == '\t') s[k++] = (char)ch; else break;
+					}
+					s[k] = '\0';
+					if (k > 8) {
+						char *dup = strdup (s);
+						if (dup) { r_list_append (out, dup); if (--cap == 0) return out; }
+					}
+				}
+			} else if (buf[i] == 'd') {
+				if (i + 5 < toread && !memcmp (buf + i, needle2, 5)) {
+					char s[128]; int k = 0;
+					for (int j = i; j < toread && k < (int)sizeof (s) - 1; j++) {
+						ut8 ch = buf[j];
+						if (ch == '\0') break;
+						if ((ch >= 32 && ch < 127) || ch == '\t') s[k++] = (char)ch; else break;
+					}
+					s[k] = '\0';
+					if (k > 5) {
+						char *dup = strdup (s);
+						if (dup) { r_list_append (out, dup); if (--cap == 0) return out; }
+					}
+				}
+			}
+		}
+	}
+	return out;
+}
+
+static void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
+	if (!ctx || !ctx->core) return;
+	if (!ctx->name_pool) ctx->name_pool = r_list_newf (free);
+	if (!ctx->name_pool) return;
+	ut64 limit = data_image_end - data_image_base;
+	if (limit > (1ULL<<22)) limit = (1ULL<<22);
+	const char *needles[] = { "package:", "dart:" };
+	char *out = NULL;
+	for (int k = 0; k < 2; k++) {
+		out = r_core_cmd_strf (ctx->core, "e search.in=range; e search.from=0x%"PFMT64x"; e search.to=0x%"PFMT64x"; /c %s\n",
+				data_image_base, data_image_base + limit, needles[k]);
+		if (!out) continue;
+		char *line, *saveptr = NULL;
+		for (line = strtok_r (out, "\n", &saveptr); line; line = strtok_r (NULL, "\n", &saveptr)) {
+			// Expect lines like: 0xADDR hitX_Y package:
+			if (!r_str_startswith (line, "0x")) continue;
+			// Extract address
+			ut64 addr = (ut64)strtoull (line, NULL, 16);
+			char s[128];
+			if (try_read_dart_string (ctx->core, addr, s, sizeof (s))) {
+				char *dup = strdup (s);
+				if (dup) r_list_append (ctx->name_pool, dup);
+			} else {
+				// Fallback: read inline ascii until non-print
+				ut8 buf[128];
+				int n = r_io_read_at (ctx->core->io, addr, buf, sizeof (buf));
+				if (n > 0) {
+					char s2[128]; int z = 0;
+					for (int i = 0; i < n && z < (int)sizeof (s2) - 1; i++) {
+						ut8 ch = buf[i];
+						if (ch == '\0') break;
+						if ((ch >= 32 && ch < 127) || ch == '\t') s2[z++] = (char)ch; else break;
+					}
+					s2[z] = '\0';
+					if (z > 5) {
+						char *dup2 = strdup (s2);
+						if (dup2) r_list_append (ctx->name_pool, dup2);
+					}
+				}
+			}
+			if (r_list_length (ctx->name_pool) >= 512) break;
+		}
+		free (out);
+		if (r_list_length (ctx->name_pool) >= 512) break;
+	}
 }
 
 // Helpers to decode minimal String objects and extract ASCII names from data image.
@@ -604,8 +742,24 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	// Try to guess data image end conservatively as the start of the instructions image.
 	ut64 data_image_end = ctx->iso_instr ? ctx->iso_instr : (data_image_base + (1ULL<<22));
 	if (data_image_end < data_image_base) data_image_end = data_image_base + (1ULL<<22);
+	if (G_VERBOSE > 0) {
+		fprintf (stderr, "[r2flutter] data_image_base=0x%"PFMT64x" data_image_end=0x%"PFMT64x"\n", (ut64)data_image_base, (ut64)data_image_end);
+	}
 	// Pre-scan data image to recover entrypoint->name mapping from Code/Function objects.
 	ctx->name_by_ep = scan_code_names (ctx, data_image_base, data_image_end);
+	// Also collect a pool of human-readable names to use as last-resort fallbacks
+	ctx->name_pool = collect_data_names (ctx, data_image_base, data_image_end);
+	if (!ctx->name_pool || r_list_length (ctx->name_pool) == 0) {
+		// Fall back to r2 search if direct scanning didn't find names
+		collect_data_names_with_r2 (ctx, data_image_base, data_image_end);
+		if (G_VERBOSE > 0 && ctx->name_pool) {
+			fprintf (stderr, "[r2flutter] name_pool(r2)=%d\n", r_list_length (ctx->name_pool));
+		}
+	}
+	ctx->name_pool_idx = 0;
+	if (G_VERBOSE > 0 && ctx->name_pool) {
+		fprintf (stderr, "[r2flutter] name_pool=%d\n", r_list_length (ctx->name_pool));
+	}
 	// instruction_table_data_offset is optional; if 0, we can't read rodata entries easily.
 	if (itlen == 0) {
 		// nothing to emit
@@ -738,17 +892,34 @@ static int decode_pool_and_emit(DartCtx *ctx,
 				char sname[128];
 				if (try_read_dart_string (ctx->core, saddr, sname, sizeof (sname))) {
 					for (char *p = sname; *p; p++) if ((ut8)*p < 32) *p = ' ';
-					bool looks_ok = false;
-					if (strstr (sname, "package:") || strstr (sname, "dart:")) {
-						looks_ok = true;
-					}
-					if (!looks_ok) {
-						if (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':')) {
-							looks_ok = true;
-						}
-					}
+					bool looks_ok = strstr (sname, "package:") || strstr (sname, "dart:");
+					if (!looks_ok && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) looks_ok = true;
 					if (looks_ok) {
 						snprintf (name, sizeof (name), "%s", sname);
+					}
+				}
+				if (!*name) {
+					// Scan a small neighborhood around sm_off for string-like blobs
+					int win = 128;
+					for (int delta = -win; delta <= win; delta += 8) {
+						ut64 cand = saddr + (ut64)delta;
+						char s2[128];
+						if (try_read_dart_string (ctx->core, cand, s2, sizeof (s2))) {
+							for (char *p = s2; *p; p++) if ((ut8)*p < 32) *p = ' ';
+							if (strstr (s2, "package:") || strstr (s2, "dart:") || strchr (s2, '/')) {
+								snprintf (name, sizeof (name), "%s", s2);
+								break;
+							}
+						}
+					}
+				}
+			}
+			if (!*name && G_USE_NAME_POOL) {
+				// Last-resort: take next human-readable name from pool
+				if (ctx->name_pool && ctx->name_pool_idx < r_list_length (ctx->name_pool)) {
+					const char *pooln = (const char *)r_list_get_n (ctx->name_pool, ctx->name_pool_idx++);
+					if (pooln && *pooln) {
+						snprintf (name, sizeof (name), "%s", pooln);
 					}
 				}
 			}
@@ -762,6 +933,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		}
 	}
 	if (sym_by_addr) ht_up_free (sym_by_addr);
+	if (ctx->name_pool) { r_list_free (ctx->name_pool); ctx->name_pool = NULL; }
 	return 0;
 }
 // Standalone AOT snapshot/ObjectPool parser (no Dart VM deps)
