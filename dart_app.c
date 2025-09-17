@@ -9,6 +9,7 @@
 #include <r_list.h>
 #include <r_util/r_name.h>
 #include "dart_app.h"
+#include "dart_pool_parse.h"
 
 // C++ bridge to parse Dart AOT using constant pool (ported from blutter)
 // Implemented in dart_pool_port.cpp
@@ -46,6 +47,13 @@ void dart_app_free(DartApp* app) {
 static void add_fn_cb(const char* name, unsigned long long addr, unsigned long long size, void* user) {
     DartApp* app = (DartApp*)user;
     if (!app || !app->functions) return;
+    // avoid duplicate addresses
+    RListIter *itx; DartFunction *fx;
+    r_list_foreach (app->functions, itx, fx) {
+        if (fx && fx->addr == (ut64)addr) {
+            return; // already added
+        }
+    }
     DartFunction *fn = (DartFunction*)calloc(1, sizeof(DartFunction));
     if (!fn) return;
     fn->addr = (ut64)addr;
@@ -70,7 +78,9 @@ void dart_app_load_info(DartApp* app) {
         app->base_addr = (ut64)base;
         app->heap_base = (ut64)heap_base;
     }
-    printf("Found %d functions (from Dart ObjectPool)\n", app->functions ? r_list_length(app->functions) : 0);
+    if (!dart_pool_is_quiet()) {
+        printf("Found %d functions (from Dart ObjectPool)\n", app->functions ? r_list_length(app->functions) : 0);
+    }
 }
 
 static int ensure_dir(const char *path) {

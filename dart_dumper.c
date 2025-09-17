@@ -22,7 +22,7 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 	if (!core || !offsets) {
 		return;
 	}
-	r_core_cmdf (core, "af@0x%08"PFMT64x, addr);
+	// r_core_cmdf (core, "af@0x%08"PFMT64x, addr);
 	r_strf_var (cmd, 128, "pdfj @ 0x%"PFMT64x, addr);
 	char *s = r_core_cmd_str (core, cmd);
 	if (!s) {

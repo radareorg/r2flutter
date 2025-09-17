@@ -19,8 +19,17 @@ make
 ## Usage
 
 ```bash
-./blutter_r2 <libapp_path> <output_directory>
+./blutter_r2 [options] <libapp_path_or_dir>
 ```
+
+Options
+
+- `-h`, `--help`: Show help
+- `-V`, `--version`: Show version
+- `-v` / `-vv`: Increase verbosity on stderr (prints snapshot hash, header info)
+- `--no-stubs`: Do not emit ELF/r2 stub functions into the output
+- `--dump-snapshot-json`: Print a single-line JSON with snapshot header and clustered header fields
+- `--dump-it`: Print InstructionTable indices and resolved addresses to stderr
 
 ## Dependencies
 
@@ -31,7 +40,7 @@ make
 
 - `main.c` - CLI entry, opens file with radare2
 - `dart_app.c` - App model and integration
-- `dart_pool_parse.c` - Standalone parser entry (finds snapshot blobs via r2; TODO: parse ObjectPool)
+ - `dart_pool_parse.c` - Standalone parser entry (finds snapshot blobs via r2; WIP: decodes clustered snapshot/ObjectPool and emits function entrypoints)
 - `dart_dumper.c` - Emits radare2 scripts and pool offset flags (via PP/x27)
 
 ## Current Status

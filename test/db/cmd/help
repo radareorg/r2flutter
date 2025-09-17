@@ -1,0 +1,18 @@
+NAME=help
+FILE=-
+CMDS=<<EOF
+!!../blutter_r2 -h
+EOF
+EXPECT=<<EOF
+Usage: ../blutter_r2 [options] <libapp_path_or_dir>
+Options:
+  -h, --help                 Show help
+  -V, --version              Show version
+  -v                         Verbose (stderr info)
+  -vv                        More verbose (dump headers)
+  --no-stubs                 Do not emit ELF/r2 stub functions
+  --dump-snapshot-json       Print snapshot header as a single JSON line
+  --dump-it                  Print instruction table entry addresses to stderr
+  --quiet                    Suppress non-essential stdout (only JSON if requested)
+  --no-dump                  Do not emit radare2 flags/script to stdout
+EOF

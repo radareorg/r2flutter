@@ -7,6 +7,7 @@
 #include <r_flag.h>
 #include "dart_app.h"
 #include "dart_dumper.h"
+#include "dart_pool_parse.h"
 
 static bool is_library(const char *name) {
 	return r_str_endswith (name, ".so")
@@ -49,13 +50,76 @@ static char *find_lib_in_dir(const char *dir) {
 	return preferred;
 }
 
-int main(int argc, char** argv) {
-	if (argc < 2) {
-		eprintf ("Usage: %s <libapp_path>\n", argv[0]);
-		return 1;
-	}
+static void print_usage(const char* argv0) {
+    printf("Usage: %s [options] <libapp_path_or_dir>\n", argv0);
+    printf("Options:\n");
+    printf("  -h, --help                 Show help\n");
+    printf("  -V, --version              Show version\n");
+    printf("  -v                         Verbose (stderr info)\n");
+    printf("  -vv                        More verbose (dump headers)\n");
+    printf("  --no-stubs                 Do not emit ELF/r2 stub functions\n");
+    printf("  --dump-snapshot-json       Print snapshot header as a single JSON line\n");
+    printf("  --dump-it                  Print instruction table entry addresses to stderr\n");
+    printf("  --quiet                    Suppress non-essential stdout (only JSON if requested)\n");
+    printf("  --no-dump                  Do not emit radare2 flags/script to stdout\n");
+    printf("  --dump-fns N               Print first N functions (addr name) to stdout\n");
+}
 
-	const char* libapp_path_in = argv[1];
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    const char* libapp_path_in = NULL;
+    int opt_quiet = 0;
+    int opt_no_dump = 0;
+    // Parse flags, keep last non-flag as path
+    for (int i = 1; i < argc; i++) {
+        const char* a = argv[i];
+        if (!a) continue;
+        if (a[0] == '-') {
+            if (!strcmp(a, "-h") || !strcmp(a, "--help")) {
+                print_usage(argv[0]);
+                return 0;
+            } else if (!strcmp(a, "-V") || !strcmp(a, "--version")) {
+                printf("r2flutter 0.1\n");
+                return 0;
+            } else if (!strcmp(a, "-v")) {
+                dart_pool_set_verbose(1);
+            } else if (!strcmp(a, "-vv")) {
+                dart_pool_set_verbose(2);
+            } else if (!strcmp(a, "--no-stubs")) {
+                dart_pool_set_no_stubs(1);
+            } else if (!strcmp(a, "--dump-snapshot-json")) {
+                dart_pool_set_dump_snapshot_json(1);
+            } else if (!strcmp(a, "--dump-it")) {
+                dart_pool_set_dump_it(1);
+            } else if (!strcmp(a, "--quiet")) {
+                opt_quiet = 1;
+                dart_pool_set_quiet(1);
+            } else if (!strcmp(a, "--no-dump")) {
+                opt_no_dump = 1;
+            } else if (!strncmp(a, "--dump-fns=", 11)) {
+                int n = atoi(a + 11);
+                if (n > 0) dart_pool_set_dump_fns(n);
+            } else if (!strcmp(a, "--dump-fns")) {
+                if (i + 1 < argc) {
+                    int n = atoi(argv[i + 1]);
+                    if (n > 0) dart_pool_set_dump_fns(n);
+                    i++;
+                }
+            } else {
+                // Unknown flag, ignore to be lenient
+            }
+        } else {
+            libapp_path_in = a;
+        }
+    }
+    if (!libapp_path_in) {
+        print_usage(argv[0]);
+        return 1;
+    }
 
 	char *libapp_path = NULL;
 	struct stat st;
@@ -116,17 +180,34 @@ int main(int argc, char** argv) {
 	}
 	app->heap_base = 0;
 
-	printf("libapp is loaded at 0x%" PFMT64x "\n", app->base_addr);
-	printf("Dart heap at 0x%" PFMT64x "\n", app->heap_base);
-
-	printf("app->file_path = %s\n", app->file_path ? app->file_path : "(null)");
+    if (!opt_quiet) {
+        printf("libapp is loaded at 0x%" PFMT64x "\n", app->base_addr);
+        printf("Dart heap at 0x%" PFMT64x "\n", app->heap_base);
+        printf("app->file_path = %s\n", app->file_path ? app->file_path : "(null)");
+    }
 
 	dart_app_load_info (app);
 
-	printf ("Dumping for radare2\n");
-	char *s = dart_dumper_dump4radare2 (app);
-	printf ("%s\n", s);
-	free (s);
+	if (dart_pool_get_dump_fns() > 0) {
+		int limit = dart_pool_get_dump_fns();
+		int count = 0;
+		if (app->functions) {
+			RListIter *it;
+			DartFunction *fn;
+			r_list_foreach(app->functions, it, fn) {
+				if (!fn || !fn->name) continue;
+				printf("0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
+				if (++count >= limit) break;
+			}
+		}
+	}
+
+	    if (!opt_no_dump && !opt_quiet) {
+        printf ("Dumping for radare2\n");
+        char *s = dart_dumper_dump4radare2 (app);
+        printf ("%s\n", s);
+        free (s);
+    }
 
 	dart_app_free (app);
 	r_core_free (core);

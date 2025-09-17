@@ -1,0 +1,8 @@
+NAME=json-android
+FILE=-
+CMDS=<<EOF
+!!../blutter_r2 --quiet --no-dump --dump-snapshot-json bins/android/first/
+EOF
+EXPECT=<<EOF
+{"kind":3,"hash":"f91b8b03bf7f30a5e983fd19b23d978d","vm_data":512,"vm_instr":327680,"iso_data":36544,"iso_instr":419584,"cluster":{"base":2,"objs":9993,"clusters":514008,"it_len":1089546,"it_off":0,"total":91657},"cws":4}
+EOF

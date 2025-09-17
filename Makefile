@@ -17,7 +17,11 @@ $(TARGET): $(OBJECTS)
 clean:
 	rm -f $(OBJECTS) $(TARGET)
 
-test:
-	./blutter_r2 ./arm64-v8a o
+test-r2r:
+	r2r -t 30 test/db
+
+test: $(TARGET)
+	@echo "Running custom Python testsuite"
+	@python3 scripts/run_tests.py
 
 .PHONY: all clean test
