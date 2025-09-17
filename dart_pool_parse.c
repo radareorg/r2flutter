@@ -79,14 +79,9 @@ static bool read_mem(RCore *core, ut64 addr, void *buf, int len) {
 	return r > 0;
 }
 
-static RJson* load_offsets_json(void) {
-	char *s = r_file_slurp("r2flutter/offsets.json", NULL);
-	if (!s) s = r_file_slurp("offsets.json", NULL);
-	if (!s) return NULL;
-	RJson *j = r_json_parse(s);
-	//free(s);
-	return j;
-}
+// Note: r_json_parse does not take ownership of the input buffer.
+// We must free the buffer after freeing the parser.
+// Keep parsing local so we can release resources deterministically.
 
 static bool read_uleb128_at(RCore *core, ut64 addr, ut64 *out_val, ut64 *out_next) {
 	// Read unsigned LEB128 value from memory at addr.
@@ -110,25 +105,41 @@ static bool read_uleb128_at(RCore *core, ut64 addr, ut64 *out_val, ut64 *out_nex
 }
 
 static const DartVerLayout* load_layout_from_json(const char *hash, DartVerLayout *out) {
-	RJson *j = load_offsets_json ();
+	if (!hash || !out) {
+		return NULL;
+	}
+	char *s = r_file_slurp("r2flutter/offsets.json", NULL);
+	if (!s) {
+		s = r_file_slurp("offsets.json", NULL);
+	}
+	if (!s) {
+		return NULL;
+	}
+	RJson *j = r_json_parse(s);
 	if (!j) {
+		free (s);
 		return NULL;
 	}
 	const RJson *hashes = r_json_get (j, "hashes");
-	const RJson *item = r_json_get(hashes, hash);
-	if (!item) { r_json_free(j); return NULL; }
-	memset(out, 0, sizeof(*out));
-	const char *h = r_json_get_str(item, "hash");
-	if (h && *h) strncpy(out->hash, h, 32);
-	else strncpy(out->hash, hash, 32);
+	const RJson *item = r_json_get (hashes, hash);
+	if (!item) {
+		r_json_free (j);
+		free (s);
+		return NULL;
+	}
+	memset (out, 0, sizeof (*out));
+	const char *h = r_json_get_str (item, "hash");
+	if (h && *h) strncpy (out->hash, h, 32);
+	else strncpy (out->hash, hash, 32);
 	out->hash[32] = '\0';
-	out->compressed_word_size = (int)r_json_get_num(item, "compressed_word_size");
-	out->heap_object_tag = (int)r_json_get_num(item, "heap_object_tag");
-	int mal = (int)r_json_get_num(item, "max_alignment");
+	out->compressed_word_size = (int)r_json_get_num (item, "compressed_word_size");
+	out->heap_object_tag = (int)r_json_get_num (item, "heap_object_tag");
+	int mal = (int)r_json_get_num (item, "max_alignment");
 	out->max_alignment = mal > 0 ? mal : 16;
-	ut64 cap = (ut64)r_json_get_num(item, "it_cap");
+	ut64 cap = (ut64)r_json_get_num (item, "it_cap");
 	out->it_cap = cap > 0 ? cap : 20000;
-	r_json_free(j);
+	r_json_free (j);
+	free (s);
 	return out;
 }
 

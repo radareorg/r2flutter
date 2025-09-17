@@ -1,0 +1,13 @@
+{
+  "name": "json-android-mafia",
+  "cwd": "test",
+  "cmd": ["../blutter_r2", "--quiet", "--no-dump", "--dump-snapshot-json", "bins/android/mafia/"],
+  "timeout": 30,
+  "expect": {
+    "json": {
+      "kind": 3,
+      "hash": "97ff04a728735e6b6b098bdf983faaba"
+    }
+  }
+}
+
