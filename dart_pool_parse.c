@@ -104,6 +104,50 @@ static bool read_uleb128_at(RCore *core, ut64 addr, ut64 *out_val, ut64 *out_nex
 	return false;
 }
 
+// Try to classify a snapshot header at base as DATA snapshot by attempting to
+// parse the clustered header fields that only exist in DATA snapshots.
+// Returns true if it looks like a DATA snapshot; false otherwise.
+static bool looks_like_data_snapshot(RCore *core, ut64 base, ut64 *out_total_len) {
+	if (!core || !base) return false;
+	ut8 hdr[4 + 8 + 8];
+	if (!read_mem (core, base, hdr, sizeof (hdr))) {
+		return false;
+	}
+	uint32_t magic = *(uint32_t *)(hdr + 0);
+	if (magic != 0xdcdcf5f5) {
+		return false;
+	}
+	uint64_t length_ex_magic = *(uint64_t *)(hdr + 4);
+	uint64_t total_len = length_ex_magic + 4;
+	// skip version+features strings to the first NUL terminator after header
+	ut64 cursor = base + 4 + 8 + 8; // after header
+	const int max_scan = 2048;
+	ut8 b = 0;
+	int scanned = 0;
+	while (scanned < max_scan) {
+		if (!read_mem (core, cursor + scanned, &b, 1)) {
+			return false;
+		}
+		if (b == '\0') break;
+		scanned++;
+	}
+	if (b != '\0') return false;
+	ut64 next = cursor + (ut64)(scanned + 1);
+	// Now clustered header: 5 unsigned LEB128s.
+	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, tmp = next;
+	if (!read_uleb128_at (core, tmp, &nb, &tmp)) return false;
+	if (!read_uleb128_at (core, tmp, &no, &tmp)) return false;
+	if (!read_uleb128_at (core, tmp, &nc, &tmp)) return false;
+	if (!read_uleb128_at (core, tmp, &itlen, &tmp)) return false;
+	if (!read_uleb128_at (core, tmp, &itdata, &tmp)) return false;
+	// Plausibility checks
+	if (nb == 0 || no == 0 || nc == 0) return false;
+	if (itlen > (1ULL << 32)) return false;
+	if (itdata > (1ULL << 40)) return false;
+	if (out_total_len) *out_total_len = total_len;
+	return true;
+}
+
 static const DartVerLayout* load_layout_from_json(const char *hash, DartVerLayout *out) {
 	if (!hash || !out) {
 		return NULL;
@@ -437,10 +481,10 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 		return 0;
 	}
 
-	// 2) Fallback: scan sections for magic using r_bin sections
+	// 2) Fallback: scan sections for magic using r_bin sections and classify
 	RList *sections = r_bin_get_sections (core->bin);
 	const uint32_t kMagic = 0xdcdcf5f5; // Snapshot::kMagicValue
-	ut64 found_addrs[8]; int found_cnt = 0;
+	ut64 found_addrs[32]; int found_cnt = 0;
 	if (sections) {
 		RListIter *it; RBinSection *sec;
 		r_list_foreach (sections, it, sec) {
@@ -457,7 +501,7 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 				for (int j2 = 0; j2 + 4 <= toread; j2 += 4) {
 					uint32_t val = *(uint32_t*)(buf + j2);
 					if (val == kMagic) {
-						if (found_cnt < (int)(sizeof(found_addrs)/sizeof(found_addrs[0]))) {
+						if (found_cnt < (int)(sizeof (found_addrs) / sizeof (found_addrs[0])) ) {
 							found_addrs[found_cnt++] = addr + j2;
 						}
 					}
@@ -468,21 +512,55 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 		}
 	}
 	if (found_cnt >= 1) {
-		ut64 vm_addr = 0, iso_addr = 0;
-		ut64 vm_len = (ut64)-1, iso_len = 0;
+		// Classify candidates into DATA vs INSTR by attempting to parse clustered header
+		ut64 data_addrs[4]; ut64 data_lens[4]; int data_cnt = 0;
+		ut64 instr_addrs[4]; ut64 instr_lens[4]; int instr_cnt = 0;
 		for (int i = 0; i < found_cnt; i++) {
-			ut8 hdr[16];
-			if (r_io_read_at(core->io, found_addrs[i] + 4, hdr, sizeof(hdr)) < 1) {
+			ut8 hdr2[16];
+			if (r_io_read_at (core->io, found_addrs[i] + 4, hdr2, sizeof (hdr2)) < 1) {
 				continue;
 			}
-			uint64_t len = *(uint64_t*)(hdr + 0) + 4; // large_length() adds magic size
-			if (len < vm_len) { vm_len = len; vm_addr = found_addrs[i]; }
-			if (len > iso_len) { iso_len = len; iso_addr = found_addrs[i]; }
+			ut64 total_len = *(uint64_t *)(hdr2 + 0) + 4;
+			ut64 classified_len = 0;
+			bool is_data = looks_like_data_snapshot (core, found_addrs[i], &classified_len);
+			if (is_data) {
+				if (data_cnt < 4) {
+					data_addrs[data_cnt] = found_addrs[i];
+					data_lens[data_cnt] = total_len;
+					data_cnt++;
+				}
+			} else {
+				if (instr_cnt < 4) {
+					instr_addrs[instr_cnt] = found_addrs[i];
+					instr_lens[instr_cnt] = total_len;
+					instr_cnt++;
+				}
+			}
 		}
-		if (vm_addr && iso_addr) {
-			if (vm_data) *vm_data = vm_addr;
-			if (iso_data) *iso_data = iso_addr;
-			return 0; // partial success (data blobs found)
+		// Choose VM/Isolate for DATA: min=len as VM, max=len as ISO
+		if (data_cnt >= 1) {
+			ut64 vm_addr = 0, iso_addr = 0;
+			ut64 vm_len = (ut64)-1, iso_len = 0;
+			for (int i = 0; i < data_cnt; i++) {
+				if (data_lens[i] < vm_len) { vm_len = data_lens[i]; vm_addr = data_addrs[i]; }
+				if (data_lens[i] > iso_len) { iso_len = data_lens[i]; iso_addr = data_addrs[i]; }
+			}
+			if (vm_addr && vm_data) *vm_data = vm_addr;
+			if (iso_addr && iso_data) *iso_data = iso_addr;
+		}
+		// Choose VM/Isolate for INSTR similarly: min as VM_INSTR, max as ISO_INSTR
+		if (instr_cnt >= 1) {
+			ut64 vm_addr = 0, iso_addr = 0;
+			ut64 vm_len = (ut64)-1, iso_len = 0;
+			for (int i = 0; i < instr_cnt; i++) {
+				if (instr_lens[i] < vm_len) { vm_len = instr_lens[i]; vm_addr = instr_addrs[i]; }
+				if (instr_lens[i] > iso_len) { iso_len = instr_lens[i]; iso_addr = instr_addrs[i]; }
+			}
+			if (vm_addr && vm_instr) *vm_instr = vm_addr;
+			if (iso_addr && iso_instr) *iso_instr = iso_addr;
+		}
+		if ((vm_data && *vm_data) || (iso_data && *iso_data) || (vm_instr && *vm_instr) || (iso_instr && *iso_instr)) {
+			return 0;
 		}
 	}
 	return -1;
