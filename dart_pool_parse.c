@@ -311,32 +311,14 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		if (sym_by_addr) ht_up_free (sym_by_addr);
 		return 0;
 	}
-	if (itdata == 0) {
-		// We don't have rodata pointer. Emit sequential functions with a fixed stride as last resort.
-		ut64 cap2 = ctx->layout && ctx->layout->it_cap ? ctx->layout->it_cap : 20000;
-		ut64 limit2 = itlen > cap2 ? cap2 : itlen;
-		// Use RBin APIs and caching for symbol lookups to improve performance
-		for (ut64 i = 0; i < limit2; i++) {
-			ut64 ep = ctx->iso_instr + (i * 4);
-			// try lookup symbol name at address via r_bin cache
-			const char *resolved = NULL;
-			if (sym_by_addr) {
-				RBinSymbol *bs = (RBinSymbol *)ht_up_find (sym_by_addr, ep, NULL);
-				if (bs && bs->name) {
-					resolved = bs->name->name ? bs->name->name : (bs->name->oname ? bs->name->oname : bs->name->fname);
-				}
-			}
-			char name[128];
-			if (resolved && *resolved) snprintf(name, sizeof(name), "%s", resolved);
-			else snprintf(name, sizeof(name), "method.fn_%"PRIu64, (uint64_t)i);
-			if (on_fn) on_fn(name, (unsigned long long)ep, 0, user);
-			if (G_DUMP_IT) {
-				fprintf(stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)(ctx->iso_instr + (i * 4)));
-			}
-		}
-		if (sym_by_addr) ht_up_free (sym_by_addr);
-		return 0;
-	}
+    if (itdata == 0) {
+        // No rodata pointer: cannot enumerate entries reliably. Avoid flooding.
+        if (G_VERBOSE > 0) {
+            eprintf ("[r2flutter] instruction_table_data_offset=0; skipping synthetic entry emission\n");
+        }
+        if (sym_by_addr) ht_up_free (sym_by_addr);
+        return 0;
+    }
 	// Try to locate InstructionsTable::Data bytes. It's stored in a String object.
 	// We heuristically scan around data_image_base + itdata to find a header where
 	//   header.length is reasonable and header.first_entry_with_code < header.length.
@@ -388,13 +370,13 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			}
 		}
 		char name[128];
-		if (resolved && *resolved) snprintf(name, sizeof(name), "%s", resolved);
-		else snprintf(name, sizeof(name), "method.fn_%"PRIu64, (uint64_t)i);
-		if (on_fn) on_fn(name, (unsigned long long)ep, 0, user);
-		if (G_DUMP_IT) {
-			fprintf(stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)ep);
-		}
-	}
+        if (resolved && *resolved) snprintf(name, sizeof(name), "%s", resolved);
+        else snprintf(name, sizeof(name), "fn_%"PRIu64, (uint64_t)i);
+        if (on_fn) on_fn(name, (unsigned long long)ep, 0, user);
+        if (G_DUMP_IT) {
+            fprintf(stderr, "[it] %"PRIu64" 0x%"PFMT64x"\n", (uint64_t)i, (ut64)ep);
+        }
+    }
 	if (sym_by_addr) ht_up_free (sym_by_addr);
 	return 0;
 }
