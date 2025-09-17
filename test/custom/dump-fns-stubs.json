@@ -1,0 +1,12 @@
+{
+  "name": "dump-fns-stubs",
+  "cwd": "test",
+  "cmd": ["../blutter_r2", "--quiet", "--no-dump", "--dump-fns", "5", "bins/android/first/"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "stub.",
+      "0x50068"
+    ]
+  }
+}

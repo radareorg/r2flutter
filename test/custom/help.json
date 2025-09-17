@@ -1,0 +1,14 @@
+{
+  "name": "help",
+  "cwd": "test",
+  "cmd": ["../blutter_r2", "-h"],
+  "timeout": 10,
+  "expect": {
+    "contains": [
+      "Usage:",
+      "--dump-it",
+      "--dump-snapshot-json",
+      "--no-stubs"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "json-android",
+  "cwd": "test",
+  "cmd": ["../blutter_r2", "--quiet", "--no-dump", "--dump-snapshot-json", "bins/android/first/"],
+  "timeout": 30,
+  "expect": {
+    "json": {
+      "kind": 3,
+      "hash": "f91b8b03bf7f30a5e983fd19b23d978d"
+    }
+  }
+}
