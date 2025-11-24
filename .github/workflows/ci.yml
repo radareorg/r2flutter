@@ -14,7 +14,7 @@ jobs:
   build-linux24:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Installing radare2
       run: |
         wget https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2_${{env.R2V}}_amd64.deb
