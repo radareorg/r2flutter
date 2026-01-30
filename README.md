@@ -1,4 +1,8 @@
-# Blutter R2C - Dart AOT via Constant Pool
+# r2flutter - Dart/Flutter support for Radare2
+
+<p align="center">
+<img width="250px" height="500px" src="r2flutter500.png" />
+</p>
 
 This utility integrates with radare2 but does NOT rely on r2 analysis (afl/aflj).
 It is self-contained C code (no Dart VM headers or libs) and will read the Dart
