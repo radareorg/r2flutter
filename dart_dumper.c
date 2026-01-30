@@ -6,7 +6,6 @@
 #include <r_list.h>
 #include "dart_dumper.h"
 
-
 static bool list_contains_offset(RList *list, ut64 off) {
 	RListIter *it;
 	ut64 *p;
@@ -23,33 +22,50 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 		return;
 	}
 	// r_core_cmdf (core, "af@0x%08"PFMT64x, addr);
-	r_strf_var (cmd, 128, "pdfj @ 0x%"PFMT64x, addr);
+	r_strf_var (cmd, 128, "pdfj @ 0x%" PFMT64x, addr);
 	char *s = r_core_cmd_str (core, cmd);
 	if (!s) {
 		return;
 	}
-	RJson *j = r_json_parse(s);
-	if (!j) { free(s); return; }
-	const RJson *ops = r_json_get(j, "ops");
-	const RJson *arr = ops ? ops : j;
+	RJson *j = r_json_parse (s);
+	if (!j) {
+		free (s);
+		return;
+	}
+	const RJson *ops = r_json_get (j, "ops");
+	const RJson *arr = ops? ops: j;
 	size_t i;
 	for (i = 0;; i++) {
-		const RJson *item = r_json_item(arr, i);
-		if (!item) break;
-		const char *opstr = r_json_get_str(item, "opstr");
-		if (!opstr || !*opstr) opstr = r_json_get_str(item, "opcode");
-		if (!opstr || !*opstr) continue;
+		const RJson *item = r_json_item (arr, i);
+		if (!item) {
+			break;
+		}
+		const char *opstr = r_json_get_str (item, "opstr");
+		if (!opstr || !*opstr) {
+			opstr = r_json_get_str (item, "opcode");
+		}
+		if (!opstr || !*opstr) {
+			continue;
+		}
 		// search for pattern like: ldr x0, [x27, 0x123]; also match wX, qX
-		const char *b = strstr(opstr, "[x27");
-		if (!b) continue;
-		const char *comma = strchr(b, ',');
-		if (!comma) continue;
+		const char *b = strstr (opstr, "[x27");
+		if (!b) {
+			continue;
+		}
+		const char *comma = strchr (b, ',');
+		if (!comma) {
+			continue;
+		}
 		// skip spaces
 		const char *p = comma + 1;
-		while (*p == ' ' || *p == '#') p++;
+		while (*p == ' ' || *p == '#') {
+			p++;
+		}
 		// read number until non-hex/non-digit
 		const char *q = p;
-		while ((*q >= '0' && *q <= '9') || (*q >= 'a' && *q <= 'f') || (*q >= 'A' && *q <= 'F')) q++;
+		while ((*q >= '0' && *q <= '9') || (*q >= 'a' && *q <= 'f') || (*q >= 'A' && *q <= 'F')) {
+			q++;
+		}
 		if (q == p) {
 			continue;
 		}
@@ -58,18 +74,20 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 		if (len >= sizeof (numbuf)) {
 			len = sizeof (numbuf) - 1;
 		}
-		memcpy(numbuf, p, len);
+		memcpy (numbuf, p, len);
 		numbuf[len] = '\0';
 		ut64 val = r_num_get (NULL, numbuf);
 		if (!list_contains_offset (offsets, val)) {
-			ut64 *pv = (ut64*)calloc(1, sizeof(ut64));
-			if (!pv) continue;
+			ut64 *pv = (ut64 *)calloc (1, sizeof (ut64));
+			if (!pv) {
+				continue;
+			}
 			*pv = val;
 			r_list_append (offsets, pv);
 		}
 	}
-	r_json_free(j);
-	free(s);
+	r_json_free (j);
+	free (s);
 }
 
 static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
@@ -90,36 +108,36 @@ static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
 	RListIter *it2;
 	ut64 *offp;
 	r_list_foreach (offsets, it2, offp) {
-		r_strbuf_appendf (sb, "f pp.off_0x%"PFMT64x"=PP+0x%"PFMT64x"\n", (uint64_t)*offp, (uint64_t)*offp);
-		r_strbuf_appendf (sb, "'@PP+0x%"PFMT64x"'CC pool_entry_%"PFMT64x"\n", (uint64_t)*offp, (uint64_t)*offp);
+		r_strbuf_appendf (sb, "f pp.off_0x%" PFMT64x "=PP+0x%" PFMT64x "\n", (uint64_t)*offp, (uint64_t)*offp);
+		r_strbuf_appendf (sb, "'@PP+0x%" PFMT64x "'CC pool_entry_%" PFMT64x "\n", (uint64_t)*offp, (uint64_t)*offp);
 	}
 	r_list_free (offsets);
 }
 
-char *dart_dumper_dump4radare2(DartApp* app) {
+char *dart_dumper_dump4radare2(DartApp *app) {
 	RStrBuf *sb = r_strbuf_new ("");
 
 	r_strbuf_append (sb, "# create flags for libraries, classes and methods\n");
 	r_strbuf_append (sb, "e emu.str=true\n");
-	r_strbuf_appendf (sb, "f app.base = 0x%"PFMT64x"\n", (uint64_t)app->base_addr);
-	r_strbuf_appendf (sb, "f app.heap_base = 0x%"PFMT64x"\n", (uint64_t)app->heap_base);
+	r_strbuf_appendf (sb, "f app.base = 0x%" PFMT64x "\n", (uint64_t)app->base_addr);
+	r_strbuf_appendf (sb, "f app.heap_base = 0x%" PFMT64x "\n", (uint64_t)app->heap_base);
 
 	if (app->functions) {
 		RListIter *it;
 		DartFunction *fn;
-	r_list_foreach (app->functions, it, fn) {
-		if (!fn || !fn->name) {
-			continue;
-		}
-		r_strf_var (safe, 1024, "%s", fn->name);
-		r_name_filter (safe, 0);
-		// Avoid double 'method.' prefix if the name already includes it
-		if (r_str_startswith (safe, "method.")) {
-			r_strbuf_appendf (sb, "f %s = 0x%"PFMT64x"\n", safe, (uint64_t)fn->addr);
-		} else {
-			r_strbuf_appendf (sb, "f method.%s = 0x%"PFMT64x"\n", safe, (uint64_t)fn->addr);
-		}
-		r_strbuf_appendf (sb, "'@0x%"PFMT64x"'CC %s\n", (uint64_t)fn->addr, fn->name);
+		r_list_foreach (app->functions, it, fn) {
+			if (!fn || !fn->name) {
+				continue;
+			}
+			r_strf_var (safe, 1024, "%s", fn->name);
+			r_name_filter (safe, 0);
+			// Avoid double 'method.' prefix if the name already includes it
+			if (r_str_startswith (safe, "method.")) {
+				r_strbuf_appendf (sb, "f %s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
+			} else {
+				r_strbuf_appendf (sb, "f method.%s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
+			}
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC %s\n", (uint64_t)fn->addr, fn->name);
 		}
 	}
 
@@ -131,15 +149,15 @@ char *dart_dumper_dump4radare2(DartApp* app) {
 
 #if 0
 	if (app->core && app->core->flags) {
-		r_flag_set(app->core->flags, "app.base", app->base_addr, 0);
-		if (app->heap_base) r_flag_set(app->core->flags, "app.heap_base", app->heap_base, 0);
+		r_flag_set (app->core->flags, "app.base", app->base_addr, 0);
+		if (app->heap_base) r_flag_set (app->core->flags, "app.heap_base", app->heap_base, 0);
 		if (app->functions) {
 			RListIter *it;
 			DartFunction *fn;
 			r_list_foreach (app->functions, it, fn) {
 				if (!fn || !fn->name) continue;
 				char flagname[1100];
-				snprintf (flagname, sizeof(flagname), "method.%s", fn->name);
+				snprintf (flagname, sizeof (flagname), "method.%s", fn->name);
 				r_name_filter (flagname, 0);
 				r_flag_set (app->core->flags, flagname, fn->addr, 0);
 			}

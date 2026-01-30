@@ -11,6 +11,9 @@ all: $(TARGET)
 $(TARGET): $(OBJECTS)
 	$(CC) $(OBJECTS) -o $(TARGET) $(LDFLAGS)
 
+fmt:
+	clang-format-radare2 *.c
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
