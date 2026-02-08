@@ -1,30 +1,64 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I/usr/local/include/libr -I../radare2/libr/include $(shell pkg-config --cflags r_core) -g
-LDFLAGS = $(shell pkg-config --libs r_core) -Wl,-rpath,/usr/local/lib -g
+CC ?= gcc
+CFLAGS ?= -Wall -Wextra -O2 -fPIC
+CFLAGS += -Iinclude
+CFLAGS += $(shell pkg-config --cflags r_core 2>/dev/null || echo "-I/usr/local/include/libr")
+LDFLAGS += $(shell pkg-config --libs r_core 2>/dev/null || echo "-L/usr/local/lib -lr_core -lr_util -ldl")
 
-TARGET = blutter_r2
-SOURCES = main.c dart_app.c dart_dumper.c dart_pool_parse.c
-OBJECTS = $(SOURCES:.c=.o)
+# Directories
+SRC_DIR = src/lib
+BUILD_DIR = build
+BIN_DIR = bin
 
-all: $(TARGET)
+# Source files
+LIB_SRC = $(SRC_DIR)/dart_app.c $(SRC_DIR)/dart_dumper.c $(SRC_DIR)/dart_pool_parse.c
+MAIN_SRC = src/tool/main.c
 
-$(TARGET): $(OBJECTS)
-	$(CC) $(OBJECTS) -o $(TARGET) $(LDFLAGS)
+# Object files
+LIB_OBJ = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(LIB_SRC))
+MAIN_OBJ = $(BUILD_DIR)/main.o
 
-fmt:
-	clang-format-radare2 *.c
+# Artifacts
+BIN_FILE = $(BIN_DIR)/blutter_r2
+STATIC_LIB = $(BUILD_DIR)/libr2flutter.a
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+all: $(BIN_FILE)
+
+$(STATIC_LIB): $(LIB_OBJ)
+	ar rcs $@ $^
+
+$(BIN_FILE): $(STATIC_LIB) $(MAIN_OBJ) | $(shell mkdir -p $(BIN_DIR))
+	$(CC) $(CFLAGS) -o $@ $(MAIN_OBJ) -L$(BUILD_DIR) -lr2flutter $(LDFLAGS) -Wl,-rpath,/usr/local/lib -g
+
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -g -c $< -o $@
+
+$(MAIN_OBJ): $(MAIN_SRC)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -g -c $< -o $@
+
+r2:
+	$(MAKE) $(STATIC_LIB)
+	$(MAKE) -C src/r2
+	$(MAKE) -C src/r2 user-install
+
+user-install user-uninstall:
+	$(MAKE) $(STATIC_LIB)
+	$(MAKE) -C src/r2
+	$(MAKE) -C src/r2 $@
+
+fmt indent format:
+	clang-format-radare2 $(shell find src include -name '*.[ch]')
 
 clean:
-	rm -f $(OBJECTS) $(TARGET)
+	rm -rf $(BUILD_DIR) $(BIN_DIR)/blutter_r2
+	$(MAKE) -C src/r2 clean
 
 test-r2r:
 	r2r -t 30 test/db
 
-test: $(TARGET)
+test: $(BIN_FILE)
 	@echo "Running custom Python testsuite"
 	@python3 scripts/run_tests.py
 
-.PHONY: all clean test
+.PHONY: all clean test test-r2r r2 user-install user-uninstall fmt indent format

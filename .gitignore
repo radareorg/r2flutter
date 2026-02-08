@@ -1,2 +1,6 @@
+build/
+bin/blutter_r2
 *.o
-blutter_r2
+*.so
+*.dylib
+*.swp

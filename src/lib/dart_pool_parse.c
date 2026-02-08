@@ -7,7 +7,7 @@
 #include <r_util/r_json.h>
 #include <r_util/r_file.h>
 #include <r_list.h>
-#include "dart_pool_parse.h"
+#include <r2flutter/dart_pool_parse.h>
 
 // Minimal, standalone AOT snapshot/ObjectPool decoder scaffolding.
 // This file will progressively implement decoding without Dart VM deps.
