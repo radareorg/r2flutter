@@ -4,7 +4,7 @@
 #include <r_util/r_json.h>
 #include <r_util/r_str.h>
 #include <r_list.h>
-#include <r2flutter/dart_dumper.h>
+#include "../../include/r2flutter/dart_dumper.h"
 
 static bool list_contains_offset(RList *list, ut64 off) {
 	RListIter *it;
@@ -168,16 +168,18 @@ void dart_dumper_apply_to_core(DartApp *app) {
 			if (!fn || !fn->name) {
 				continue;
 			}
-			r_strf_var (safe, 1024, "%s", fn->name);
+			char *safe = strdup (fn->name);
 			r_name_filter (safe, 0);
-			char flagname[1100];
+			char *flagname;
 			if (r_str_startswith (safe, "method.")) {
-				snprintf (flagname, sizeof (flagname), "%s", safe);
+				flagname = r_str_newf ("%s", safe);
 			} else {
-				snprintf (flagname, sizeof (flagname), "method.%s", safe);
+				flagname = r_str_newf ("method.%s", safe);
 			}
 			r_flag_set (core->flags, flagname, fn->addr, fn->size);
 			r_meta_set_string (core->anal, R_META_TYPE_COMMENT, fn->addr, fn->name);
+			free (flagname);
+			free (safe);
 		}
 	}
 

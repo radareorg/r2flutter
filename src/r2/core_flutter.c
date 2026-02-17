@@ -1,11 +1,11 @@
-/* radare2 - LGPL3 - Copyright 2025 - r2flutter authors */
+/* radare2 - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
 
 #include <r_core.h>
 #include <r_cons.h>
 #include <r_lib.h>
-#include <r2flutter/dart_app.h>
-#include <r2flutter/dart_dumper.h>
-#include <r2flutter/dart_pool_parse.h>
+#include "../../include/r2flutter/dart_app.h"
+#include "../../include/r2flutter/dart_dumper.h"
+#include "../../include/r2flutter/dart_pool_parse.h"
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons, "Usage: r2flutter [-jifqsn] [args]\n");
@@ -181,9 +181,9 @@ RCorePlugin r_core_plugin_flutter = {
 	.meta = {
 		.name = "r2flutter",
 		.desc = "Dart/Flutter AOT snapshot analyzer",
-		.author = "r2flutter",
-		.license = "LGPL-3.0-only",
-		.version = "0.1",
+		.author = "pancake, Ahmeth4n",
+		.license = "LGPL-3.0",
+		.version = "0.1.0",
 	},
 	.call = r_cmd_r2flutter_call,
 };
@@ -192,6 +192,7 @@ RCorePlugin r_core_plugin_flutter = {
 R_API RLibStruct radare_plugin = {
 	.type = R_LIB_TYPE_CORE,
 	.data = &r_core_plugin_flutter,
-	.version = R2_VERSION
+	.version = R2_VERSION,
+	.abiversion = R2_ABIVERSION
 };
 #endif

@@ -1,7 +1,7 @@
 #ifndef R2C_DART_DUMPER_H
 #define R2C_DART_DUMPER_H
 
-#include <r2flutter/dart_app.h>
+#include "dart_app.h"
 
 #ifdef __cplusplus
 extern "C" {
