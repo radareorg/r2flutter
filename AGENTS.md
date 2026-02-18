@@ -9,6 +9,7 @@ Build
 
 Usage
 - Use bin/r2flutter cli program to test the changes and implementation of the dart aot snapshots
+- Use LEARN.md as a document to store anotations and important findings and discoveries while solving more tasks
 
 Coding Rules
 - `R_NEW`/`R_NEW0` macros never return NULL

@@ -2755,60 +2755,54 @@ char *dart_pool_dump_classes_json(RCore *core) {
 		}
 		return strdup ("[]");
 	}
-	RStrBuf *sb = r_strbuf_new ("[");
+	PJ *pj = pj_new ();
+	pj_a (pj);
 	RListIter *it;
 	DartClassInfo *ci;
-	int first = 1;
 	r_list_foreach (classes, it, ci) {
 		if (!ci) {
 			continue;
 		}
-		if (!first) {
-			r_strbuf_append (sb, ",");
-		}
-		first = 0;
-		r_strbuf_appendf (sb, "{\"ref\":%" PRIu64, ci->ref_id);
+		pj_o (pj);
+		pj_kn (pj, "ref", ci->ref_id);
 		if (ci->name) {
-			r_strbuf_appendf (sb, ",\"name\":\"%s\"", ci->name);
+			pj_ks (pj, "name", ci->name);
 		}
 		if (ci->library_name) {
-			r_strbuf_appendf (sb, ",\"library\":\"%s\"", ci->library_name);
+			pj_ks (pj, "library", ci->library_name);
 		}
 		if (ci->super_class_name) {
-			r_strbuf_appendf (sb, ",\"super\":\"%s\"", ci->super_class_name);
+			pj_ks (pj, "super", ci->super_class_name);
 		}
-		r_strbuf_appendf (sb, ",\"size\":%u", ci->instance_size);
-		r_strbuf_appendf (sb, ",\"type_params\":%u", ci->num_type_parameters);
-		r_strbuf_appendf (sb, ",\"flags\":%u", ci->flags);
+		pj_ki (pj, "size", ci->instance_size);
+		pj_ki (pj, "type_params", ci->num_type_parameters);
+		pj_ki (pj, "flags", ci->flags);
 		if (ci->fields && r_list_length (ci->fields) > 0) {
-			r_strbuf_append (sb, ",\"fields\":[");
+			pj_ka (pj, "fields");
 			RListIter *fit;
 			DartFieldInfo *fi;
-			int ffirst = 1;
 			r_list_foreach (ci->fields, fit, fi) {
 				if (!fi) {
 					continue;
 				}
-				if (!ffirst) {
-					r_strbuf_append (sb, ",");
-				}
-				ffirst = 0;
-				r_strbuf_append (sb, "{");
+				pj_o (pj);
 				if (fi->name) {
-					r_strbuf_appendf (sb, "\"name\":\"%s\",", fi->name);
+					pj_ks (pj, "name", fi->name);
 				}
 				if (fi->type_name) {
-					r_strbuf_appendf (sb, "\"type\":\"%s\",", fi->type_name);
+					pj_ks (pj, "type", fi->type_name);
 				}
-				r_strbuf_appendf (sb, "\"offset\":%u,\"flags\":%u}", fi->offset, fi->flags);
+				pj_ki (pj, "offset", fi->offset);
+				pj_ki (pj, "flags", fi->flags);
+				pj_end (pj);
 			}
-			r_strbuf_append (sb, "]");
+			pj_end (pj);
 		}
-		r_strbuf_append (sb, "}");
+		pj_end (pj);
 	}
-	r_strbuf_append (sb, "]");
+	pj_end (pj);
 	dart_class_list_free (classes);
-	return r_strbuf_drain (sb);
+	return pj_drain (pj);
 }
 
 // Dump classes to r2 script format
