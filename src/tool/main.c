@@ -5,9 +5,9 @@
 #include <dirent.h>
 #include <r_core.h>
 #include <r_flag.h>
-#include "dart_app.h"
-#include "dart_dumper.h"
-#include "dart_pool_parse.h"
+#include "../../include/r2flutter/dart_app.h"
+#include "../../include/r2flutter/dart_dumper.h"
+#include "../../include/r2flutter/dart_pool_parse.h"
 
 static bool is_library(const char *name) {
 	return r_str_endswith (name, ".so") || r_str_endswith (name, ".dylib") || r_str_endswith (name, ".aot") || r_str_endswith (name, ".bin") || r_str_startswith (name, "lib");

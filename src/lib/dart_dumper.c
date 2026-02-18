@@ -4,7 +4,7 @@
 #include <r_util/r_json.h>
 #include <r_util/r_str.h>
 #include <r_list.h>
-#include "dart_dumper.h"
+#include "../../include/r2flutter/dart_dumper.h"
 
 static bool list_contains_offset(RList *list, ut64 off) {
 	RListIter *it;
@@ -147,22 +147,41 @@ char *dart_dumper_dump4radare2(DartApp *app) {
 	// Scan code to gather Object Pool offsets used via PP (x27)
 	dump_pool_offsets_flags (app, sb);
 
-#if 0
-	if (app->core && app->core->flags) {
-		r_flag_set (app->core->flags, "app.base", app->base_addr, 0);
-		if (app->heap_base) r_flag_set (app->core->flags, "app.heap_base", app->heap_base, 0);
-		if (app->functions) {
-			RListIter *it;
-			DartFunction *fn;
-			r_list_foreach (app->functions, it, fn) {
-				if (!fn || !fn->name) continue;
-				char flagname[1100];
-				snprintf (flagname, sizeof (flagname), "method.%s", fn->name);
-				r_name_filter (flagname, 0);
-				r_flag_set (app->core->flags, flagname, fn->addr, 0);
+	return r_strbuf_drain (sb);
+}
+
+void dart_dumper_apply_to_core(DartApp *app) {
+	if (!app || !app->core) {
+		return;
+	}
+	RCore *core = app->core;
+
+	r_flag_set (core->flags, "app.base", app->base_addr, 0);
+	if (app->heap_base) {
+		r_flag_set (core->flags, "app.heap_base", app->heap_base, 0);
+	}
+
+	if (app->functions) {
+		RListIter *it;
+		DartFunction *fn;
+		r_list_foreach (app->functions, it, fn) {
+			if (!fn || !fn->name) {
+				continue;
 			}
+			char *safe = strdup (fn->name);
+			r_name_filter (safe, 0);
+			char *flagname;
+			if (r_str_startswith (safe, "method.")) {
+				flagname = r_str_newf ("%s", safe);
+			} else {
+				flagname = r_str_newf ("method.%s", safe);
+			}
+			r_flag_set (core->flags, flagname, fn->addr, fn->size);
+			r_meta_set_string (core->anal, R_META_TYPE_COMMENT, fn->addr, fn->name);
+			free (flagname);
+			free (safe);
 		}
 	}
-#endif
-	return r_strbuf_drain (sb);
+
+	r_core_cmd0 (core, "e emu.str=true");
 }

@@ -8,8 +8,8 @@
 #include <r_flag.h>
 #include <r_list.h>
 #include <r_util/r_name.h>
-#include "dart_app.h"
-#include "dart_pool_parse.h"
+#include "../../include/r2flutter/dart_app.h"
+#include "../../include/r2flutter/dart_pool_parse.h"
 
 // C++ bridge to parse Dart AOT using constant pool (ported from blutter)
 // Implemented in dart_pool_port.cpp
@@ -95,7 +95,7 @@ void dart_app_load_info(DartApp *app) {
 		app->heap_base = (ut64)heap_base;
 	}
 	if (!dart_pool_is_quiet ()) {
-		printf ("Found %d functions (from Dart ObjectPool)\n", app->functions? r_list_length (app->functions): 0);
+		R_LOG_INFO ("Found %d functions (from Dart ObjectPool)", app->functions? r_list_length (app->functions): 0);
 	}
 }
 
