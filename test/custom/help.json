@@ -7,7 +7,7 @@
     "contains": [
       "Usage:",
       "--dump-it",
-      "--dump-snapshot-json",
+      "--dump-snapshot",
       "--no-stubs"
     ]
   }

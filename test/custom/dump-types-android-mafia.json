@@ -1,7 +1,7 @@
 {
   "name": "dump-types-android-mafia",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--dump-types", "bins/android/mafia/"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-types", "bins/android/mafia/"],
   "timeout": 30,
   "expect": {
     "contains": [

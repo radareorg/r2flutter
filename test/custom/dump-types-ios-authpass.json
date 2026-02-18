@@ -1,7 +1,7 @@
 {
   "name": "dump-types-ios-authpass",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--dump-types", "bins/ios/AuthPass.app"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-types", "bins/ios/AuthPass.app"],
   "timeout": 30,
   "expect": {
     "contains": [

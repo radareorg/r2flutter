@@ -58,27 +58,40 @@ static char *find_lib_in_dir (const char *dir) {
 	return preferred;
 }
 
+typedef enum {
+	ACTION_NONE = 0,
+	ACTION_DUMP_SNAPSHOT,
+	ACTION_DUMP_STRINGS,
+	ACTION_DUMP_CLASSES,
+	ACTION_DUMP_TYPES,
+	ACTION_DUMP_HEADER,
+	ACTION_DUMP_FNS,
+	ACTION_DUMP_IT,
+} DumpAction;
+
 static void print_usage (const char *argv0) {
 	printf ("Usage: %s [options] <libapp_path_or_dir>\n", argv0);
+	printf ("Modifiers:\n");
+	printf ("  -h, --help       Show help\n");
+	printf ("  -V, --version    Show version\n");
+	printf ("  -v               Verbose (stderr info)\n");
+	printf ("  -vv              More verbose (dump headers)\n");
+	printf ("  -j               Output in JSON format (default)\n");
+	printf ("  -r               Output in radare2 format\n");
+	printf ("  -q               Quiet mode (suppress non-essential output)\n");
+	printf ("  -n               Do not emit radare2 flags/script to stdout\n");
+	printf ("Actions:\n");
+	printf ("  --dump-snapshot  Print snapshot header info\n");
+	printf ("  --dump-strings   Print all extracted strings\n");
+	printf ("  --dump-classes   Print extracted class information\n");
+	printf ("  --dump-types     Print string-based type names\n");
+	printf ("  --dump-header    Print Dart AOT snapshot header info\n");
+	printf ("  --dump-fns N     Print first N functions (addr name)\n");
+	printf ("  --dump-it        Print instruction table entry addresses to stderr\n");
 	printf ("Options:\n");
-	printf ("  -h, --help                 Show help\n");
-	printf ("  -V, --version              Show version\n");
-	printf ("  -v                         Verbose (stderr info)\n");
-	printf ("  -vv                        More verbose (dump headers)\n");
-	printf ("  --no-stubs                 Do not emit ELF/r2 stub functions\n");
-	printf ("  --dump-snapshot-json       Print snapshot header as a single JSON line\n");
-	printf ("  --dump-it                  Print instruction table entry addresses to stderr\n");
-	printf ("  --quiet                    Suppress non-essential stdout (only JSON if requested)\n");
-	printf ("  --no-dump                  Do not emit radare2 flags/script to stdout\n");
-	printf ("  --dump-fns N               Print first N functions (addr name) to stdout\n");
-	printf ("  --use-name-pool            Assign names from data image strings when unknown\n");
-	printf ("  --dump-classes             Print extracted class information as JSON\n");
-	printf ("  --dump-classes-r2          Print class info as r2 type definition commands\n");
-	printf ("  --dump-fields              Include field details in class output\n");
-	printf ("  --dump-types               Print string-based type names as JSON array\n");
-	printf ("  --dump-header              Print Dart AOT snapshot header info\n");
-	printf ("  --dump-strings             Print all extracted strings as JSON\n");
-	printf ("  --dump-strings-r2          Print strings as r2 comments\n");
+	printf ("  --no-stubs       Do not emit ELF/r2 stub functions\n");
+	printf ("  --use-name-pool  Assign names from data image strings when unknown\n");
+	printf ("  --dump-fields    Include field details in class output\n");
 }
 
 int main (int argc, char **argv) {
@@ -90,6 +103,9 @@ int main (int argc, char **argv) {
 	const char *libapp_path_in = NULL;
 	int opt_quiet = 0;
 	int opt_no_dump = 0;
+	int opt_r2 = 0;
+	int dump_fns_count = 0;
+	DumpAction action = ACTION_NONE;
 	DartCtx dctx = { 0 };
 
 	for (int i = 1; i < argc; i++) {
@@ -108,46 +124,42 @@ int main (int argc, char **argv) {
 				dctx.verbose = 1;
 			} else if (!strcmp (a, "-vv")) {
 				dctx.verbose = 2;
-			} else if (!strcmp (a, "--no-stubs")) {
-				dctx.no_stubs = 1;
-			} else if (!strcmp (a, "--dump-snapshot-json")) {
-				dctx.dump_snapshot_json = 1;
-			} else if (!strcmp (a, "--dump-it")) {
-				dctx.dump_it = 1;
-			} else if (!strcmp (a, "--quiet")) {
+			} else if (!strcmp (a, "-j")) {
+				opt_r2 = 0;
+			} else if (!strcmp (a, "-r")) {
+				opt_r2 = 1;
+			} else if (!strcmp (a, "-q")) {
 				opt_quiet = 1;
 				dctx.quiet = 1;
-			} else if (!strcmp (a, "--no-dump")) {
+			} else if (!strcmp (a, "-n")) {
 				opt_no_dump = 1;
+			} else if (!strcmp (a, "--dump-snapshot")) {
+				action = ACTION_DUMP_SNAPSHOT;
+			} else if (!strcmp (a, "--dump-strings")) {
+				action = ACTION_DUMP_STRINGS;
+			} else if (!strcmp (a, "--dump-classes")) {
+				action = ACTION_DUMP_CLASSES;
+			} else if (!strcmp (a, "--dump-types")) {
+				action = ACTION_DUMP_TYPES;
+			} else if (!strcmp (a, "--dump-header")) {
+				action = ACTION_DUMP_HEADER;
+			} else if (!strcmp (a, "--dump-it")) {
+				action = ACTION_DUMP_IT;
+				dctx.dump_it = 1;
+			} else if (!strncmp (a, "--dump-fns=", 11)) {
+				action = ACTION_DUMP_FNS;
+				dump_fns_count = atoi (a + 11);
+			} else if (!strcmp (a, "--dump-fns")) {
+				action = ACTION_DUMP_FNS;
+				if (i + 1 < argc) {
+					dump_fns_count = atoi (argv[++i]);
+				}
+			} else if (!strcmp (a, "--no-stubs")) {
+				dctx.no_stubs = 1;
 			} else if (!strcmp (a, "--use-name-pool")) {
 				dctx.use_name_pool = 1;
-			} else if (!strcmp (a, "--dump-classes")) {
-				dctx.dump_classes = 1;
-			} else if (!strcmp (a, "--dump-classes-r2")) {
-				dctx.dump_classes = 2;
 			} else if (!strcmp (a, "--dump-fields")) {
 				dctx.dump_fields = 1;
-			} else if (!strcmp (a, "--dump-types")) {
-				dctx.dump_classes = 3;
-			} else if (!strcmp (a, "--dump-header")) {
-			dctx.dump_header = 1;
-		} else if (!strcmp (a, "--dump-strings")) {
-				dctx.dump_strings = 1;
-			} else if (!strcmp (a, "--dump-strings-r2")) {
-				dctx.dump_strings = 2;
-			} else if (!strncmp (a, "--dump-fns=", 11)) {
-				int n = atoi (a + 11);
-				if (n > 0) {
-					dctx.dump_fns = n;
-				}
-			} else if (!strcmp (a, "--dump-fns")) {
-				if (i + 1 < argc) {
-					int n = atoi (argv[i + 1]);
-					if (n > 0) {
-						dctx.dump_fns = n;
-					}
-					i++;
-				}
 			}
 		} else {
 			libapp_path_in = a;
@@ -224,89 +236,81 @@ int main (int argc, char **argv) {
 		fprintf (stderr, "app->file_path = %s\n", app->file_path? app->file_path: "(null)");
 	}
 
-	if (dctx.dump_header) {
+	int ret = 0;
+	char *output = NULL;
+
+	switch (action) {
+	case ACTION_DUMP_SNAPSHOT:
+		app->dctx.dump_snapshot_json = opt_r2 ? 0 : 1;
+		dart_app_load_info (app);
+		break;
+	case ACTION_DUMP_STRINGS:
+		if (opt_r2) {
+			output = dart_pool_dump_strings_r2 (&dctx);
+		} else {
+			output = dart_pool_dump_strings_json (&dctx);
+		}
+		break;
+	case ACTION_DUMP_CLASSES:
+		dctx.dump_classes = 1;
+		if (opt_r2) {
+			output = dart_pool_dump_classes_r2 (&dctx);
+		} else {
+			output = dart_pool_dump_classes_json (&dctx);
+		}
+		break;
+	case ACTION_DUMP_TYPES:
+		dctx.dump_classes = 3;
+		if (opt_r2) {
+			output = dart_pool_dump_classes_r2 (&dctx);
+		} else {
+			output = dart_pool_dump_classes_json (&dctx);
+		}
+		break;
+	case ACTION_DUMP_HEADER:
 		app->dctx.dump_header = 1;
-		char *hdr = dart_pool_dump_header (&app->dctx);
-		if (hdr) {
-			printf ("%s", hdr);
-			free (hdr);
-		}
-		dart_app_free (app);
-		r_core_free (core);
-		free (libapp_path);
-		return 0;
-	}
-
-	if (dctx.dump_strings > 0) {
-		if (dctx.dump_strings == 2) {
-			char *r2out = dart_pool_dump_strings_r2 (&dctx);
-			if (r2out) {
-				printf ("%s", r2out);
-				free (r2out);
-			}
-		} else {
-			char *json = dart_pool_dump_strings_json (&dctx);
-			if (json) {
-				printf ("%s\n", json);
-				free (json);
-			}
-		}
-		dart_app_free (app);
-		r_core_free (core);
-		free (libapp_path);
-		return 0;
-	}
-
-	if (dctx.dump_classes > 0) {
-		if (dctx.dump_classes == 2) {
-			char *r2out = dart_pool_dump_classes_r2 (&dctx);
-			if (r2out) {
-				printf ("%s", r2out);
-				free (r2out);
-			}
-		} else {
-			char *json = dart_pool_dump_classes_json (&dctx);
-			if (json) {
-				printf ("%s\n", json);
-				free (json);
-			}
-		}
-		dart_app_free (app);
-		r_core_free (core);
-		free (libapp_path);
-		return 0;
-	}
-
-	dart_app_load_info (app);
-
-	if (dctx.dump_fns > 0) {
-		int limit = dctx.dump_fns;
-		int count = 0;
-		if (app->functions) {
+		output = dart_pool_dump_header (&app->dctx);
+		break;
+	case ACTION_DUMP_FNS:
+		dart_app_load_info (app);
+		if (app->functions && dump_fns_count > 0) {
 			RListIter *it;
 			DartFunction *fn;
+			int count = 0;
 			r_list_foreach (app->functions, it, fn) {
 				if (!fn || !fn->name) {
 					continue;
 				}
 				printf ("0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
-				if (++count >= limit) {
+				if (++count >= dump_fns_count) {
 					break;
 				}
 			}
 		}
+		break;
+	case ACTION_DUMP_IT:
+		dart_app_load_info (app);
+		break;
+	case ACTION_NONE:
+	default:
+		dart_app_load_info (app);
+		if (!opt_no_dump && !opt_quiet) {
+			printf ("Dumping for radare2\n");
+			char *s = dart_dumper_dump4radare2 (app);
+			printf ("%s\n", s);
+			free (s);
+		}
+		break;
 	}
 
-	if (!opt_no_dump && !opt_quiet) {
-		printf ("Dumping for radare2\n");
-		char *s = dart_dumper_dump4radare2 (app);
-		printf ("%s\n", s);
-		free (s);
+	if (output) {
+		printf ("%s\n", output);
+		free (output);
 	}
 
 	dart_app_free (app);
 	r_core_free (core);
 	free (libapp_path);
 
-	return 0;
+	return ret;
 }

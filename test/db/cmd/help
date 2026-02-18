@@ -5,14 +5,25 @@ CMDS=<<EOF
 EOF
 EXPECT=<<EOF
 Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
+Modifiers:
+  -h, --help       Show help
+  -V, --version    Show version
+  -v               Verbose (stderr info)
+  -vv              More verbose (dump headers)
+  -j               Output in JSON format (default)
+  -r               Output in radare2 format
+  -q               Quiet mode (suppress non-essential output)
+  -n               Do not emit radare2 flags/script to stdout
+Actions:
+  --dump-snapshot  Print snapshot header info
+  --dump-strings   Print all extracted strings
+  --dump-classes   Print extracted class information
+  --dump-types     Print string-based type names
+  --dump-header    Print Dart AOT snapshot header info
+  --dump-fns N     Print first N functions (addr name)
+  --dump-it        Print instruction table entry addresses to stderr
 Options:
-  -h, --help                 Show help
-  -V, --version              Show version
-  -v                         Verbose (stderr info)
-  -vv                        More verbose (dump headers)
-  --no-stubs                 Do not emit ELF/r2 stub functions
-  --dump-snapshot-json       Print snapshot header as a single JSON line
-  --dump-it                  Print instruction table entry addresses to stderr
-  --quiet                    Suppress non-essential stdout (only JSON if requested)
-  --no-dump                  Do not emit radare2 flags/script to stdout
+  --no-stubs       Do not emit ELF/r2 stub functions
+  --use-name-pool  Assign names from data image strings when unknown
+  --dump-fields    Include field details in class output
 EOF
