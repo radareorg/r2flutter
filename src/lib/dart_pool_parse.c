@@ -336,6 +336,7 @@ static int G_DUMP_FNS = 0;
 static int G_USE_NAME_POOL = 0;
 static int G_DUMP_CLASSES = 0;
 static int G_DUMP_FIELDS = 0;
+static int G_DUMP_STRINGS = 0;
 
 void dart_pool_set_verbose(int level) {
 	G_VERBOSE = level;
@@ -378,6 +379,12 @@ void dart_pool_set_dump_fields(int on) {
 }
 int dart_pool_get_dump_fields(void) {
 	return G_DUMP_FIELDS;
+}
+void dart_pool_set_dump_strings(int on) {
+	G_DUMP_STRINGS = on;
+}
+int dart_pool_get_dump_strings(void) {
+	return G_DUMP_STRINGS;
 }
 
 static bool read_mem(RCore *core, ut64 addr, void *buf, int len) {
@@ -1029,7 +1036,26 @@ static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayou
 		free (s);
 		return NULL;
 	}
-	memset (out, 0, sizeof (*out));
+	// First, try to get a base profile from the version
+	const char *version = version_from_hash (hash);
+	const DartVerLayout *base_profile = version? profile_from_version (version): NULL;
+	if (base_profile) {
+		memcpy (out, base_profile, sizeof (*out));
+	} else {
+		memset (out, 0, sizeof (*out));
+		// Set default CIDs if no base profile
+		out->tag_style = TAG_STYLE_OBJECT_HEADER;
+		out->cid_class = 5;
+		out->cid_function = 7;
+		out->cid_code = 18;
+		out->cid_string = 93;
+		out->cid_one_byte_string = 94;
+		out->cid_two_byte_string = 95;
+		out->cid_array = 90;
+		out->cid_mint = 61;
+		out->cid_object_pool = 23;
+		out->num_predefined_cids = 175;
+	}
 	const char *h = r_json_get_str (item, "hash");
 	if (h && *h) {
 		strncpy (out->hash, h, 32);
@@ -1037,12 +1063,22 @@ static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayou
 		strncpy (out->hash, hash, 32);
 	}
 	out->hash[32] = '\0';
-	out->compressed_word_size = (int)r_json_get_num (item, "compressed_word_size");
-	out->heap_object_tag = (int)r_json_get_num (item, "heap_object_tag");
+	int cws = (int)r_json_get_num (item, "compressed_word_size");
+	if (cws > 0) {
+		out->compressed_word_size = cws;
+	}
+	int hot = (int)r_json_get_num (item, "heap_object_tag");
+	if (hot > 0) {
+		out->heap_object_tag = hot;
+	}
 	int mal = (int)r_json_get_num (item, "max_alignment");
-	out->max_alignment = mal > 0? mal: 16;
+	if (mal > 0) {
+		out->max_alignment = mal;
+	}
 	ut64 cap = (ut64)r_json_get_num (item, "it_cap");
-	out->it_cap = cap > 0? cap: 20000;
+	if (cap > 0) {
+		out->it_cap = cap;
+	}
 	r_json_free (j);
 	free (s);
 	return out;
@@ -2858,5 +2894,598 @@ char *dart_pool_dump_classes_r2(RCore *core) {
 		r_strbuf_append (sb, " };\"\n");
 	}
 	dart_class_list_free (classes);
+	return r_strbuf_drain (sb);
+}
+
+// ============================================================================
+// String Extraction Implementation
+// ============================================================================
+
+void dart_string_ref_free(DartStringRef *sr) {
+	free (sr);
+}
+
+void dart_string_info_free(DartStringInfo *si) {
+	if (si) {
+		free (si->value);
+		if (si->references) {
+			r_list_free (si->references);
+		}
+		free (si);
+	}
+}
+
+void dart_string_list_free(RList *list) {
+	r_list_free (list);
+}
+
+// Internal context for string extraction
+typedef struct {
+	RCore *core;
+	ut64 vm_data;
+	ut64 vm_instr;
+	ut64 iso_data;
+	ut64 iso_instr;
+	char snapshot_hash[33];
+	const DartVerLayout *layout;
+	int compressed_word_size;
+	RList *strings;     // DartStringInfo*
+	RList *functions;   // for reference tracking
+	RList *classes;     // for reference tracking
+	void **refs;
+	ut64 refs_count;
+	ut64 num_base_objects;
+	ut64 num_objects;
+	ut64 num_clusters;
+} StringExtractCtx;
+
+// Decode OneByteString cluster for string extraction
+static int decode_one_byte_string_cluster(ClusterStream *s, StringExtractCtx *ctx, ut64 *ref_counter) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return -1;
+	}
+	if (count == 0 || count > 100000) {
+		return 0;
+	}
+	if (G_VERBOSE > 1) {
+		fprintf (stderr, "[r2flutter] OneByteString cluster: count=%" PRIu64 "\n", count);
+	}
+	for (ut64 i = 0; i < count; i++) {
+		ut64 encoded = 0;
+		if (!cs_read_unsigned (s, &encoded)) {
+			return -1;
+		}
+		bool is_two_byte = (encoded & 1) != 0;
+		ut64 length = encoded >> 1;
+		if (length > 65536) {
+			if (G_VERBOSE > 0) {
+				fprintf (stderr, "[r2flutter] String too long: %" PRIu64 ", skipping\n", length);
+			}
+			continue;
+		}
+		DartStringInfo *si = R_NEW0 (DartStringInfo);
+		si->ref_id = (*ref_counter)++;
+		si->length = (ut32)length;
+		si->flags = 0;
+		if (is_two_byte) {
+			si->flags |= DART_STRING_TWO_BYTE;
+		}
+		si->references = r_list_newf ((RListFree)dart_string_ref_free);
+		if (length > 0) {
+			if (is_two_byte) {
+				ut8 *raw = (ut8 *)malloc (length * 2);
+				if (raw && cs_read_bytes (s, raw, length * 2)) {
+					si->value = (char *)malloc (length * 4 + 1);
+					if (si->value) {
+						int out_idx = 0;
+						for (ut64 j = 0; j < length; j++) {
+							uint16_t ch = raw[j * 2] | ((uint16_t)raw[j * 2 + 1] << 8);
+							if (ch < 0x80) {
+								si->value[out_idx++] = (char)ch;
+							} else if (ch < 0x800) {
+								si->value[out_idx++] = (char)(0xC0 | (ch >> 6));
+								si->value[out_idx++] = (char)(0x80 | (ch & 0x3F));
+							} else {
+								si->value[out_idx++] = (char)(0xE0 | (ch >> 12));
+								si->value[out_idx++] = (char)(0x80 | ((ch >> 6) & 0x3F));
+								si->value[out_idx++] = (char)(0x80 | (ch & 0x3F));
+							}
+						}
+						si->value[out_idx] = '\0';
+					}
+				}
+				free (raw);
+			} else {
+				si->value = (char *)malloc (length + 1);
+				if (si->value) {
+					if (cs_read_bytes (s, (ut8 *)si->value, (int)length)) {
+						si->value[length] = '\0';
+					} else {
+						free (si->value);
+						si->value = NULL;
+					}
+				}
+			}
+		}
+		if (ctx->strings) {
+			r_list_append (ctx->strings, si);
+		}
+		if (ctx->refs && si->ref_id < ctx->refs_count) {
+			ctx->refs[si->ref_id] = si;
+		}
+	}
+	return 0;
+}
+
+// Decode TwoByteString cluster (UTF-16)
+static int decode_two_byte_string_cluster(ClusterStream *s, StringExtractCtx *ctx, ut64 *ref_counter) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return -1;
+	}
+	if (count == 0 || count > 100000) {
+		return 0;
+	}
+	if (G_VERBOSE > 1) {
+		fprintf (stderr, "[r2flutter] TwoByteString cluster: count=%" PRIu64 "\n", count);
+	}
+	for (ut64 i = 0; i < count; i++) {
+		ut64 encoded = 0;
+		if (!cs_read_unsigned (s, &encoded)) {
+			return -1;
+		}
+		ut64 length = encoded >> 1;
+		if (length > 65536) {
+			if (G_VERBOSE > 0) {
+				fprintf (stderr, "[r2flutter] TwoByteString too long: %" PRIu64 ", skipping\n", length);
+			}
+			continue;
+		}
+		DartStringInfo *si = R_NEW0 (DartStringInfo);
+		si->ref_id = (*ref_counter)++;
+		si->length = (ut32)length;
+		si->flags = DART_STRING_TWO_BYTE;
+		si->references = r_list_newf ((RListFree)dart_string_ref_free);
+		if (length > 0) {
+			ut8 *raw = (ut8 *)malloc (length * 2);
+			if (raw && cs_read_bytes (s, raw, length * 2)) {
+				si->value = (char *)malloc (length * 4 + 1);
+				if (si->value) {
+					int out_idx = 0;
+					for (ut64 j = 0; j < length; j++) {
+						uint16_t ch = raw[j * 2] | ((uint16_t)raw[j * 2 + 1] << 8);
+						if (ch >= 0xD800 && ch <= 0xDBFF && j + 1 < length) {
+							uint16_t lo = raw[(j + 1) * 2] | ((uint16_t)raw[(j + 1) * 2 + 1] << 8);
+							if (lo >= 0xDC00 && lo <= 0xDFFF) {
+								uint32_t cp = 0x10000 + ((ch - 0xD800) << 10) + (lo - 0xDC00);
+								si->value[out_idx++] = (char)(0xF0 | (cp >> 18));
+								si->value[out_idx++] = (char)(0x80 | ((cp >> 12) & 0x3F));
+								si->value[out_idx++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+								si->value[out_idx++] = (char)(0x80 | (cp & 0x3F));
+								j++;
+								continue;
+							}
+						}
+						if (ch < 0x80) {
+							si->value[out_idx++] = (char)ch;
+						} else if (ch < 0x800) {
+							si->value[out_idx++] = (char)(0xC0 | (ch >> 6));
+							si->value[out_idx++] = (char)(0x80 | (ch & 0x3F));
+						} else {
+							si->value[out_idx++] = (char)(0xE0 | (ch >> 12));
+							si->value[out_idx++] = (char)(0x80 | ((ch >> 6) & 0x3F));
+							si->value[out_idx++] = (char)(0x80 | (ch & 0x3F));
+						}
+					}
+					si->value[out_idx] = '\0';
+				}
+			}
+			free (raw);
+		}
+		if (ctx->strings) {
+			r_list_append (ctx->strings, si);
+		}
+		if (ctx->refs && si->ref_id < ctx->refs_count) {
+			ctx->refs[si->ref_id] = si;
+		}
+	}
+	return 0;
+}
+
+// Track string references from function clusters
+static void track_string_refs_from_functions(StringExtractCtx *ctx, ClusterStream *s, ut64 *ref_counter) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return;
+	}
+	if (count == 0 || count > 100000) {
+		return;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		ut64 fn_ref = (*ref_counter)++;
+		ut64 name_ref = 0;
+		cs_read_ref_id (s, &name_ref);
+		if (name_ref > 0 && name_ref < ctx->refs_count && ctx->refs[name_ref]) {
+			DartStringInfo *si = (DartStringInfo *)ctx->refs[name_ref];
+			if (si->references) {
+				DartStringRef *sr = R_NEW0 (DartStringRef);
+				sr->object_ref = fn_ref;
+				sr->object_type = DART_REF_FUNCTION;
+				sr->field_offset = 0;
+				r_list_append (si->references, sr);
+			}
+		}
+		ut64 skip_refs = 6;
+		for (ut64 j = 0; j < skip_refs; j++) {
+			ut64 dummy = 0;
+			cs_read_ref_id (s, &dummy);
+		}
+		uint32_t kind_tag = 0;
+		cs_read_u32 (s, &kind_tag);
+	}
+}
+
+// Track string references from class clusters
+static void track_string_refs_from_classes(StringExtractCtx *ctx, ClusterStream *s, ut64 *ref_counter) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return;
+	}
+	if (count == 0 || count > 50000) {
+		return;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		ut64 class_ref = (*ref_counter)++;
+		uint32_t instance_size = 0;
+		cs_read_u32 (s, &instance_size);
+		ut64 name_ref = 0;
+		cs_read_ref_id (s, &name_ref);
+		if (name_ref > 0 && name_ref < ctx->refs_count && ctx->refs[name_ref]) {
+			DartStringInfo *si = (DartStringInfo *)ctx->refs[name_ref];
+			if (si->references) {
+				DartStringRef *sr = R_NEW0 (DartStringRef);
+				sr->object_ref = class_ref;
+				sr->object_type = DART_REF_CLASS;
+				sr->field_offset = 0;
+				r_list_append (si->references, sr);
+			}
+		}
+		ut64 skip_refs = 6;
+		for (ut64 j = 0; j < skip_refs; j++) {
+			ut64 dummy = 0;
+			cs_read_ref_id (s, &dummy);
+		}
+	}
+}
+
+// Main string extraction function
+RList *dart_pool_extract_strings(RCore *core) {
+	if (!core) {
+		return NULL;
+	}
+	ut64 vm_data = 0, vm_instr = 0, iso_data = 0, iso_instr = 0;
+	int ok = find_snapshots_with_r2 (core, &vm_data, &vm_instr, &iso_data, &iso_instr);
+	if (ok != 0 || !iso_data) {
+		return NULL;
+	}
+	ut64 snapshot_base = iso_data;
+	StringExtractCtx ctx = { 0 };
+	ctx.core = core;
+	ctx.vm_data = vm_data;
+	ctx.vm_instr = vm_instr;
+	ctx.iso_data = iso_data;
+	ctx.iso_instr = iso_instr;
+	extract_snapshot_hash_flags (core, vm_data, ctx.snapshot_hash);
+	DartVerLayout layout_tmp;
+	bool layout_is_dynamic = false;
+	ctx.layout = load_layout_from_json (ctx.snapshot_hash, &layout_tmp);
+	if (!ctx.layout) {
+		ctx.layout = pick_layout_by_hash (ctx.snapshot_hash);
+		layout_is_dynamic = true;
+	}
+	if (ctx.layout) {
+		ctx.compressed_word_size = ctx.layout->compressed_word_size;
+	} else {
+		ctx.compressed_word_size = 4;
+	}
+	ut8 hdr[4 + 8 + 8];
+	if (!read_mem (core, snapshot_base, hdr, sizeof (hdr))) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	uint32_t magic = *(uint32_t *)(hdr + 0);
+	if (magic != 0xdcdcf5f5) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	uint64_t length_ex_magic = *(uint64_t *)(hdr + 4);
+	uint64_t total_len = length_ex_magic + 4;
+	ut64 cursor = snapshot_base + 4 + 8 + 8 + 32;
+	const int max_scan = 1024;
+	ut8 b = 0;
+	int scanned = 0;
+	while (scanned < max_scan) {
+		if (!read_mem (core, cursor + scanned, &b, 1)) {
+			break;
+		}
+		if (b == '\0') {
+			break;
+		}
+		scanned++;
+	}
+	cursor += (ut64)(scanned + 1);
+	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, next = cursor;
+	if (!read_uleb128_at (core, next, &nb, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	if (!read_uleb128_at (core, next, &no, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	if (!read_uleb128_at (core, next, &nc, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	if (!read_uleb128_at (core, next, &itlen, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	if (!read_uleb128_at (core, next, &itdata, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	bool header_valid = (nc > 0 && nc < 10000 && no > 0 && no < 1000000);
+	if (!header_valid) {
+		if (G_VERBOSE > 0) {
+			fprintf (stderr, "[r2flutter] string extraction: invalid header\n");
+		}
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return r_list_newf ((RListFree)dart_string_info_free);
+	}
+	ctx.num_base_objects = nb;
+	ctx.num_objects = no;
+	ctx.num_clusters = nc;
+	ctx.strings = r_list_newf ((RListFree)dart_string_info_free);
+	ut64 total_refs = nb + no + 16;
+	ctx.refs_count = total_refs;
+	ctx.refs = (void **)calloc (total_refs, sizeof (void *));
+	ClusterStream stream = {
+		.core = core,
+		.cursor = next,
+		.end = snapshot_base + total_len
+	};
+	ut64 ref_counter = nb + 1;
+	int cid_one_byte = ctx.layout? ctx.layout->cid_one_byte_string: kOneByteStringCid;
+	int cid_two_byte = ctx.layout? ctx.layout->cid_two_byte_string: kTwoByteStringCid;
+	int cid_string = ctx.layout? ctx.layout->cid_string: kStringCid;
+	int cid_function = ctx.layout? ctx.layout->cid_function: kFunctionCid;
+	int cid_class = ctx.layout? ctx.layout->cid_class: kClassCid;
+	if (G_VERBOSE > 1) {
+		fprintf (stderr, "[r2flutter] string extraction: clusters=%" PRIu64 " cid_one_byte=%d cid_two_byte=%d stream=0x%" PFMT64x "-0x%" PFMT64x "\n",
+			nc, cid_one_byte, cid_two_byte, stream.cursor, stream.end);
+	}
+	for (ut64 ci2 = 0; ci2 < nc && stream.cursor < stream.end; ci2++) {
+		uint32_t tags = 0;
+		if (!cs_read_u32 (&stream, &tags)) {
+			break;
+		}
+		uint32_t cid = 0;
+		if (ctx.layout && ctx.layout->tag_style == TAG_STYLE_OBJECT_HEADER) {
+			cid = (tags >> 12) & 0xFFFFF;
+		} else if (ctx.layout && ctx.layout->tag_style == TAG_STYLE_CID_SHIFT1) {
+			cid = tags >> 1;
+		} else {
+			cid = (tags >> 12) & 0xFFFFF;
+		}
+		if (G_VERBOSE > 1 && ci2 < 30) {
+			fprintf (stderr, "[r2flutter] string cluster[%" PRIu64 "] cid=%u tags=0x%08x\n", ci2, cid, tags);
+		}
+		int rc = 0;
+		if ((int)cid == cid_one_byte || (int)cid == cid_string) {
+			rc = decode_one_byte_string_cluster (&stream, &ctx, &ref_counter);
+		} else if ((int)cid == cid_two_byte) {
+			rc = decode_two_byte_string_cluster (&stream, &ctx, &ref_counter);
+		} else if ((int)cid == cid_function) {
+			track_string_refs_from_functions (&ctx, &stream, &ref_counter);
+		} else if ((int)cid == cid_class) {
+			track_string_refs_from_classes (&ctx, &stream, &ref_counter);
+		} else {
+			ut64 count = 0;
+			if (cs_read_unsigned (&stream, &count)) {
+				if (count < 100000) {
+					for (ut64 j = 0; j < count; j++) {
+						ref_counter++;
+						ut64 skip = 0;
+						for (int k = 0; k < 8 && stream.cursor < stream.end; k++) {
+							if (!cs_read_unsigned (&stream, &skip)) {
+								break;
+							}
+							if (skip == 0) {
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+		if (rc < 0) {
+			break;
+		}
+	}
+	if (G_VERBOSE > 0) {
+		fprintf (stderr, "[r2flutter] Extracted strings from clusters: %d\n",
+			ctx.strings? r_list_length (ctx.strings): 0);
+	}
+	// Fallback: scan data section for strings if cluster parsing found nothing
+	if (!ctx.strings || r_list_length (ctx.strings) == 0) {
+		if (G_VERBOSE > 0) {
+			fprintf (stderr, "[r2flutter] Falling back to data section string scan\n");
+		}
+		ut64 kAlign = ctx.layout && ctx.layout->max_alignment? (ut64)ctx.layout->max_alignment: 16;
+		ut64 data_image_base = snapshot_base + ((total_len + (kAlign - 1)) & ~(kAlign - 1));
+		ut64 data_image_end = ctx.iso_instr? ctx.iso_instr: (data_image_base + (1ULL << 20));
+		// For iOS binaries, also try vm_data to iso_data range
+		if (ctx.vm_data > 0 && ctx.iso_data > ctx.vm_data) {
+			data_image_base = ctx.vm_data;
+			data_image_end = ctx.iso_data;
+		}
+		if (G_VERBOSE > 1) {
+			fprintf (stderr, "[r2flutter] data scan range: 0x%" PFMT64x "-0x%" PFMT64x "\n", data_image_base, data_image_end);
+		}
+		if (data_image_end > data_image_base && (data_image_end - data_image_base) < 0x400000) {
+			ut64 pos = data_image_base;
+			int str_count = 0;
+			while (pos < data_image_end - 4 && str_count < 10000) {
+				ut8 buf[256];
+				int to_read = (data_image_end - pos > 255)? 255: (int)(data_image_end - pos);
+				if (!read_mem (core, pos, buf, to_read)) {
+					break;
+				}
+				int slen = 0;
+				while (slen < to_read && buf[slen] >= 0x20 && buf[slen] < 0x7f) {
+					slen++;
+				}
+				if (slen >= 3 && slen < 200 && buf[slen] == 0) {
+					DartStringInfo *si = R_NEW0 (DartStringInfo);
+					si->ref_id = str_count;
+					si->value = r_str_ndup ((char *)buf, slen);
+					si->length = slen;
+					si->flags = 0;
+					si->address = pos;
+					si->references = r_list_newf ((RListFree)dart_string_ref_free);
+					r_list_append (ctx.strings, si);
+					str_count++;
+					pos += slen + 1;
+				} else {
+					pos++;
+				}
+			}
+			if (G_VERBOSE > 0) {
+				fprintf (stderr, "[r2flutter] Extracted %d strings from data section scan\n", str_count);
+			}
+		}
+	}
+	RList *result = ctx.strings;
+	ctx.strings = NULL;
+	free (ctx.refs);
+	if (layout_is_dynamic) {
+		free ((void *)ctx.layout);
+	}
+	return result;
+}
+
+// Dump strings to JSON
+char *dart_pool_dump_strings_json(RCore *core) {
+	RList *strings = dart_pool_extract_strings (core);
+	if (!strings || r_list_length (strings) == 0) {
+		if (strings) {
+			dart_string_list_free (strings);
+		}
+		return strdup ("[]");
+	}
+	PJ *pj = pj_new ();
+	pj_a (pj);
+	RListIter *it;
+	DartStringInfo *si;
+	r_list_foreach (strings, it, si) {
+		if (!si) {
+			continue;
+		}
+		pj_o (pj);
+		pj_kn (pj, "ref", si->ref_id);
+		pj_ki (pj, "len", si->length);
+		if (si->value) {
+			pj_ks (pj, "value", si->value);
+		}
+		pj_kb (pj, "two_byte", (si->flags & DART_STRING_TWO_BYTE) != 0);
+		pj_kb (pj, "canonical", (si->flags & DART_STRING_CANONICAL) != 0);
+		if (si->address) {
+			pj_kn (pj, "addr", si->address);
+		}
+		if (si->references && r_list_length (si->references) > 0) {
+			pj_ka (pj, "refs");
+			RListIter *rit;
+			DartStringRef *sr;
+			r_list_foreach (si->references, rit, sr) {
+				if (!sr) {
+					continue;
+				}
+				pj_o (pj);
+				pj_kn (pj, "obj", sr->object_ref);
+				const char *type_str = "other";
+				switch (sr->object_type) {
+				case DART_REF_FUNCTION: type_str = "function"; break;
+				case DART_REF_CLASS: type_str = "class"; break;
+				case DART_REF_FIELD: type_str = "field"; break;
+				case DART_REF_LIBRARY: type_str = "library"; break;
+				case DART_REF_CODE: type_str = "code"; break;
+				}
+				pj_ks (pj, "type", type_str);
+				pj_end (pj);
+			}
+			pj_end (pj);
+		}
+		pj_end (pj);
+	}
+	pj_end (pj);
+	dart_string_list_free (strings);
+	return pj_drain (pj);
+}
+
+// Dump strings to r2 script
+char *dart_pool_dump_strings_r2(RCore *core) {
+	RList *strings = dart_pool_extract_strings (core);
+	if (!strings) {
+		return strdup ("# No strings found\n");
+	}
+	RStrBuf *sb = r_strbuf_new ("# Dart strings extracted from snapshot\n");
+	RListIter *it;
+	DartStringInfo *si;
+	int idx = 0;
+	r_list_foreach (strings, it, si) {
+		if (!si || !si->value) {
+			continue;
+		}
+		char safe_val[64];
+		int max_len = 60;
+		int len = strlen (si->value);
+		if (len > max_len) {
+			snprintf (safe_val, sizeof (safe_val), "%.57s...", si->value);
+		} else {
+			snprintf (safe_val, sizeof (safe_val), "%s", si->value);
+		}
+		for (char *p = safe_val; *p; p++) {
+			if (*p == '\n' || *p == '\r' || *p == '"') {
+				*p = ' ';
+			}
+		}
+		r_strbuf_appendf (sb, "# str[%d] ref=%" PRIu64 " len=%u%s: \"%s\"\n",
+			idx++, si->ref_id, si->length,
+			(si->flags & DART_STRING_TWO_BYTE)? " (utf16)": "",
+			safe_val);
+		if (si->references && r_list_length (si->references) > 0) {
+			r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
+		}
+	}
+	r_strbuf_appendf (sb, "# Total: %d strings\n", r_list_length (strings));
+	dart_string_list_free (strings);
 	return r_strbuf_drain (sb);
 }

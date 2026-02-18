@@ -46,6 +46,42 @@ int dart_pool_get_dump_classes(void);
 void dart_pool_set_dump_fields(int on);
 int dart_pool_get_dump_fields(void);
 
+// If true, dump strings from snapshot
+void dart_pool_set_dump_strings(int on);
+int dart_pool_get_dump_strings(void);
+
+// ============================================================================
+// String Information Structures
+// ============================================================================
+
+// Extracted string information
+typedef struct DartStringInfo {
+	ut64 ref_id;              // reference ID in snapshot
+	char *value;              // string value (UTF-8 encoded)
+	ut32 length;              // string length (characters, not bytes)
+	ut32 flags;               // bitfield: is_two_byte, is_canonical
+	ut64 address;             // address in snapshot (if known)
+	RList *references;        // list of DartStringRef* (who references this string)
+} DartStringInfo;
+
+#define DART_STRING_TWO_BYTE   (1 << 0)
+#define DART_STRING_CANONICAL  (1 << 1)
+#define DART_STRING_EXTERNAL   (1 << 2)
+
+// Reference to a string from another object
+typedef struct DartStringRef {
+	ut64 object_ref;          // ref ID of the referencing object
+	ut32 object_type;         // type of referencing object (function, class, field, etc.)
+	ut32 field_offset;        // offset within referencing object
+} DartStringRef;
+
+#define DART_REF_FUNCTION  1
+#define DART_REF_CLASS     2
+#define DART_REF_FIELD     3
+#define DART_REF_LIBRARY   4
+#define DART_REF_CODE      5
+#define DART_REF_OTHER     0
+
 // ============================================================================
 // Class and Field Information Structures
 // ============================================================================
@@ -122,6 +158,26 @@ void dart_field_info_free(DartFieldInfo *fi);
 void dart_class_info_free(DartClassInfo *ci);
 void dart_type_info_free(DartTypeInfo *ti);
 void dart_class_list_free(RList *list);
+void dart_string_info_free(DartStringInfo *si);
+void dart_string_ref_free(DartStringRef *sr);
+
+// ============================================================================
+// String Extraction API
+// ============================================================================
+
+// Extract all strings from a loaded Dart snapshot
+// Returns a list of DartStringInfo* or NULL on error
+// Caller must free with dart_string_list_free()
+RList *dart_pool_extract_strings(RCore *core);
+
+// Dump all strings to JSON format
+char *dart_pool_dump_strings_json(RCore *core);
+
+// Dump strings to r2 script format (flags/comments)
+char *dart_pool_dump_strings_r2(RCore *core);
+
+// Free a list of DartStringInfo*
+void dart_string_list_free(RList *list);
 
 #ifdef __cplusplus
 }

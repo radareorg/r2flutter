@@ -75,6 +75,8 @@ static void print_usage(const char *argv0) {
 	printf ("  --dump-classes-r2          Print class info as r2 type definition commands\n");
 	printf ("  --dump-fields              Include field details in class output\n");
 	printf ("  --dump-types               Print string-based type names as JSON array\n");
+	printf ("  --dump-strings             Print all extracted strings as JSON\n");
+	printf ("  --dump-strings-r2          Print strings as r2 comments\n");
 }
 
 int main(int argc, char **argv) {
@@ -124,6 +126,10 @@ int main(int argc, char **argv) {
 				dart_pool_set_dump_fields (1);
 			} else if (!strcmp (a, "--dump-types")) {
 				dart_pool_set_dump_classes (3);
+			} else if (!strcmp (a, "--dump-strings")) {
+				dart_pool_set_dump_strings (1);
+			} else if (!strcmp (a, "--dump-strings-r2")) {
+				dart_pool_set_dump_strings (2);
 			} else if (!strncmp (a, "--dump-fns=", 11)) {
 				int n = atoi (a + 11);
 				if (n > 0) {
@@ -212,6 +218,27 @@ int main(int argc, char **argv) {
 		fprintf (stderr, "libapp is loaded at 0x%" PFMT64x "\n", app->base_addr);
 		fprintf (stderr, "Dart heap at 0x%" PFMT64x "\n", app->heap_base);
 		fprintf (stderr, "app->file_path = %s\n", app->file_path? app->file_path: "(null)");
+	}
+
+	int dump_strings_mode = dart_pool_get_dump_strings ();
+	if (dump_strings_mode > 0) {
+		if (dump_strings_mode == 2) {
+			char *r2out = dart_pool_dump_strings_r2 (core);
+			if (r2out) {
+				printf ("%s", r2out);
+				free (r2out);
+			}
+		} else {
+			char *json = dart_pool_dump_strings_json (core);
+			if (json) {
+				printf ("%s\n", json);
+				free (json);
+			}
+		}
+		dart_app_free (app);
+		r_core_free (core);
+		free (libapp_path);
+		return 0;
 	}
 
 	int dump_classes_mode = dart_pool_get_dump_classes ();
