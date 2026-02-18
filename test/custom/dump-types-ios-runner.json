@@ -1,0 +1,13 @@
+{
+  "name": "dump-types-ios-runner",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--dump-types", "bins/ios/Runner.app"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "FutureOr",
+      "_Uint16List",
+      "Object"
+    ]
+  }
+}

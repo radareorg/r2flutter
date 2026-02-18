@@ -1,0 +1,13 @@
+{
+  "name": "dump-classes-android",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--dump-classes", "bins/android/first/"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "FutureOr",
+      "_Uint16List",
+      "Object"
+    ]
+  }
+}

@@ -1182,7 +1182,7 @@ static int decode_pool_and_emit (DartCtx *ctx,
 	if (!read_uleb128_at (ctx, next, &itdata, &next)) {
 		return -1;
 	}
-	bool header_valid = (nc > 0 && nc < 10000 && no > 0 && no < 1000000);
+	bool header_valid = (nc > 0 && nc < 1000000 && no > 0 && no < 10000000);
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] snapshot clustered header: base_objs=%" PRIu64 " objs=%" PRIu64 " clusters=%" PRIu64 " it_len=%" PRIu64 " it_data_off=%" PRIu64 " total_len=%" PRIu64 " valid=%d\n", (uint64_t)nb, (uint64_t)no, (uint64_t)nc, (uint64_t)itlen, (uint64_t)itdata, (uint64_t)total_len, header_valid);
 	}
@@ -2081,65 +2081,61 @@ RList *dart_pool_extract_classes (DartCtx *ctx) {
 		}
 		return NULL;
 	}
-	bool header_valid = (nc > 0 && nc < 10000 && no > 0 && no < 1000000);
-	if (!header_valid) {
-		if (ctx->verbose > 0) {
-			fprintf (stderr, "[r2flutter] class extraction: invalid header (clusters=%" PRIu64 " objs=%" PRIu64 ")\n", nc, no);
-		}
-		if (layout_is_dynamic) {
-			free ((void *)ctx->layout);
-			ctx->layout = NULL;
-		}
-		return r_list_newf ((RListFree)dart_class_info_free);
-	}
-	ctx->num_base_objects = nb;
-	ctx->num_objects = no;
-	ctx->num_clusters = nc;
+	bool header_valid = (nc > 0 && nc < 1000000 && no > 0 && no < 10000000);
 	RList *class_list = r_list_newf ((RListFree)dart_class_info_free);
 	ctx->strings = r_list_newf (free_dart_string);
 	RList *libraries = r_list_newf (free_library_info);
-	ut64 total_refs = nb + no + 16;
-	ctx->refs_count = total_refs;
-	ctx->refs = (void **)calloc (total_refs, sizeof (void *));
-	ClusterStream stream = {
-		.ctx = ctx,
-		.cursor = cluster_start,
-		.end = snapshot_base + total_len
-	};
-	ut64 ref_counter = nb + 1;
-	for (ut64 ci2 = 0; ci2 < nc && stream.cursor < stream.end; ci2++) {
-		uint32_t tags = 0;
-		if (!cs_read_u32 (&stream, &tags)) {
-			break;
+	if (header_valid) {
+		ctx->num_base_objects = nb;
+		ctx->num_objects = no;
+		ctx->num_clusters = nc;
+		ut64 total_refs = nb + no + 16;
+		ctx->refs_count = total_refs;
+		ctx->refs = (void **)calloc (total_refs, sizeof (void *));
+		ClusterStream stream = {
+			.ctx = ctx,
+			.cursor = cluster_start,
+			.end = snapshot_base + total_len
+		};
+		ut64 ref_counter = nb + 1;
+		for (ut64 ci2 = 0; ci2 < nc && stream.cursor < stream.end; ci2++) {
+			uint32_t tags = 0;
+			if (!cs_read_u32 (&stream, &tags)) {
+				break;
+			}
+			uint32_t cid = (tags >> 12) & 0xFFFFF;
+			bool is_canonical = tags & 1;
+			(void)is_canonical;
+			int rc = 0;
+			switch (cid) {
+			case kOneByteStringCid:
+			case kTwoByteStringCid:
+			case kStringCid:
+				rc = decode_string_cluster (&stream, ctx, &ref_counter, false);
+				break;
+			case kClassCid:
+				rc = decode_class_cluster_ext (&stream, ctx, class_list, &ref_counter);
+				break;
+			case kFieldCid_extract:
+				rc = decode_field_cluster_ext (&stream, ctx, &ref_counter);
+				break;
+			case kLibraryCid_extract:
+				rc = decode_library_cluster_ext (&stream, ctx, libraries, &ref_counter);
+				break;
+			default:
+				skip_generic_cluster (&stream);
+				break;
+			}
+			if (rc < 0) {
+				break;
+			}
 		}
-		uint32_t cid = (tags >> 12) & 0xFFFFF;
-		bool is_canonical = tags & 1;
-		(void)is_canonical;
-		int rc = 0;
-		switch (cid) {
-		case kOneByteStringCid:
-		case kTwoByteStringCid:
-		case kStringCid:
-			rc = decode_string_cluster (&stream, ctx, &ref_counter, false);
-			break;
-		case kClassCid:
-			rc = decode_class_cluster_ext (&stream, ctx, class_list, &ref_counter);
-			break;
-		case kFieldCid_extract:
-			rc = decode_field_cluster_ext (&stream, ctx, &ref_counter);
-			break;
-		case kLibraryCid_extract:
-			rc = decode_library_cluster_ext (&stream, ctx, libraries, &ref_counter);
-			break;
-		default:
-			skip_generic_cluster (&stream);
-			break;
-		}
-		if (rc < 0) {
-			break;
+		resolve_class_names (ctx, class_list);
+	} else {
+		if (ctx->verbose > 0) {
+			fprintf (stderr, "[r2flutter] class extraction: skipping cluster parse (clusters=%" PRIu64 " objs=%" PRIu64 ")\n", nc, no);
 		}
 	}
-	resolve_class_names (ctx, class_list);
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] Extracted classes from clusters: %d\n",
 			class_list? r_list_length (class_list): 0);
@@ -2150,10 +2146,10 @@ RList *dart_pool_extract_classes (DartCtx *ctx) {
 		}
 		ut64 scan_start = ctx->vm_data;
 		ut64 scan_end = ctx->iso_data;
-		if (scan_end > scan_start && (scan_end - scan_start) < 0x100000) {
+		if (scan_end > scan_start && (scan_end - scan_start) < 0x1000000) {
 			ut64 pos = scan_start;
 			int class_count = 0;
-			while (pos < scan_end - 4 && class_count < 2000) {
+			while (pos < scan_end - 4 && class_count < 4000) {
 				ut8 buf[128];
 				int to_read = (scan_end - pos > 127)? 127: (int)(scan_end - pos);
 				if (!read_mem (ctx, pos, buf, to_read)) {
@@ -2163,7 +2159,9 @@ RList *dart_pool_extract_classes (DartCtx *ctx) {
 				while (slen < to_read && buf[slen] >= 0x20 && buf[slen] < 0x7f) {
 					slen++;
 				}
-				if (slen >= 3 && slen < 80 && buf[slen] == 0) {
+				if (slen >= 3 && slen < 80 && (buf[slen] == 0 || buf[slen] < 0x20 || buf[slen] >= 0x7f)) {
+					char saved = buf[slen];
+					buf[slen] = 0;
 					char *s = (char *)buf;
 					bool is_type = false;
 					if (strncmp (s, "get:", 4) == 0 || strncmp (s, "set:", 4) == 0 ||
@@ -2196,6 +2194,7 @@ RList *dart_pool_extract_classes (DartCtx *ctx) {
 						r_list_append (class_list, ci);
 						class_count++;
 					}
+					buf[slen] = saved;
 					pos += slen + 1;
 				} else {
 					pos++;

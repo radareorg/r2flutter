@@ -1,0 +1,13 @@
+{
+  "name": "dump-types-android-mafia",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--dump-types", "bins/android/mafia/"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "Handle",
+      "ClosureData",
+      "_FunctionType"
+    ]
+  }
+}

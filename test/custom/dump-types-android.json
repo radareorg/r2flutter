@@ -1,0 +1,12 @@
+{
+  "name": "dump-types-android",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--dump-types", "bins/android/first/"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "FutureOr",
+      "Object"
+    ]
+  }
+}
