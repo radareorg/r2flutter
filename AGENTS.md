@@ -7,6 +7,9 @@ Build
 - Requires radare2 dev headers (`r_core`) and `pkg-config`.
 - Build with `make` (uses pkg-config to resolve r2 includes/libs).
 
+Usage
+- Use bin/r2flutter cli program to test the changes and implementation of the dart aot snapshots
+
 Coding Rules
 - `R_NEW`/`R_NEW0` macros never return NULL
 - Do not check for null before calling free methods

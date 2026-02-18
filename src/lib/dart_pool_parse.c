@@ -2475,6 +2475,8 @@ RList *dart_pool_extract_classes(RCore *core) {
 	if (ok != 0 || !iso_data) {
 		return NULL;
 	}
+	// Use isolate snapshot for class extraction
+	ut64 snapshot_base = iso_data;
 	ClassExtractCtx ctx = { 0 };
 	ctx.core = core;
 	ctx.vm_data = vm_data;
@@ -2495,7 +2497,7 @@ RList *dart_pool_extract_classes(RCore *core) {
 		ctx.compressed_word_size = 4;
 	}
 	ut8 hdr[4 + 8 + 8];
-	if (!read_mem (core, iso_data, hdr, sizeof (hdr))) {
+	if (!read_mem (core, snapshot_base, hdr, sizeof (hdr))) {
 		if (layout_is_dynamic) {
 			free ((void *)ctx.layout);
 		}
@@ -2510,7 +2512,7 @@ RList *dart_pool_extract_classes(RCore *core) {
 	}
 	uint64_t length_ex_magic = *(uint64_t *)(hdr + 4);
 	uint64_t total_len = length_ex_magic + 4;
-	ut64 cursor = iso_data + 4 + 8 + 8 + 32;
+	ut64 cursor = snapshot_base + 4 + 8 + 8 + 32;
 	const int max_scan = 1024;
 	ut8 b = 0;
 	int scanned = 0;
@@ -2578,9 +2580,13 @@ RList *dart_pool_extract_classes(RCore *core) {
 	ClusterStream stream = {
 		.core = core,
 		.cursor = next,
-		.end = iso_data + total_len
+		.end = snapshot_base + total_len
 	};
 	ut64 ref_counter = nb + 1;
+	if (G_VERBOSE > 1) {
+		fprintf (stderr, "[r2flutter] class extraction: clusters=%" PRIu64 " cid_class=%d/%d/%d stream=0x%" PFMT64x "-0x%" PFMT64x "\n",
+			nc, kClassCid, kFieldCid_extract, kLibraryCid_extract, stream.cursor, stream.end);
+	}
 	for (ut64 ci2 = 0; ci2 < nc && stream.cursor < stream.end; ci2++) {
 		uint32_t tags = 0;
 		if (!cs_read_u32 (&stream, &tags)) {
@@ -2589,6 +2595,10 @@ RList *dart_pool_extract_classes(RCore *core) {
 		uint32_t cid = (tags >> 12) & 0xFFFFF;
 		bool is_canonical = tags & 1;
 		(void)is_canonical;
+		if (G_VERBOSE > 1 && ci2 < 30) {
+			fprintf (stderr, "[r2flutter] cluster[%" PRIu64 "] cid=%u tags=0x%08x cursor=0x%" PFMT64x "\n",
+				ci2, cid, tags, stream.cursor);
+		}
 		int rc = 0;
 		switch (cid) {
 		case kOneByteStringCid:
@@ -2633,8 +2643,82 @@ RList *dart_pool_extract_classes(RCore *core) {
 	}
 	resolve_class_names (&ctx);
 	if (G_VERBOSE > 0) {
-		fprintf (stderr, "[r2flutter] Extracted classes: %d\n",
+		fprintf (stderr, "[r2flutter] Extracted classes from clusters: %d\n",
 			ctx.classes? r_list_length (ctx.classes): 0);
+	}
+	// If no classes found from clusters, try to extract type strings from the const section
+	if (!ctx.classes || r_list_length (ctx.classes) == 0) {
+		if (G_VERBOSE > 0) {
+			fprintf (stderr, "[r2flutter] Falling back to string-based type extraction\n");
+		}
+		// Scan the const section (between vm_data and iso_data) for type-like strings
+		ut64 scan_start = vm_data;
+		ut64 scan_end = iso_data;
+		if (scan_end > scan_start && (scan_end - scan_start) < 0x100000) {
+			ut64 pos = scan_start;
+			int class_count = 0;
+			while (pos < scan_end - 4 && class_count < 2000) {
+				ut8 buf[128];
+				int to_read = (scan_end - pos > 127)? 127: (int)(scan_end - pos);
+				if (!read_mem (core, pos, buf, to_read)) {
+					break;
+				}
+				// Look for printable strings that look like class names
+				int slen = 0;
+				while (slen < to_read && buf[slen] >= 0x20 && buf[slen] < 0x7f) {
+					slen++;
+				}
+				if (slen >= 3 && slen < 80 && buf[slen] == 0) {
+					// Check if it looks like a class/type name
+					// Class names: PascalCase (e.g., ArgumentError) or _PascalCase (e.g., _List)
+					// Exclude: function names (_lowercase...), method patterns (get:, set:), etc.
+					char *s = (char *)buf;
+					bool is_type = false;
+					// Skip common non-class prefixes
+					if (strncmp (s, "get:", 4) == 0 || strncmp (s, "set:", 4) == 0 ||
+					    strncmp (s, "init:", 5) == 0 || strncmp (s, "dyn:", 4) == 0 ||
+					    strncmp (s, "vm:", 3) == 0 || strncmp (s, "dart:", 5) == 0 ||
+					    strncmp (s, "package:", 8) == 0 || strchr (s, ':') != NULL) {
+						// Skip these
+					} else if (s[0] >= 'A' && s[0] <= 'Z') {
+						// PascalCase: starts with uppercase
+						// Verify it's not all uppercase (constants)
+						bool has_lower = false;
+						for (int i = 1; i < slen && !has_lower; i++) {
+							if (s[i] >= 'a' && s[i] <= 'z') {
+								has_lower = true;
+							}
+						}
+						is_type = has_lower;
+					} else if (s[0] == '_' && slen > 1 && s[1] >= 'A' && s[1] <= 'Z') {
+						// _PascalCase: private class
+						// Verify it has lowercase after the second char
+						bool has_lower = false;
+						for (int i = 2; i < slen && !has_lower; i++) {
+							if (s[i] >= 'a' && s[i] <= 'z') {
+								has_lower = true;
+							}
+						}
+						is_type = has_lower;
+					}
+					if (is_type) {
+						DartClassInfo *ci = R_NEW0 (DartClassInfo);
+						ci->name = strdup (s);
+						ci->ref_id = 0; // Unknown ref
+						ci->instance_size = 0;
+						ci->flags = 0;
+						r_list_append (ctx.classes, ci);
+						class_count++;
+					}
+					pos += slen + 1;
+				} else {
+					pos++;
+				}
+			}
+			if (G_VERBOSE > 0) {
+				fprintf (stderr, "[r2flutter] Extracted %d type names from strings\n", class_count);
+			}
+		}
 	}
 	RList *result = ctx.classes;
 	ctx.classes = NULL;
