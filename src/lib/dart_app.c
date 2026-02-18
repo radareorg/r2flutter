@@ -11,9 +11,7 @@
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 
-// C++ bridge to parse Dart AOT using constant pool (ported from blutter)
-// Implemented in dart_pool_port.cpp
-extern int dart_pool_enumerate(RCore *core, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
+extern int dart_pool_enumerate (DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
 
 typedef unsigned long long ull;
 
@@ -84,17 +82,18 @@ static void add_fn_cb(const char *name, unsigned long long addr, unsigned long l
 	r_list_append (app->functions, fn);
 }
 
-void dart_app_load_info(DartApp *app) {
+void dart_app_load_info (DartApp *app) {
 	if (!app || !app->file_path) {
 		return;
 	}
+	app->dctx.core = app->core;
 	unsigned long long base = 0, heap_base = 0;
-	int rc = dart_pool_enumerate (app->core, app->file_path, add_fn_cb, app, &base, &heap_base);
+	int rc = dart_pool_enumerate (&app->dctx, app->file_path, add_fn_cb, app, &base, &heap_base);
 	if (rc == 0) {
 		app->base_addr = (ut64)base;
 		app->heap_base = (ut64)heap_base;
 	}
-	if (!dart_pool_is_quiet ()) {
+	if (!app->dctx.quiet) {
 		printf ("Found %d functions (from Dart ObjectPool)\n",
 				app->functions? r_list_length (app->functions): 0);
 	}

@@ -7,7 +7,7 @@
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 
-static void r2flutter_help(RCore *core) {
+static void r2flutter_help (RCore *core) {
 	r_cons_printf (core->cons, "Usage: r2flutter [-jifqsncFSt] [args]\n");
 	r_cons_printf (core->cons, "| r2flutter          analyze dart snapshot and apply flags/comments\n");
 	r_cons_printf (core->cons, "| r2flutter -j       dump snapshot header as JSON\n");
@@ -23,7 +23,7 @@ static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons, "| r2flutter -t       dump strings as r2 comments\n");
 }
 
-static bool r2flutter_analyze(RCore *core, int quiet) {
+static bool r2flutter_analyze (RCore *core, DartCtx *dctx, int quiet) {
 	const char *filepath = core->bin && core->bin->cur
 		? core->bin->cur->file
 		: NULL;
@@ -42,6 +42,8 @@ static bool r2flutter_analyze(RCore *core, int quiet) {
 		app->base_addr = 0;
 	}
 	app->heap_base = 0;
+	memcpy (&app->dctx, dctx, sizeof (DartCtx));
+	app->dctx.core = core;
 
 	dart_app_load_info (app);
 
@@ -55,7 +57,7 @@ static bool r2flutter_analyze(RCore *core, int quiet) {
 	return true;
 }
 
-static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
+static bool r_cmd_r2flutter_call (RCorePluginSession *cps, const char *input) {
 	RCore *core = cps->core;
 	if (!core) {
 		return false;
@@ -65,23 +67,16 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	}
 	const char *args = input + 9;
 
-	// Reset state for each invocation
-	dart_pool_set_verbose (0);
-	dart_pool_set_no_stubs (1);
-	dart_pool_set_dump_snapshot_json (0);
-	dart_pool_set_dump_it (0);
-	dart_pool_set_quiet (0);
-	dart_pool_set_dump_fns (0);
-	dart_pool_set_use_name_pool (0);
+	DartCtx dctx = { 0 };
+	dctx.core = core;
+	dctx.no_stubs = 1;
 
-	// Skip leading spaces
 	while (*args == ' ') {
 		args++;
 	}
 
 	if (!*args) {
-		// "r2flutter" - main analysis
-		r2flutter_analyze (core, 0);
+		r2flutter_analyze (core, &dctx, 0);
 		return true;
 	}
 
@@ -90,7 +85,6 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		return true;
 	}
 
-	// Parse -flags
 	if (*args != '-') {
 		r2flutter_help (core);
 		return true;
@@ -103,19 +97,16 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 
 	switch (flag) {
 	case 'j':
-		// "r2flutter -j" - dump snapshot JSON
-		dart_pool_set_dump_snapshot_json (1);
-		dart_pool_set_quiet (1);
-		r2flutter_analyze (core, 1);
+		dctx.dump_snapshot_json = 1;
+		dctx.quiet = 1;
+		r2flutter_analyze (core, &dctx, 1);
 		return true;
 	case 'i':
-		// "r2flutter -i" - dump instruction table
-		dart_pool_set_dump_it (1);
-		r2flutter_analyze (core, 1);
+		dctx.dump_it = 1;
+		r2flutter_analyze (core, &dctx, 1);
 		return true;
 	case 'f':
 		{
-			// "r2flutter -f [N]" - list functions
 			int n = 20;
 			if (*rest) {
 				int v = atoi (rest);
@@ -123,11 +114,11 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 					n = v;
 				}
 			}
-			dart_pool_set_quiet (1);
-			dart_pool_set_dump_fns (n);
-		const char *filepath = core->bin && core->bin->cur
-			? core->bin->cur->file
-			: NULL;
+			dctx.quiet = 1;
+			dctx.dump_fns = n;
+			const char *filepath = core->bin && core->bin->cur
+				? core->bin->cur->file
+				: NULL;
 			if (!filepath) {
 				R_LOG_ERROR ("r2flutter: no file loaded");
 				return true;
@@ -142,13 +133,15 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 				app->base_addr = 0;
 			}
 			app->heap_base = 0;
+			memcpy (&app->dctx, &dctx, sizeof (DartCtx));
+			app->dctx.core = core;
 			dart_app_load_info (app);
 			int count = 0;
 			if (app->functions) {
 				RListIter *it;
 				DartFunction *fn;
 				r_list_foreach (app->functions, it, fn) {
-				if (!fn || !fn->name) {
+					if (!fn || !fn->name) {
 						continue;
 					}
 					r_cons_printf (core->cons, "0x%08" PFMT64x " %s\n", fn->addr, fn->name);
@@ -161,24 +154,20 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 			return true;
 		}
 	case 'q':
-		// "r2flutter -q" - quiet analyze
-		dart_pool_set_quiet (1);
-		r2flutter_analyze (core, 1);
+		dctx.quiet = 1;
+		r2flutter_analyze (core, &dctx, 1);
 		return true;
 	case 's':
-		// "r2flutter -s" - include stubs
-		dart_pool_set_no_stubs (0);
-		r2flutter_analyze (core, 0);
+		dctx.no_stubs = 0;
+		r2flutter_analyze (core, &dctx, 0);
 		return true;
 	case 'n':
-		// "r2flutter -n" - use name pool
-		dart_pool_set_use_name_pool (1);
-		r2flutter_analyze (core, 0);
+		dctx.use_name_pool = 1;
+		r2flutter_analyze (core, &dctx, 0);
 		return true;
 	case 'c':
-		// "r2flutter -c" - dump classes as JSON
 		{
-			char *json = dart_pool_dump_classes_json (core);
+			char *json = dart_pool_dump_classes_json (&dctx);
 			if (json) {
 				r_cons_printf (core->cons, "%s\n", json);
 				free (json);
@@ -186,9 +175,8 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		}
 		return true;
 	case 'C':
-		// "r2flutter -C" - dump classes as r2 type definitions
 		{
-			char *r2out = dart_pool_dump_classes_r2 (core);
+			char *r2out = dart_pool_dump_classes_r2 (&dctx);
 			if (r2out) {
 				r_cons_printf (core->cons, "%s", r2out);
 				free (r2out);
@@ -196,14 +184,12 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		}
 		return true;
 	case 'F':
-		// "r2flutter -F" - include field info
-		dart_pool_set_dump_fields (1);
-		r2flutter_analyze (core, 0);
+		dctx.dump_fields = 1;
+		r2flutter_analyze (core, &dctx, 0);
 		return true;
 	case 'S':
-		// "r2flutter -S" - dump strings as JSON
 		{
-			char *json = dart_pool_dump_strings_json (core);
+			char *json = dart_pool_dump_strings_json (&dctx);
 			if (json) {
 				r_cons_printf (core->cons, "%s\n", json);
 				free (json);
@@ -211,9 +197,8 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		}
 		return true;
 	case 't':
-		// "r2flutter -t" - dump strings as r2 comments
 		{
-			char *r2out = dart_pool_dump_strings_r2 (core);
+			char *r2out = dart_pool_dump_strings_r2 (&dctx);
 			if (r2out) {
 				r_cons_printf (core->cons, "%s", r2out);
 				free (r2out);

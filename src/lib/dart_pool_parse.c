@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,36 +11,8 @@
 #include <r_list.h>
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "../../include/r2flutter/dart_version.h"
+#include "../../include/r2flutter/dart_r2.h"
 
-// Minimal, standalone AOT snapshot/ObjectPool decoder scaffolding.
-// This file will progressively implement decoding without Dart VM deps.
-
-// Debug/diagnostic controls (forward declaration)
-static int G_VERBOSE = 0;
-
-typedef struct {
-	RCore *core;
-	ut64 vm_data;
-	ut64 vm_instr;
-	ut64 iso_data;
-	ut64 iso_instr;
-	char snapshot_hash[33];
-	const DartVerLayout *layout;
-	int compressed_word_size; // derived from flags or layout
-	HtUP *name_by_ep; // optional ep->name mapping from data image scan
-	RList *name_pool; // optional pool of discovered names (strings)
-	int name_pool_idx;
-	RList *strings; // decoded strings from String clusters
-	RList *classes; // decoded class info
-	RList *functions; // decoded function info
-	void **refs; // reference array for Alloc+Fill phases
-	ut64 refs_count;
-	ut64 num_base_objects;
-	ut64 num_objects;
-	ut64 num_clusters;
-} DartCtx;
-
-// Predefined Class IDs from Dart VM (class_id.h)
 typedef enum {
 	kIllegalCid = 0,
 	kClassCid = 5,
@@ -75,118 +48,37 @@ typedef enum {
 	kNumPredefinedCids = 128
 } DartCid;
 
-// Decoded Dart object types
 typedef struct {
 	ut64 ref_id;
-	char *value;
-	int length;
-	bool is_two_byte;
-} DartString;
-
-typedef struct {
-	ut64 ref_id;
-	ut64 name_ref; // ref to String
-	ut64 library_ref; // ref to Library
-	char *name; // resolved name
+	ut64 name_ref;
+	ut64 library_ref;
+	char *name;
 	int instance_size;
 } DartClass;
 
 typedef struct {
 	ut64 ref_id;
-	ut64 name_ref; // ref to String
-	ut64 owner_ref; // ref to Class/Library
-	ut64 code_ref; // ref to Code
+	ut64 name_ref;
+	ut64 owner_ref;
+	ut64 code_ref;
 	ut64 entry_point;
-	char *name; // resolved name
-} DartFunction;
+	char *name;
+} DartPoolFunction;
 
-typedef struct {
-	ut64 ref_id;
-	ut64 entry_point;
-	ut64 owner_ref; // ref to Function
-	int state_bits;
-} DartCode;
-
-// Debug/diagnostic controls (G_VERBOSE declared at top of file)
-static int G_NO_STUBS = 0;
-static int G_DUMP_SNAPSHOT_JSON = 0;
-static int G_DUMP_IT = 0;
-static int G_QUIET = 0;
-static int G_DUMP_FNS = 0;
-static int G_USE_NAME_POOL = 0;
-static int G_DUMP_CLASSES = 0;
-static int G_DUMP_FIELDS = 0;
-static int G_DUMP_STRINGS = 0;
-
-void dart_pool_set_verbose(int level) {
-	G_VERBOSE = level;
-}
-void dart_pool_set_no_stubs(int on) {
-	G_NO_STUBS = on? 1: 0;
-}
-void dart_pool_set_dump_snapshot_json(int on) {
-	G_DUMP_SNAPSHOT_JSON = on? 1: 0;
-}
-void dart_pool_set_dump_it(int on) {
-	G_DUMP_IT = on? 1: 0;
-}
-void dart_pool_set_quiet(int on) {
-	G_QUIET = on? 1: 0;
-}
-int dart_pool_is_quiet(void) {
-	return G_QUIET;
-}
-void dart_pool_set_dump_fns(int n) {
-	G_DUMP_FNS = n;
-}
-int dart_pool_get_dump_fns(void) {
-	return G_DUMP_FNS;
-}
-void dart_pool_set_use_name_pool(int on) {
-	G_USE_NAME_POOL = on? 1: 0;
-}
-int dart_pool_get_use_name_pool(void) {
-	return G_USE_NAME_POOL;
-}
-void dart_pool_set_dump_classes(int on) {
-	G_DUMP_CLASSES = on? 1: 0;
-}
-int dart_pool_get_dump_classes(void) {
-	return G_DUMP_CLASSES;
-}
-void dart_pool_set_dump_fields(int on) {
-	G_DUMP_FIELDS = on? 1: 0;
-}
-int dart_pool_get_dump_fields(void) {
-	return G_DUMP_FIELDS;
-}
-void dart_pool_set_dump_strings(int on) {
-	G_DUMP_STRINGS = on;
-}
-int dart_pool_get_dump_strings(void) {
-	return G_DUMP_STRINGS;
-}
-
-static bool read_mem(RCore *core, ut64 addr, void *buf, int len) {
-	if (!core || !buf || len <= 0) {
+static bool read_mem (DartCtx *ctx, ut64 addr, void *buf, int len) {
+	if (!ctx || !ctx->core || !buf || len <= 0) {
 		return false;
 	}
-	int r = r_io_read_at (core->io, addr, (ut8 *)buf, len);
+	int r = r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
 	return r > 0;
 }
 
-// Note: r_json_parse does not take ownership of the input buffer.
-// We must free the buffer after freeing the parser.
-// Keep parsing local so we can release resources deterministically.
-
-static bool read_uleb128_at(RCore *core, ut64 addr, ut64 *out_val, ut64 *out_next) {
-	// Read unsigned LEB128 value from memory at addr.
-	// Returns true on success, false on failure.
+static bool read_uleb128_at (DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_next) {
 	ut64 v = 0;
 	int shift = 0;
 	for (int i = 0; i < 10; i++) {
 		ut8 b = 0;
-		if (!read_mem (core, addr + i, &b, 1)) {
+		if (!read_mem (ctx, addr + i, &b, 1)) {
 			return false;
 		}
 		v |= ((ut64) (b & 0x7f)) << shift;
@@ -204,96 +96,12 @@ static bool read_uleb128_at(RCore *core, ut64 addr, ut64 *out_val, ut64 *out_nex
 	return false;
 }
 
-// Forward decl for minimal string reader
-static bool try_read_dart_string(RCore *core, ut64 addr, char *out, int outsz);
+static bool try_read_dart_string (DartCtx *ctx, ut64 addr, char *out, int outsz);
 
-// Parse a packed/varint InstructionsTable::Data format.
-// Heuristic format:
-//   header_len:   uleb128
-//   first_with_code: uleb128
-//   then header_len entries of two uleb128 values each:
-//     pc_offset_delta, sm_off_delta (both non-negative), accumulated over the stream
-// We only emit entries starting at first_with_code.
-static int emit_it_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 itlen, ut64 cap, HtUP *sym_by_addr, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user) {
-	(void)sym_by_addr;
-	if (!ctx || !ctx->core || !on_fn) {
-		return -1;
-	}
-	ut64 p = addr;
-	ut64 header_len = 0, first_with_code = 0;
-	if (!read_uleb128_at (ctx->core, p, &header_len, &p)) {
-		return -1;
-	}
-	if (!read_uleb128_at (ctx->core, p, &first_with_code, &p)) {
-		return -1;
-	}
-	if (header_len == 0 || header_len > (1ULL << 26)) {
-		return -1;
-	}
-	if (first_with_code >= header_len) {
-		return -1;
-	}
-	// Walk entries accumulating deltas. Keep bounds tight.
-	ut64 pc_acc = 0;
-	ut64 sm_acc = 0;
-	ut64 limit = itlen > cap? cap: itlen;
-	for (ut64 idx = 0; idx < header_len; idx++) {
-		ut64 dpc = 0, dsm = 0;
-		if (!read_uleb128_at (ctx->core, p, &dpc, &p)) {
-			return -1;
-		}
-		if (!read_uleb128_at (ctx->core, p, &dsm, &p)) {
-			return -1;
-		}
-		pc_acc += dpc;
-		sm_acc += dsm;
-		if (idx < first_with_code) {
-			continue;
-		}
-		ut64 i = idx - first_with_code;
-		if (i >= limit) {
-			break;
-		}
-		ut64 ep = ctx->iso_instr + pc_acc;
-		char name[128];
-		name[0] = '\0';
-		if (ctx->name_by_ep) {
-			char *ns = (char *)ht_up_find (ctx->name_by_ep, ep, NULL);
-			if (ns && *ns) {
-				snprintf (name, sizeof (name), "%s", ns);
-			}
-		}
-		if (sm_acc > 0 && sm_acc < (1ULL << 31)) {
-			ut64 saddr = data_image_base + sm_acc;
-			char sname[128];
-			if (try_read_dart_string (ctx->core, saddr, sname, sizeof (sname))) {
-				for (char *q = sname; *q; q++) {
-					if ((ut8)*q < 32) {
-						*q = ' ';
-					}
-				}
-				bool looks_ok = false;
-				if (strstr (sname, "package:") || strstr (sname, "dart:")) {
-					looks_ok = true;
-				}
-				if (!looks_ok && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) {
-					looks_ok = true;
-				}
-				if (looks_ok) {
-					snprintf (name, sizeof (name), "%s", sname);
-				}
-			}
-		}
-		if (!*name) {
-			snprintf (name, sizeof (name), "method.fn_%" PRIu64, (uint64_t)i);
-		}
-		on_fn (name, (unsigned long long)ep, 0, user);
-		if (G_DUMP_IT) {
-			fprintf (stderr, "[it] %" PRIu64 " 0x%" PFMT64x "\n", (uint64_t)i, (ut64)ep);
-		}
-	}
-	return 0;
+static bool is_print_ascii (ut8 ch) {
+	return (ch >= 32 && ch < 127) || ch == '\t';
 }
+
 
 typedef struct {
 	ut64 ep_offs[8];
@@ -304,9 +112,8 @@ typedef struct {
 	int name_offs_n;
 } LayoutHints;
 
-static void init_layout_hints(LayoutHints *lh) {
+static void init_layout_hints (LayoutHints *lh) {
 	memset (lh, 0, sizeof (*lh));
-	// Reasonable defaults for 64-bit object layouts
 	lh->ep_offs[lh->ep_offs_n++] = 0x10;
 	lh->ep_offs[lh->ep_offs_n++] = 0x18;
 	lh->ep_offs[lh->ep_offs_n++] = 0x20;
@@ -318,7 +125,7 @@ static void init_layout_hints(LayoutHints *lh) {
 	lh->name_offs[lh->name_offs_n++] = 0x20;
 }
 
-static void enrich_layout_hints_from_json(LayoutHints *lh, const char *hash) {
+static void enrich_layout_hints_from_json (LayoutHints *lh, const char *hash) {
 	if (!lh || !hash) {
 		return;
 	}
@@ -376,24 +183,22 @@ static void enrich_layout_hints_from_json(LayoutHints *lh, const char *hash) {
 	free (s);
 }
 
-static bool read_heap_ptr(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 *out_abs) {
+static bool read_heap_ptr (DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 *out_abs) {
 	if (!ctx || !out_abs) {
 		return false;
 	}
 	if (ctx->compressed_word_size == 4) {
-		// Try 64-bit absolute pointer first in case fields are widened
 		ut64 v64_abs = 0;
-		if (read_mem (ctx->core, addr, &v64_abs, sizeof (v64_abs))) {
+		if (read_mem (ctx, addr, &v64_abs, sizeof (v64_abs))) {
 			if (v64_abs >= data_image_base && v64_abs < data_image_base + (1ULL << 34)) {
 				*out_abs = v64_abs;
 				return true;
 			}
 		}
 		ut32 v32 = 0;
-		if (!read_mem (ctx->core, addr, &v32, sizeof (v32))) {
+		if (!read_mem (ctx, addr, &v32, sizeof (v32))) {
 			return false;
 		}
-		// Try a few common decompression patterns
 		const ut64 masks[] = { 0ULL, 1ULL, 3ULL, 7ULL };
 		const ut64 shifts[] = { 0ULL, 1ULL, 2ULL, 3ULL };
 		for (int im = 0; im < 4; im++) {
@@ -409,14 +214,83 @@ static bool read_heap_ptr(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 *o
 		return false;
 	}
 	ut64 v64 = 0;
-	if (!read_mem (ctx->core, addr, &v64, sizeof (v64))) {
+	if (!read_mem (ctx, addr, &v64, sizeof (v64))) {
 		return false;
 	}
 	*out_abs = v64;
 	return true;
 }
 
-static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
+
+static bool try_read_dart_string (DartCtx *ctx, ut64 addr, char *out, int outsz) {
+	if (!ctx || !out || outsz <= 1) {
+		return false;
+	}
+	ut8 hdr[32];
+	if (!read_mem (ctx, addr, hdr, sizeof (hdr))) {
+		return false;
+	}
+	for (int off = 0; off <= 16; off += 8) {
+		ut64 len_smi = *(ut64 *) (hdr + off + 8);
+		ut64 len = 0;
+		if ((len_smi & 1ULL) == 0) {
+			len = len_smi >> 1;
+		} else {
+			len = len_smi & 0xffffffffULL;
+		}
+		if (len == 0 || len > 1024) {
+			continue;
+		}
+		ut64 str_addr = addr + off + 24;
+		int ok = 1;
+		for (ut64 i = 0; i < len; i++) {
+			ut8 b2 = 0;
+			if (!read_mem (ctx, str_addr + i, &b2, 1)) {
+				ok = 0;
+				break;
+			}
+			if (!is_print_ascii (b2)) {
+				ok = 0;
+				break;
+			}
+		}
+		if (!ok) {
+			continue;
+		}
+		ut64 cplen = len < (ut64) (outsz - 1)? len: (ut64) (outsz - 1);
+		if (!read_mem (ctx, str_addr, (ut8 *)out, (int)cplen)) {
+			continue;
+		}
+		out[cplen] = '\0';
+		return true;
+	}
+	ut8 tmp[256];
+	if (read_mem (ctx, addr, tmp, sizeof (tmp))) {
+		int start = -1, end = -1;
+		for (int i = 0; i < (int)sizeof (tmp); i++) {
+			if (is_print_ascii (tmp[i])) {
+				if (start < 0) {
+					start = i;
+				}
+				end = i;
+			} else if (start >= 0) {
+				break;
+			}
+		}
+		if (start >= 0 && end >= start) {
+			int n = end - start + 1;
+			if (n >= outsz) {
+				n = outsz - 1;
+			}
+			memcpy (out, tmp + start, n);
+			out[n] = '\0';
+			return true;
+		}
+	}
+	return false;
+}
+
+static HtUP *scan_code_names (DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
 	if (!ctx || !ctx->core) {
 		return NULL;
 	}
@@ -434,7 +308,7 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 	for (ut64 a = data_image_base; a + 0x30 < data_image_end; a += 16) {
 		for (int ie = 0; ie < lh.ep_offs_n; ie++) {
 			ut64 ep = 0;
-			if (!read_mem (ctx->core, a + lh.ep_offs[ie], &ep, sizeof (ep))) {
+			if (!read_mem (ctx, a + lh.ep_offs[ie], &ep, sizeof (ep))) {
 				continue;
 			}
 			if (ep < ctx->iso_instr) {
@@ -460,7 +334,7 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 						continue;
 					}
 					char sname[128];
-					if (try_read_dart_string (ctx->core, namep, sname, sizeof (sname))) {
+					if (try_read_dart_string (ctx, namep, sname, sizeof (sname))) {
 						for (char *q = sname; *q; q++) {
 							if ((ut8)*q < 32) {
 								*q = ' ';
@@ -492,7 +366,7 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 
 #define CHUNK_SIZE 4096
 
-static RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
+static RList *collect_data_names (DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
 	if (!ctx || !ctx->core) {
 		return NULL;
 	}
@@ -576,7 +450,7 @@ static RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_i
 	return out;
 }
 
-static void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
+static void collect_data_names_with_r2 (DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
 	if (!ctx || !ctx->core) {
 		return;
 	}
@@ -599,20 +473,17 @@ static void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 
 		}
 		char *line, *saveptr = NULL;
 		for (line = strtok_r (out, "\n", &saveptr); line; line = strtok_r (NULL, "\n", &saveptr)) {
-			// Expect lines like: 0xADDR hitX_Y package:
 			if (!r_str_startswith (line, "0x")) {
 				continue;
 			}
-			// Extract address
 			ut64 addr = (ut64)strtoull (line, NULL, 16);
 			char s[128];
-			if (try_read_dart_string (ctx->core, addr, s, sizeof (s))) {
+			if (try_read_dart_string (ctx, addr, s, sizeof (s))) {
 				char *dup = strdup (s);
 				if (dup) {
 					r_list_append (ctx->name_pool, dup);
 				}
 			} else {
-				// Fallback: read inline ascii until non-print
 				ut8 buf[128];
 				int n = r_io_read_at (ctx->core->io, addr, buf, sizeof (buf));
 				if (n > 0) {
@@ -649,91 +520,93 @@ static void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 
 	}
 }
 
-// Helpers to decode minimal String objects and extract ASCII names from data image.
-static bool is_print_ascii(ut8 ch) {
-	return (ch >= 32 && ch < 127) || ch == '\t';
-}
 
-// Attempt to decode a OneByteString-like object at or near addr.
-// Layout heuristic (64-bit words): tags, length (Smi), hash, then bytes.
-// We try small offsets (0, 8, 16) to account for header variants.
-static bool try_read_dart_string(RCore *core, ut64 addr, char *out, int outsz) {
-	if (!core || !out || outsz <= 1) {
-		return false;
+static int emit_it_varint (DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 itlen, ut64 cap, HtUP *sym_by_addr, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user) {
+	(void)sym_by_addr;
+	if (!ctx || !ctx->core || !on_fn) {
+		return -1;
 	}
-	ut8 hdr[32];
-	if (!read_mem (core, addr, hdr, sizeof (hdr))) {
-		return false;
+	ut64 p = addr;
+	ut64 header_len = 0, first_with_code = 0;
+	if (!read_uleb128_at (ctx, p, &header_len, &p)) {
+		return -1;
 	}
-	for (int off = 0; off <= 16; off += 8) {
-		ut64 len_smi = *(ut64 *) (hdr + off + 8);
-		ut64 len = 0;
-		if ((len_smi & 1ULL) == 0) {
-			len = len_smi >> 1; // assume SmiTag=0 -> shift 1
-		} else {
-			len = len_smi & 0xffffffffULL; // fallback: 32-bit length
+	if (!read_uleb128_at (ctx, p, &first_with_code, &p)) {
+		return -1;
+	}
+	if (header_len == 0 || header_len > (1ULL << 26)) {
+		return -1;
+	}
+	if (first_with_code >= header_len) {
+		return -1;
+	}
+	ut64 pc_acc = 0;
+	ut64 sm_acc = 0;
+	ut64 limit = itlen > cap? cap: itlen;
+	for (ut64 idx = 0; idx < header_len; idx++) {
+		ut64 dpc = 0, dsm = 0;
+		if (!read_uleb128_at (ctx, p, &dpc, &p)) {
+			return -1;
 		}
-		if (len == 0 || len > 1024) {
+		if (!read_uleb128_at (ctx, p, &dsm, &p)) {
+			return -1;
+		}
+		pc_acc += dpc;
+		sm_acc += dsm;
+		if (idx < first_with_code) {
 			continue;
 		}
-		ut64 str_addr = addr + off + 24; // payload start guess
-		int ok = 1;
-		for (ut64 i = 0; i < len; i++) {
-			ut8 b2 = 0;
-			if (!read_mem (core, str_addr + i, &b2, 1)) {
-				ok = 0;
-				break;
+		ut64 i = idx - first_with_code;
+		if (i >= limit) {
+			break;
+		}
+		ut64 ep = ctx->iso_instr + pc_acc;
+		char name[128];
+		name[0] = '\0';
+		if (ctx->name_by_ep) {
+			char *ns = (char *)ht_up_find (ctx->name_by_ep, ep, NULL);
+			if (ns && *ns) {
+				snprintf (name, sizeof (name), "%s", ns);
 			}
-			if (!is_print_ascii (b2)) {
-				ok = 0;
-				break;
-			}
 		}
-		if (!ok) {
-			continue;
-		}
-		ut64 cplen = len < (ut64) (outsz - 1)? len: (ut64) (outsz - 1);
-		if (!read_mem (core, str_addr, (ut8 *)out, (int)cplen)) {
-			continue;
-		}
-		out[cplen] = '\0';
-		return true;
-	}
-	ut8 tmp[256];
-	if (read_mem (core, addr, tmp, sizeof (tmp))) {
-		int start = -1, end = -1;
-		for (int i = 0; i < (int)sizeof (tmp); i++) {
-			if (is_print_ascii (tmp[i])) {
-				if (start < 0) {
-					start = i;
+		if (sm_acc > 0 && sm_acc < (1ULL << 31)) {
+			ut64 saddr = data_image_base + sm_acc;
+			char sname[128];
+			if (try_read_dart_string (ctx, saddr, sname, sizeof (sname))) {
+				for (char *q = sname; *q; q++) {
+					if ((ut8)*q < 32) {
+						*q = ' ';
+					}
 				}
-				end = i;
-			} else if (start >= 0) {
-				break;
+				bool looks_ok = false;
+				if (strstr (sname, "package:") || strstr (sname, "dart:")) {
+					looks_ok = true;
+				}
+				if (!looks_ok && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) {
+					looks_ok = true;
+				}
+				if (looks_ok) {
+					snprintf (name, sizeof (name), "%s", sname);
+				}
 			}
 		}
-		if (start >= 0 && end >= start) {
-			int n = end - start + 1;
-			if (n >= outsz) {
-				n = outsz - 1;
-			}
-			memcpy (out, tmp + start, n);
-			out[n] = '\0';
-			return true;
+		if (!*name) {
+			snprintf (name, sizeof (name), "method.fn_%" PRIu64, (uint64_t)i);
+		}
+		on_fn (name, (unsigned long long)ep, 0, user);
+		if (ctx->dump_it) {
+			fprintf (stderr, "[it] %" PRIu64 " 0x%" PFMT64x "\n", (uint64_t)i, (ut64)ep);
 		}
 	}
-	return false;
+	return 0;
 }
 
-// Try to classify a snapshot header at base as DATA snapshot by attempting to
-// parse the clustered header fields that only exist in DATA snapshots.
-// Returns true if it looks like a DATA snapshot; false otherwise.
-static bool looks_like_data_snapshot(RCore *core, ut64 base, ut64 *out_total_len) {
-	if (!core || !base) {
+static bool looks_like_data_snapshot (DartCtx *ctx, ut64 base, ut64 *out_total_len) {
+	if (!ctx || !base) {
 		return false;
 	}
 	ut8 hdr[4 + 8 + 8];
-	if (!read_mem (core, base, hdr, sizeof (hdr))) {
+	if (!read_mem (ctx, base, hdr, sizeof (hdr))) {
 		return false;
 	}
 	uint32_t magic = *(uint32_t *) (hdr + 0);
@@ -742,13 +615,12 @@ static bool looks_like_data_snapshot(RCore *core, ut64 base, ut64 *out_total_len
 	}
 	uint64_t length_ex_magic = *(uint64_t *) (hdr + 4);
 	uint64_t total_len = length_ex_magic + 4;
-	// skip version+features strings to the first NUL terminator after header
-	ut64 cursor = base + 4 + 8 + 8; // after header
+	ut64 cursor = base + 4 + 8 + 8;
 	const int max_scan = 2048;
 	ut8 b = 0;
 	int scanned = 0;
 	while (scanned < max_scan) {
-		if (!read_mem (core, cursor + scanned, &b, 1)) {
+		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
 			return false;
 		}
 		if (b == '\0') {
@@ -760,24 +632,22 @@ static bool looks_like_data_snapshot(RCore *core, ut64 base, ut64 *out_total_len
 		return false;
 	}
 	ut64 next = cursor + (ut64) (scanned + 1);
-	// Now clustered header: 5 unsigned LEB128s.
 	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, tmp = next;
-	if (!read_uleb128_at (core, tmp, &nb, &tmp)) {
+	if (!read_uleb128_at (ctx, tmp, &nb, &tmp)) {
 		return false;
 	}
-	if (!read_uleb128_at (core, tmp, &no, &tmp)) {
+	if (!read_uleb128_at (ctx, tmp, &no, &tmp)) {
 		return false;
 	}
-	if (!read_uleb128_at (core, tmp, &nc, &tmp)) {
+	if (!read_uleb128_at (ctx, tmp, &nc, &tmp)) {
 		return false;
 	}
-	if (!read_uleb128_at (core, tmp, &itlen, &tmp)) {
+	if (!read_uleb128_at (ctx, tmp, &itlen, &tmp)) {
 		return false;
 	}
-	if (!read_uleb128_at (core, tmp, &itdata, &tmp)) {
+	if (!read_uleb128_at (ctx, tmp, &itdata, &tmp)) {
 		return false;
 	}
-	// Plausibility checks
 	if (nb == 0 || no == 0 || nc == 0) {
 		return false;
 	}
@@ -793,7 +663,7 @@ static bool looks_like_data_snapshot(RCore *core, ut64 base, ut64 *out_total_len
 	return true;
 }
 
-static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayout *out) {
+static const DartVerLayout *load_layout_from_json (const char *hash, DartVerLayout *out) {
 	if (!hash || !out) {
 		return NULL;
 	}
@@ -816,14 +686,12 @@ static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayou
 		free (s);
 		return NULL;
 	}
-	// First, try to get a base profile from the version
 	const char *version = dart_version_from_hash (hash);
 	const DartVerLayout *base_profile = version? dart_profile_from_version (version): NULL;
 	if (base_profile) {
 		memcpy (out, base_profile, sizeof (*out));
 	} else {
 		memset (out, 0, sizeof (*out));
-		// Set default CIDs if no base profile
 		out->tag_style = DART_TAG_STYLE_OBJECT_HEADER;
 		out->cid_class = 5;
 		out->cid_function = 7;
@@ -864,77 +732,70 @@ static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayou
 	return out;
 }
 
-static void extract_snapshot_hash_flags(RCore *core, ut64 vm_data, char out_hash[33]) {
-	if (out_hash) {
-		out_hash[0] = '\0';
-	}
-	if (!core || !vm_data) {
+static void extract_snapshot_hash_flags (DartCtx *ctx, ut64 vm_data) {
+	if (!ctx || !vm_data) {
 		return;
 	}
+	ctx->snapshot_hash[0] = '\0';
 	ut8 buf[20 + 32 + 256] = { 0 };
-	if (!read_mem (core, vm_data, buf, sizeof (buf))) {
+	if (!read_mem (ctx, vm_data, buf, sizeof (buf))) {
 		return;
 	}
-	if (out_hash) {
-		memcpy (out_hash, buf + 20, 32);
-		out_hash[32] = '\0';
-	}
+	memcpy (ctx->snapshot_hash, buf + 20, 32);
+	ctx->snapshot_hash[32] = '\0';
 	const char *flags = (const char *) (buf + 20 + 32);
-	if (G_VERBOSE > 0) {
+	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] snapshot_hash=%.*s flags=%.128s\n", 32, (const char *) (buf + 20), flags);
 	}
 }
 
-static void derive_layout_from_flags(DartCtx *ctx) {
-	// Read flags again to infer compressed pointer mode when no per-hash layout is available.
+static void derive_layout_from_flags (DartCtx *ctx) {
 	if (!ctx || !ctx->vm_data) {
 		return;
 	}
 	ut8 buf[20 + 32 + 256] = { 0 };
-	if (!read_mem (ctx->core, ctx->vm_data, buf, sizeof (buf))) {
+	if (!read_mem (ctx, ctx->vm_data, buf, sizeof (buf))) {
 		return;
 	}
 	const char *flags = (const char *) (buf + 20 + 32);
-	// Heuristic: many 64-bit AOT builds use 4-byte compressed pointers; check flag substring
 	if (strstr (flags, "compressed") || strstr (flags, "compress")) {
 		ctx->compressed_word_size = 4;
 	} else {
 		ctx->compressed_word_size = 8;
 	}
 	if (ctx->layout) {
-		// layout wins if provided
 		ctx->compressed_word_size = ctx->layout->compressed_word_size;
 	}
 }
 
+
 // ============================================================================
-// Clustered Snapshot Deserializer - Alloc + Fill Phases
+// Clustered Snapshot Deserializer
 // ============================================================================
 
-// Stream reader context for clustered snapshot
 typedef struct {
-	RCore *core;
+	DartCtx *ctx;
 	ut64 cursor;
 	ut64 end;
 } ClusterStream;
 
-static bool cs_read_u8(ClusterStream *s, ut8 *out) {
+static bool cs_read_u8 (ClusterStream *s, ut8 *out) {
 	if (!s || !out || s->cursor >= s->end) {
 		return false;
 	}
-	return read_mem (s->core, s->cursor++, out, 1);
+	return read_mem (s->ctx, s->cursor++, out, 1);
 }
 
-static bool cs_read_u32(ClusterStream *s, uint32_t *out) {
+static bool cs_read_u32 (ClusterStream *s, uint32_t *out) {
 	if (!s || !out || s->cursor + 4 > s->end) {
 		return false;
 	}
-	bool ok = read_mem (s->core, s->cursor, out, 4);
+	bool ok = read_mem (s->ctx, s->cursor, out, 4);
 	s->cursor += 4;
 	return ok;
 }
 
-static bool cs_read_unsigned(ClusterStream *s, ut64 *out) {
+static bool cs_read_unsigned (ClusterStream *s, ut64 *out) {
 	ut64 v = 0;
 	int shift = 0;
 	for (int i = 0; i < 10; i++) {
@@ -954,21 +815,20 @@ static bool cs_read_unsigned(ClusterStream *s, ut64 *out) {
 	return false;
 }
 
-static bool cs_read_ref_id(ClusterStream *s, ut64 *out) {
+static bool cs_read_ref_id (ClusterStream *s, ut64 *out) {
 	return cs_read_unsigned (s, out);
 }
 
-static bool cs_read_bytes(ClusterStream *s, ut8 *buf, int len) {
+static bool cs_read_bytes (ClusterStream *s, ut8 *buf, int len) {
 	if (!s || !buf || len <= 0 || s->cursor + len > s->end) {
 		return false;
 	}
-	bool ok = read_mem (s->core, s->cursor, buf, len);
+	bool ok = read_mem (s->ctx, s->cursor, buf, len);
 	s->cursor += len;
 	return ok;
 }
 
-// Free functions for decoded objects
-static void free_dart_string(void *p) {
+static void free_dart_string (void *p) {
 	DartString *ds = (DartString *)p;
 	if (ds) {
 		free (ds->value);
@@ -976,7 +836,7 @@ static void free_dart_string(void *p) {
 	}
 }
 
-static void free_dart_class(void *p) {
+static void free_dart_class (void *p) {
 	DartClass *dc = (DartClass *)p;
 	if (dc) {
 		free (dc->name);
@@ -984,17 +844,15 @@ static void free_dart_class(void *p) {
 	}
 }
 
-static void free_dart_func(void *p) {
-	DartFunction *df = (DartFunction *)p;
+static void free_dart_func (void *p) {
+	DartPoolFunction *df = (DartPoolFunction *)p;
 	if (df) {
 		free (df->name);
 		free (df);
 	}
 }
 
-// Decode a String cluster (OneByteString or TwoByteString)
-// The encoding packs length and type: bit0 = is_two_byte, rest = length
-static int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool is_canonical) {
+static int decode_string_cluster (ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool is_canonical) {
 	(void)is_canonical;
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
@@ -1003,7 +861,7 @@ static int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_count
 	if (count == 0 || count > 100000) {
 		return 0;
 	}
-	if (G_VERBOSE > 1) {
+	if (ctx->verbose > 1) {
 		fprintf (stderr, "[r2flutter] String cluster: count=%" PRIu64 "\n", count);
 	}
 	for (ut64 i = 0; i < count; i++) {
@@ -1014,7 +872,7 @@ static int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_count
 		bool is_two_byte = (encoded & 1) != 0;
 		ut64 length = encoded >> 1;
 		if (length > 65536) {
-			if (G_VERBOSE > 0) {
+			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] String too long: %" PRIu64 "\n", length);
 			}
 			continue;
@@ -1052,8 +910,7 @@ static int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_count
 	return 0;
 }
 
-// Decode a Class cluster
-static int decode_class_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool is_canonical) {
+static int decode_class_cluster (ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool is_canonical) {
 	(void)is_canonical;
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
@@ -1062,7 +919,7 @@ static int decode_class_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counte
 	if (count == 0 || count > 50000) {
 		return 0;
 	}
-	if (G_VERBOSE > 1) {
+	if (ctx->verbose > 1) {
 		fprintf (stderr, "[r2flutter] Class cluster: count=%" PRIu64 "\n", count);
 	}
 	for (ut64 i = 0; i < count; i++) {
@@ -1092,8 +949,7 @@ static int decode_class_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counte
 	return 0;
 }
 
-// Decode a Function cluster
-static int decode_function_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, ut64 iso_instr, bool is_canonical) {
+static int decode_function_cluster (ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, ut64 iso_instr, bool is_canonical) {
 	(void)is_canonical;
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
@@ -1102,11 +958,11 @@ static int decode_function_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_cou
 	if (count == 0 || count > 100000) {
 		return 0;
 	}
-	if (G_VERBOSE > 1) {
+	if (ctx->verbose > 1) {
 		fprintf (stderr, "[r2flutter] Function cluster: count=%" PRIu64 "\n", count);
 	}
 	for (ut64 i = 0; i < count; i++) {
-		DartFunction *df = R_NEW0 (DartFunction);
+		DartPoolFunction *df = R_NEW0 (DartPoolFunction);
 		df->ref_id = (*ref_counter)++;
 		ut64 name_ref = 0;
 		cs_read_ref_id (s, &name_ref);
@@ -1136,8 +992,26 @@ static int decode_function_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_cou
 	return 0;
 }
 
-// Read and decode all clusters using Alloc+Fill approach
-static int deserialize_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 iso_instr) {
+static void skip_generic_cluster (ClusterStream *stream) {
+	ut64 count = 0;
+	if (cs_read_unsigned (stream, &count)) {
+		if (count < 100000) {
+			for (ut64 j = 0; j < count; j++) {
+				ut64 skip = 0;
+				for (int k = 0; k < 8 && stream->cursor < stream->end; k++) {
+					if (!cs_read_unsigned (stream, &skip)) {
+						break;
+					}
+					if (skip == 0) {
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
+static int deserialize_clusters (DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 iso_instr) {
 	if (!ctx || !ctx->core || cluster_start >= cluster_end) {
 		return -1;
 	}
@@ -1148,7 +1022,7 @@ static int deserialize_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_e
 	ctx->refs_count = total_refs;
 	ctx->refs = (void **)calloc (total_refs, sizeof (void *));
 	ClusterStream stream = {
-		.core = ctx->core,
+		.ctx = ctx,
 		.cursor = cluster_start,
 		.end = cluster_end
 	};
@@ -1156,18 +1030,14 @@ static int deserialize_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_e
 	for (ut64 ci = 0; ci < num_clusters && stream.cursor < stream.end; ci++) {
 		uint32_t tags = 0;
 		if (!cs_read_u32 (&stream, &tags)) {
-			if (G_VERBOSE > 0) {
+			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] Failed to read cluster tag at %" PRIu64 "\n", ci);
 			}
 			break;
 		}
-		// Dart tag layout (raw_object.h):
-		// bits 0-7:   first byte flags (CanonicalBit, DeeplyImmutableBit, etc.)
-		// bits 8-11:  SizeTagBits (4 bits)
-		// bits 12-31: ClassIdTag (20 bits)
 		uint32_t cid = (tags >> 12) & 0xFFFFF;
 		bool is_canonical = tags & 1;
-		if (G_VERBOSE > 1) {
+		if (ctx->verbose > 1) {
 			fprintf (stderr, "[r2flutter] Cluster %" PRIu64 ": cid=%u canonical=%d cursor=0x%" PFMT64x "\n",
 				ci, cid, is_canonical, stream.cursor);
 		}
@@ -1184,34 +1054,17 @@ static int deserialize_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_e
 		case kFunctionCid:
 			rc = decode_function_cluster (&stream, ctx, &ref_counter, iso_instr, is_canonical);
 			break;
-		default: {
-			ut64 count = 0;
-			if (cs_read_unsigned (&stream, &count)) {
-				if (count < 100000) {
-					for (ut64 j = 0; j < count; j++) {
-						ref_counter++;
-						ut64 skip = 0;
-						for (int k = 0; k < 8 && stream.cursor < stream.end; k++) {
-							if (!cs_read_unsigned (&stream, &skip)) {
-								break;
-							}
-							if (skip == 0) {
-								break;
-							}
-						}
-					}
-				}
-			}
-		}
-		break;
+		default:
+			skip_generic_cluster (&stream);
+			break;
 		}
 		if (rc < 0) {
-			if (G_VERBOSE > 0) {
+			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] Error decoding cluster cid=%u\n", cid);
 			}
 		}
 	}
-	if (G_VERBOSE > 0) {
+	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] Decoded: strings=%d classes=%d functions=%d\n",
 			ctx->strings? r_list_length (ctx->strings): 0,
 			ctx->classes? r_list_length (ctx->classes): 0,
@@ -1220,8 +1073,7 @@ static int deserialize_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_e
 	return 0;
 }
 
-// Resolve string references after Fill phase
-static void resolve_names(DartCtx *ctx) {
+static void resolve_names (DartCtx *ctx) {
 	if (!ctx || !ctx->refs) {
 		return;
 	}
@@ -1242,7 +1094,7 @@ static void resolve_names(DartCtx *ctx) {
 	}
 	if (ctx->functions) {
 		RListIter *it;
-		DartFunction *df;
+		DartPoolFunction *df;
 		r_list_foreach (ctx->functions, it, df) {
 			if (!df || df->name) {
 				continue;
@@ -1257,8 +1109,8 @@ static void resolve_names(DartCtx *ctx) {
 	}
 }
 
-// Placeholder: future decoding of ObjectPool and emission of functions
-static int decode_pool_and_emit(DartCtx *ctx,
+
+static int decode_pool_and_emit (DartCtx *ctx,
 	void (*on_fn) (const char *name, unsigned long long addr, unsigned long long size, void *user),
 	void *user) {
 	(void)on_fn;
@@ -1270,13 +1122,9 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		fprintf (stderr, "[r2flutter] No layout for snapshot hash %s. Populate known_layouts.\n", ctx->snapshot_hash);
 		return -1;
 	}
-	// Minimal clustered snapshot header reader (pre-work for full pool decode)
-	// Layout reference: third_party/dartvm/snapshot.h + app_snapshot.cc (SnapshotHeaderReader + Deserializer)
-	// We only parse the header and clustered-section counters to validate access.
 	const ut64 base = ctx->iso_data;
-	// Snapshot header: magic (u32), length (i64, not incl. magic), kind (i64)
 	ut8 hdr[4 + 8 + 8];
-	if (!read_mem (ctx->core, base, hdr, sizeof (hdr))) {
+	if (!read_mem (ctx, base, hdr, sizeof (hdr))) {
 		eprintf ("Cannot read head\n");
 		return -1;
 	}
@@ -1285,24 +1133,16 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		fprintf (stderr, "[r2flutter] Unexpected snapshot magic at 0x%" PFMT64x "\n", (ut64)base);
 		return -1;
 	}
-	// length (excluding magic) + magic size yields total
 	uint64_t length_ex_magic = *(uint64_t *) (hdr + 4);
 	uint64_t total_len = length_ex_magic + 4;
 	uint64_t kind = *(uint64_t *) (hdr + 12);
-	// Skip version+features header.
-	// The snapshot header is followed by:
-	//   - Version string: 32 bytes (not null-terminated, ASCII hex hash)
-	//   - Features string: variable length, null-terminated
-	// After the features string comes the clustered data with LEB128 values.
-	ut64 cursor = base + 4 + 8 + 8; // after magic + length + kind
-	// The version string is exactly 32 ASCII chars
+	ut64 cursor = base + 4 + 8 + 8;
 	cursor += 32;
-	// Now scan for the NUL terminator of features string
 	const int max_scan = 1024;
 	ut8 b = 0;
 	int scanned = 0;
 	while (scanned < max_scan) {
-		if (!read_mem (ctx->core, cursor + scanned, &b, 1)) {
+		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
 			break;
 		}
 		if (b == '\0') {
@@ -1311,56 +1151,47 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		scanned++;
 	}
 	if (b != '\0') {
-		// couldn't find terminator; continue, but LEB128 parsing may fail
-		if (G_VERBOSE > 0) {
+		if (ctx->verbose > 0) {
 			eprintf ("[r2flutter] warning: could not find features terminator within %d bytes\n", max_scan);
 		}
-	} else if (G_VERBOSE > 1) {
-		// For debugging, print the features string
+	} else if (ctx->verbose > 1) {
 		char feat[256];
 		memset (feat, 0, sizeof (feat));
 		int toshow = scanned > 255? 255: scanned;
-		if (read_mem (ctx->core, cursor, (ut8 *)feat, toshow)) {
+		if (read_mem (ctx, cursor, (ut8 *)feat, toshow)) {
 			eprintf ("[r2flutter] features: %s\n", feat);
 		}
 	}
 	cursor += (ut64) (scanned + 1);
-	// Now clustered header (Deserializer::Deserialize):
-	// num_base_objects, num_objects, num_clusters, instructions_table_len, instruction_table_data_offset
-	// These are encoded as unsigned LEB128 in Dart snapshot streams.
-	// Implement a small LEB128 reader over memory.
 	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0;
 	ut64 next = cursor;
-	if (!read_uleb128_at (ctx->core, next, &nb, &next)) {
+	if (!read_uleb128_at (ctx, next, &nb, &next)) {
 		return -1;
 	}
-	if (!read_uleb128_at (ctx->core, next, &no, &next)) {
+	if (!read_uleb128_at (ctx, next, &no, &next)) {
 		return -1;
 	}
-	if (!read_uleb128_at (ctx->core, next, &nc, &next)) {
+	if (!read_uleb128_at (ctx, next, &nc, &next)) {
 		return -1;
 	}
-	if (!read_uleb128_at (ctx->core, next, &itlen, &next)) {
+	if (!read_uleb128_at (ctx, next, &itlen, &next)) {
 		return -1;
 	}
-	if (!read_uleb128_at (ctx->core, next, &itdata, &next)) {
+	if (!read_uleb128_at (ctx, next, &itdata, &next)) {
 		return -1;
 	}
-	// Sanity check: typical Dart snapshots have 100-3000 clusters, rarely >5000
-	// If num_clusters is unreasonable, the header parsing likely failed
 	bool header_valid = (nc > 0 && nc < 10000 && no > 0 && no < 1000000);
-	if (G_VERBOSE > 0) {
+	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] snapshot clustered header: base_objs=%" PRIu64 " objs=%" PRIu64 " clusters=%" PRIu64 " it_len=%" PRIu64 " it_data_off=%" PRIu64 " total_len=%" PRIu64 " valid=%d\n", (uint64_t)nb, (uint64_t)no, (uint64_t)nc, (uint64_t)itlen, (uint64_t)itdata, (uint64_t)total_len, header_valid);
 	}
 	if (!header_valid) {
-		if (G_VERBOSE > 0) {
+		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] warning: snapshot header values out of expected range, skipping cluster deserialization\n");
 		}
-		nc = 0; // Skip cluster deserialization
+		nc = 0;
 	}
 
-	if (G_DUMP_SNAPSHOT_JSON) {
-		// Emit a compact single-line JSON with basic snapshot info
+	if (ctx->dump_snapshot_json) {
 		printf ("{\"kind\":%llu,\"hash\":\"%s\",\"vm_data\":%llu,\"vm_instr\":%llu,\"iso_data\":%llu,\"iso_instr\":%llu,\"cluster\":{\"base\":%llu,\"objs\":%llu,\"clusters\":%llu,\"it_len\":%llu,\"it_off\":%llu,\"total\":%llu},\"cws\":%d}\n",
 			(unsigned long long)kind,
 			ctx->snapshot_hash,
@@ -1377,23 +1208,19 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			ctx->compressed_word_size);
 	}
 
-	// Store cluster info in context for Alloc+Fill deserialization
 	ctx->num_base_objects = nb;
 	ctx->num_objects = no;
 	ctx->num_clusters = nc;
 
-	// Attempt Alloc+Fill cluster deserialization (new ObjectPool decoding)
-	// Note: typical Dart snapshots have 100-2000 clusters; values >10000 indicate parsing error
-	ut64 cluster_start = next; // position after the 5 uleb128 header fields
+	ut64 cluster_start = next;
 	ut64 cluster_end = base + total_len;
 	if (nc > 0 && nc < 5000 && no < 500000 && cluster_start < cluster_end) {
 		int deser_rc = deserialize_clusters (ctx, cluster_start, cluster_end, nc, ctx->iso_instr);
 		if (deser_rc == 0) {
 			resolve_names (ctx);
-			// Emit functions from deserialized Function cluster
 			if (ctx->functions && on_fn) {
 				RListIter *fit;
-				DartFunction *df;
+				DartPoolFunction *df;
 				r_list_foreach (ctx->functions, fit, df) {
 					if (!df || df->entry_point == 0) {
 						continue;
@@ -1405,8 +1232,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 					on_fn (clean_name, (unsigned long long)df->entry_point, 0, user);
 				}
 			}
-			// Print decoded strings if verbose
-			if (G_VERBOSE > 1 && ctx->strings) {
+			if (ctx->verbose > 1 && ctx->strings) {
 				RListIter *sit;
 				DartString *ds;
 				int str_count = 0;
@@ -1420,7 +1246,6 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		}
 	}
 
-	// Build symbol cache for name lookup using r_bin APIs (faster than core JSON)
 	HtUP *sym_by_addr = ht_up_new0 ();
 	if (ctx->core && ctx->core->bin && sym_by_addr) {
 		RVecRBinSymbol *v = r_bin_get_symbols_vec (ctx->core->bin);
@@ -1439,41 +1264,34 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			}
 		}
 	}
-	// Attempt to enumerate code entrypoints using InstructionsTable rodata.
 	if (!ctx->iso_instr) {
-		// Without instructions image base, we cannot map pc_offsets to addresses.
+		if (sym_by_addr) {
+			ht_up_free (sym_by_addr);
+		}
 		return 0;
 	}
-	// Compute data image base = iso_data + RoundUp (total_len, kMaxObjectAlignment)
-	// Use 16-byte alignment as a reasonable default on 64-bit.
 	ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
 	ut64 data_image_base = base + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
-	// Try to guess data image end conservatively as the start of the instructions image.
 	ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: (data_image_base + (1ULL << 22));
 	if (data_image_end < data_image_base) {
 		data_image_end = data_image_base + (1ULL << 22);
 	}
-	if (G_VERBOSE > 0) {
+	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] data_image_base=0x%" PFMT64x " data_image_end=0x%" PFMT64x "\n", (ut64)data_image_base, (ut64)data_image_end);
 	}
-	// Pre-scan data image to recover entrypoint->name mapping from Code/Function objects.
 	ctx->name_by_ep = scan_code_names (ctx, data_image_base, data_image_end);
-	// Also collect a pool of human-readable names to use as last-resort fallbacks
 	ctx->name_pool = collect_data_names (ctx, data_image_base, data_image_end);
 	if (!ctx->name_pool || r_list_length (ctx->name_pool) == 0) {
-		// Fall back to r2 search if direct scanning didn't find names
 		collect_data_names_with_r2 (ctx, data_image_base, data_image_end);
-		if (G_VERBOSE > 0 && ctx->name_pool) {
+		if (ctx->verbose > 0 && ctx->name_pool) {
 			fprintf (stderr, "[r2flutter] name_pool(r2)=%d\n", r_list_length (ctx->name_pool));
 		}
 	}
 	ctx->name_pool_idx = 0;
-	if (G_VERBOSE > 0 && ctx->name_pool) {
+	if (ctx->verbose > 0 && ctx->name_pool) {
 		fprintf (stderr, "[r2flutter] name_pool=%d\n", r_list_length (ctx->name_pool));
 	}
-	// instruction_table_data_offset is optional; if 0, we can't read rodata entries easily.
 	if (itlen == 0) {
-		// nothing to emit
 		if (ctx->name_by_ep) {
 			ht_up_free (ctx->name_by_ep);
 			ctx->name_by_ep = NULL;
@@ -1484,10 +1302,9 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		return 0;
 	}
 	if (itdata == 0) {
-		// No rodata pointer: emit a conservative number of sequential entries.
 		ut64 cap2 = ctx->layout && ctx->layout->it_cap? ctx->layout->it_cap: 20000;
 		if (cap2 > 256) {
-			cap2 = 256; // keep outputs small/deterministic
+			cap2 = 256;
 		}
 		ut64 limit2 = itlen > cap2? cap2: itlen;
 		for (ut64 i = 0; i < limit2; i++) {
@@ -1497,7 +1314,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			if (on_fn) {
 				on_fn (name, (unsigned long long)ep, 0, user);
 			}
-			if (G_DUMP_IT) {
+			if (ctx->dump_it) {
 				fprintf (stderr, "[it] %" PRIu64 " 0x%" PFMT64x "\n", (uint64_t)i, (ut64) (ctx->iso_instr + (i * 4)));
 			}
 		}
@@ -1506,9 +1323,6 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		}
 		return 0;
 	}
-	// Try to locate InstructionsTable::Data bytes. It's stored in a String object.
-	// We heuristically scan around data_image_base + itdata to find a header where
-	//   header.length is reasonable and header.first_entry_with_code < header.length.
 	ut64 cand = data_image_base + itdata;
 	uint32_t header_len = 0;
 	uint32_t first_with_code = 0;
@@ -1516,7 +1330,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	ut8 hdr2[8];
 	for (int delta = -64; delta <= 64; delta += 4) {
 		ut64 addr = cand + delta;
-		if (!read_mem (ctx->core, addr, hdr2, sizeof (hdr2))) {
+		if (!read_mem (ctx, addr, hdr2, sizeof (hdr2))) {
 			continue;
 		}
 		header_len = *(uint32_t *) (hdr2 + 0);
@@ -1528,10 +1342,9 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		}
 	}
 	if (!found) {
-		// Try varint/packed table
 		ut64 cap2 = ctx->layout && ctx->layout->it_cap? ctx->layout->it_cap: 20000;
 		if (cap2 > 256) {
-			cap2 = 256; // keep outputs small/deterministic
+			cap2 = 256;
 		}
 		int okv = -1;
 		for (int delta = -64; delta <= 64; delta += 4) {
@@ -1547,7 +1360,6 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			return 0;
 		}
 		fprintf (stderr, "[r2flutter] Could not locate InstructionsTable::Data at 0x%" PFMT64x "\n", (ut64) (data_image_base + itdata));
-		// Fallback: sequential entrypoints when table is not found
 		ut64 limit2 = itlen > cap2? cap2: itlen;
 		for (ut64 i = 0; i < limit2; i++) {
 			ut64 ep = ctx->iso_instr + (i * 4);
@@ -1556,7 +1368,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			if (on_fn) {
 				on_fn (name, (unsigned long long)ep, 0, user);
 			}
-			if (G_DUMP_IT) {
+			if (ctx->dump_it) {
 				fprintf (stderr, "[it] %" PRIu64 " 0x%" PFMT64x "\n", (uint64_t)i, (ut64) (ctx->iso_instr + (i * 4)));
 			}
 		}
@@ -1565,15 +1377,11 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		}
 		return 0;
 	}
-	// Read DataEntry array (header_len entries), each entry is {uint32 pc_offset; uint32 sm_offset}
-	// Binary search table is exactly header_len entries and comes right after 8-byte header.
 	ut64 entries_addr = cand + 8;
-	// Sanity cap
 	if (header_len > 200000) {
 		header_len = 200000;
 	}
 	if (first_with_code >= header_len) {
-		// Bad header; fall back to sequential enumeration
 		ut64 cap2 = ctx->layout && ctx->layout->it_cap? ctx->layout->it_cap: 20000;
 		if (cap2 > 256) {
 			cap2 = 256;
@@ -1586,7 +1394,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			if (on_fn) {
 				on_fn (name, (unsigned long long)ep, 0, user);
 			}
-			if (G_DUMP_IT) {
+			if (ctx->dump_it) {
 				fprintf (stderr, "[it] %" PRIu64 " 0x%" PFMT64x "\n", (uint64_t)i, (ut64)ep);
 			}
 		}
@@ -1595,8 +1403,6 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		}
 		return 0;
 	}
-	// We need pc offsets for indices first_with_code .. first_with_code + itlen - 1
-	// We'll read those selectively instead of allocating the whole array.
 	ut64 cap = ctx->layout && ctx->layout->it_cap? ctx->layout->it_cap: 20000;
 	ut64 limit = itlen > cap? cap: itlen;
 	for (ut64 i = 0; i < limit; i++) {
@@ -1606,7 +1412,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		}
 		ut64 entry_addr = entries_addr + idx * 8;
 		ut8 ebuf[8];
-		if (!read_mem (ctx->core, entry_addr, ebuf, sizeof (ebuf))) {
+		if (!read_mem (ctx, entry_addr, ebuf, sizeof (ebuf))) {
 			break;
 		}
 		uint32_t pc_offset = *(uint32_t *) (ebuf + 0);
@@ -1630,7 +1436,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 					if (on_fn) {
 						on_fn (name, (unsigned long long)ep, 0, user);
 					}
-					if (G_DUMP_IT) {
+					if (ctx->dump_it) {
 						fprintf (stderr, "[it] %" PRIu64 " 0x%" PFMT64x "\n", (uint64_t)i, (ut64)ep);
 					}
 					continue;
@@ -1640,7 +1446,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 			if (sm_off > 0 && sm_off < (1u << 31)) {
 				ut64 saddr = data_image_base + (ut64)sm_off;
 				char sname[128];
-				if (try_read_dart_string (ctx->core, saddr, sname, sizeof (sname))) {
+				if (try_read_dart_string (ctx, saddr, sname, sizeof (sname))) {
 					for (char *p = sname; *p; p++) {
 						if ((ut8)*p < 32) {
 							*p = ' ';
@@ -1655,12 +1461,11 @@ static int decode_pool_and_emit(DartCtx *ctx,
 					}
 				}
 				if (!*name) {
-					// Scan a small neighborhood around sm_off for string-like blobs
 					int win = 128;
 					for (int delta = -win; delta <= win; delta += 8) {
-						ut64 cand = saddr + (ut64)delta;
+						ut64 cand2 = saddr + (ut64)delta;
 						char s2[128];
-						if (try_read_dart_string (ctx->core, cand, s2, sizeof (s2))) {
+						if (try_read_dart_string (ctx, cand2, s2, sizeof (s2))) {
 							for (char *p = s2; *p; p++) {
 								if ((ut8)*p < 32) {
 									*p = ' ';
@@ -1674,8 +1479,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 					}
 				}
 			}
-			if (!*name && G_USE_NAME_POOL) {
-				// Last-resort: take next human-readable name from pool
+			if (!*name && ctx->use_name_pool) {
 				if (ctx->name_pool && ctx->name_pool_idx < r_list_length (ctx->name_pool)) {
 					const char *pooln = (const char *)r_list_get_n (ctx->name_pool, ctx->name_pool_idx++);
 					if (pooln && *pooln) {
@@ -1690,7 +1494,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		if (on_fn) {
 			on_fn (name, (unsigned long long)ep, 0, user);
 		}
-		if (G_DUMP_IT) {
+		if (ctx->dump_it) {
 			fprintf (stderr, "[it] %" PRIu64 " 0x%" PFMT64x "\n", (uint64_t)i, (ut64)ep);
 		}
 	}
@@ -1703,28 +1507,18 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	}
 	return 0;
 }
-// Standalone AOT snapshot/ObjectPool parser (no Dart VM deps)
-// Snapshot discovery is implemented in find_snapshots_with_r2; pool decoding is handled in decode_pool_and_emit.
-// For now it’s a stub that returns not implemented.
 
-static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso_data, ut64 *iso_instr) {
-	if (!core) {
+
+static int find_snapshots (DartCtx *ctx) {
+	if (!ctx || !ctx->core) {
 		return -1;
 	}
-	if (vm_data) {
-		*vm_data = 0;
-	}
-	if (vm_instr) {
-		*vm_instr = 0;
-	}
-	if (iso_data) {
-		*iso_data = 0;
-	}
-	if (iso_instr) {
-		*iso_instr = 0;
-	}
+	RCore *core = ctx->core;
+	ctx->vm_data = 0;
+	ctx->vm_instr = 0;
+	ctx->iso_data = 0;
+	ctx->iso_instr = 0;
 
-	// 1) Prefer symbol names via r_bin APIs
 	const char *names[8] = {
 		"_kDartVmSnapshotData",
 		"DartVmSnapshotData",
@@ -1735,7 +1529,7 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 		"_kDartIsolateSnapshotInstructions",
 		"DartIsolateSnapshotInstructions",
 	};
-	ut64 *outs[4] = { vm_data, vm_instr, iso_data, iso_instr };
+	ut64 *outs[4] = { &ctx->vm_data, &ctx->vm_instr, &ctx->iso_data, &ctx->iso_instr };
 	if (core->bin) {
 		RVecRBinSymbol *v = r_bin_get_symbols_vec (core->bin);
 		if (v) {
@@ -1751,21 +1545,18 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 				for (int k = 0; k < 8; k++) {
 					if (!strcmp (nm, names[k])) {
 						int idx = k / 2;
-						if (outs[idx]) {
-							*outs[idx] = sym->vaddr? sym->vaddr: 0;
-						}
+						*outs[idx] = sym->vaddr? sym->vaddr: 0;
 					}
 				}
 			}
 		}
 	}
-	if (vm_data && *vm_data && vm_instr && *vm_instr && iso_data && *iso_data && iso_instr && *iso_instr) {
+	if (ctx->vm_data && ctx->vm_instr && ctx->iso_data && ctx->iso_instr) {
 		return 0;
 	}
 
-	// 2) Fallback: scan sections for magic using r_bin sections and classify
 	RList *sections = r_bin_get_sections (core->bin);
-	const uint32_t kMagic = 0xdcdcf5f5; // Snapshot::kMagicValue
+	const uint32_t kMagic = 0xdcdcf5f5;
 	ut64 found_addrs[32];
 	int found_cnt = 0;
 	if (sections) {
@@ -1777,7 +1568,7 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 			}
 			ut64 vaddr = sec->vaddr;
 			ut64 size = sec->vsize;
-			if (G_VERBOSE > 0) {
+			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] scanning section '%s' vaddr=0x%" PFMT64x " size=0x%" PFMT64x "\n", sec->name? sec->name: "(null)", (ut64)vaddr, (ut64)size);
 			}
 			ut8 buf[4096];
@@ -1808,7 +1599,6 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 		}
 	}
 	if (found_cnt >= 1) {
-		// Classify candidates into DATA vs INSTR by attempting to parse clustered header
 		ut64 data_addrs[4];
 		ut64 data_lens[4];
 		int data_cnt = 0;
@@ -1822,7 +1612,7 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 			}
 			ut64 total_len = *(uint64_t *) (hdr2 + 0) + 4;
 			ut64 classified_len = 0;
-			bool is_data = looks_like_data_snapshot (core, found_addrs[i], &classified_len);
+			bool is_data = looks_like_data_snapshot (ctx, found_addrs[i], &classified_len);
 			if (is_data) {
 				if (data_cnt < 4) {
 					data_addrs[data_cnt] = found_addrs[i];
@@ -1837,7 +1627,6 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 				}
 			}
 		}
-		// Choose VM/Isolate for DATA: min=len as VM, max=len as ISO
 		if (data_cnt >= 1) {
 			ut64 vm_addr = 0, iso_addr = 0;
 			ut64 vm_len = (ut64)-1, iso_len = 0;
@@ -1851,14 +1640,13 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 					iso_addr = data_addrs[i];
 				}
 			}
-			if (vm_addr && vm_data) {
-				*vm_data = vm_addr;
+			if (vm_addr) {
+				ctx->vm_data = vm_addr;
 			}
-			if (iso_addr && iso_data) {
-				*iso_data = iso_addr;
+			if (iso_addr) {
+				ctx->iso_data = iso_addr;
 			}
 		}
-		// Choose VM/Isolate for INSTR similarly: min as VM_INSTR, max as ISO_INSTR
 		if (instr_cnt >= 1) {
 			ut64 vm_addr = 0, iso_addr = 0;
 			ut64 vm_len = (ut64)-1, iso_len = 0;
@@ -1872,31 +1660,27 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 					iso_addr = instr_addrs[i];
 				}
 			}
-			if (vm_addr && vm_instr) {
-				*vm_instr = vm_addr;
+			if (vm_addr) {
+				ctx->vm_instr = vm_addr;
 			}
-			if (iso_addr && iso_instr) {
-				*iso_instr = iso_addr;
+			if (iso_addr) {
+				ctx->iso_instr = iso_addr;
 			}
 		}
-		if ((vm_data && *vm_data) || (iso_data && *iso_data) || (vm_instr && *vm_instr) || (iso_instr && *iso_instr)) {
+		if (ctx->vm_data || ctx->iso_data || ctx->vm_instr || ctx->iso_instr) {
 			return 0;
 		}
 	}
 	return -1;
 }
 
-static void read_snapshot_hash_flags(RCore *core, ut64 vm_data, char out_hash[33]) {
-	extract_snapshot_hash_flags (core, vm_data, out_hash);
-}
-
-static void emit_stub_symbols(RCore *core,
+static void emit_stub_symbols (DartCtx *ctx,
 	void (*on_fn) (const char *name, unsigned long long addr, unsigned long long size, void *user),
 	void *user) {
-	if (!core || !core->bin || !on_fn) {
+	if (!ctx || !ctx->core || !ctx->core->bin || !on_fn) {
 		return;
 	}
-	RVecRBinSymbol *v = r_bin_get_symbols_vec (core->bin);
+	RVecRBinSymbol *v = r_bin_get_symbols_vec (ctx->core->bin);
 	if (!v) {
 		return;
 	}
@@ -1928,51 +1712,36 @@ static void emit_stub_symbols(RCore *core,
 	}
 }
 
-static ut64 find_pp_base_via_r2(RCore *core, ut64 iso_instr) {
-	(void)core;
-	(void)iso_instr;
-	// Disabled heuristic to avoid slow JSON disassembly; use 0 until we add a fast r_asm pattern.
-	return 0;
-}
-
-int dart_pool_enumerate(RCore *core, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base) {
+int dart_pool_enumerate (DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base) {
 	(void)on_fn;
 	(void)user;
 	(void)libapp_path;
-	if (!core) {
+	if (!ctx || !ctx->core) {
 		return -1;
 	}
-	ut64 vm_data = 0, vm_instr = 0, iso_data = 0, iso_instr = 0;
-	int ok = find_snapshots_with_r2 (core, &vm_data, &vm_instr, &iso_data, &iso_instr);
+	int ok = find_snapshots (ctx);
 	if (ok == 0) {
 		if (out_base) {
-			*out_base = (unsigned long long)r_bin_get_baddr (core->bin);
+			*out_base = (unsigned long long)r_bin_get_baddr (ctx->core->bin);
 		}
 		if (out_heap_base) {
 			*out_heap_base = 0;
 		}
 		eprintf ("[r2flutter] Found Dart snapshots: vm_data=0x%llx vm_instr=0x%llx iso_data=0x%llx iso_instr=0x%llx\n",
-			(unsigned long long)vm_data,
-			(unsigned long long)vm_instr,
-			(unsigned long long)iso_data,
-			(unsigned long long)iso_instr);
-		DartCtx ctx = { 0 };
-		ctx.core = core;
-		ctx.vm_data = vm_data;
-		ctx.vm_instr = vm_instr;
-		ctx.iso_data = iso_data;
-		ctx.iso_instr = iso_instr;
-		read_snapshot_hash_flags (core, vm_data, ctx.snapshot_hash);
+			(unsigned long long)ctx->vm_data,
+			(unsigned long long)ctx->vm_instr,
+			(unsigned long long)ctx->iso_data,
+			(unsigned long long)ctx->iso_instr);
+		extract_snapshot_hash_flags (ctx, ctx->vm_data);
 		DartVerLayout layout_tmp;
-		ctx.layout = load_layout_from_json (ctx.snapshot_hash, &layout_tmp);
-		if (!ctx.layout) {
-			ctx.layout = dart_pick_layout_by_hash (ctx.snapshot_hash);
+		ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
+		if (!ctx->layout) {
+			ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
 		}
-		derive_layout_from_flags (&ctx);
-		// Debug: dump first 32 bytes of isolate snapshot data
-		if (G_VERBOSE > 1) {
+		derive_layout_from_flags (ctx);
+		if (ctx->verbose > 1) {
 			ut8 peek[32] = { 0 };
-			if (read_mem (core, iso_data, peek, sizeof (peek))) {
+			if (read_mem (ctx, ctx->iso_data, peek, sizeof (peek))) {
 				fprintf (stderr, "[r2flutter] iso_data[0..32]: ");
 				for (int i = 0; i < 32; i++) {
 					fprintf (stderr, "%02x", (unsigned int)peek[i]);
@@ -1980,24 +1749,11 @@ int dart_pool_enumerate(RCore *core, const char *libapp_path, void(*on_fn)(const
 				fprintf (stderr, "\n");
 			}
 		}
-		// Emit FUNC symbols available in the binary (e.g., VM stubs)
-		if (!G_NO_STUBS) {
-			emit_stub_symbols (core, on_fn, user);
+		if (!ctx->no_stubs) {
+			emit_stub_symbols (ctx, on_fn, user);
 		}
-		// Decode and emit functions from ObjectPool if layout is known (WIP)
-		(void)decode_pool_and_emit (&ctx, on_fn, user);
-		// Try to guess PP base (global ObjectPool) using adrp/add prologue pattern
-		ut64 pp_base = find_pp_base_via_r2 (core, iso_instr);
-		if (!pp_base && vm_instr) {
-			pp_base = find_pp_base_via_r2 (core, vm_instr);
-		}
-		if (pp_base && out_heap_base) {
-			*out_heap_base = (unsigned long long)pp_base;
-			if (G_VERBOSE > 0) {
-				fprintf (stderr, "[r2flutter] PP(base)=0x%" PFMT64x "\n", (uint64_t)pp_base);
-			}
-		}
-		return 0; // return 0 to let caller proceed even if pool decoding isn't finished
+		(void)decode_pool_and_emit (ctx, on_fn, user);
+		return 0;
 	}
 	if (out_base) {
 		*out_base = 0;
@@ -2009,11 +1765,12 @@ int dart_pool_enumerate(RCore *core, const char *libapp_path, void(*on_fn)(const
 	return -1;
 }
 
+
 // ============================================================================
-// Class and Field Extraction Implementation
+// Class and Field Extraction
 // ============================================================================
 
-void dart_field_info_free(DartFieldInfo *fi) {
+void dart_field_info_free (DartFieldInfo *fi) {
 	if (fi) {
 		free (fi->name);
 		free (fi->type_name);
@@ -2021,7 +1778,7 @@ void dart_field_info_free(DartFieldInfo *fi) {
 	}
 }
 
-void dart_class_info_free(DartClassInfo *ci) {
+void dart_class_info_free (DartClassInfo *ci) {
 	if (ci) {
 		free (ci->name);
 		free (ci->library_name);
@@ -2036,7 +1793,7 @@ void dart_class_info_free(DartClassInfo *ci) {
 	}
 }
 
-void dart_type_info_free(DartTypeInfo *ti) {
+void dart_type_info_free (DartTypeInfo *ti) {
 	if (ti) {
 		free (ti->name);
 		if (ti->type_args) {
@@ -2046,41 +1803,17 @@ void dart_type_info_free(DartTypeInfo *ti) {
 	}
 }
 
-void dart_class_list_free(RList *list) {
+void dart_class_list_free (RList *list) {
 	r_list_free (list);
 }
 
-// Internal context for class extraction
-typedef struct {
-	RCore *core;
-	ut64 vm_data;
-	ut64 vm_instr;
-	ut64 iso_data;
-	ut64 iso_instr;
-	char snapshot_hash[33];
-	const DartVerLayout *layout;
-	int compressed_word_size;
-	RList *classes;     // DartClassInfo*
-	RList *strings;     // DartString* for name resolution
-	RList *libraries;   // library objects for URI resolution
-	RList *fields;      // DartFieldInfo* (global pool)
-	RList *types;       // DartTypeInfo* (global pool)
-	void **refs;
-	ut64 refs_count;
-	ut64 num_base_objects;
-	ut64 num_objects;
-	ut64 num_clusters;
-} ClassExtractCtx;
-
-// CIDs for class-related objects
 typedef enum {
 	kFieldCid_extract = 10,
 	kLibraryCid_extract = 12,
 	kTypeArgumentsCid_extract = 115,
 } ExtraCids;
 
-// Decode a Field cluster to extract field information
-static int decode_field_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64 *ref_counter) {
+static int decode_field_cluster_ext (ClusterStream *s, DartCtx *ctx, ut64 *ref_counter) {
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
 		return -1;
@@ -2088,7 +1821,7 @@ static int decode_field_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64
 	if (count == 0 || count > 50000) {
 		return 0;
 	}
-	if (G_VERBOSE > 1) {
+	if (ctx->verbose > 1) {
 		fprintf (stderr, "[r2flutter] Field cluster: count=%" PRIu64 "\n", count);
 	}
 	for (ut64 i = 0; i < count; i++) {
@@ -2124,9 +1857,6 @@ static int decode_field_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64
 			ut64 dummy = 0;
 			cs_read_ref_id (s, &dummy);
 		}
-		if (ctx->fields) {
-			r_list_append (ctx->fields, fi);
-		}
 		if (ctx->refs && ref_id < ctx->refs_count) {
 			ctx->refs[ref_id] = fi;
 		}
@@ -2136,8 +1866,7 @@ static int decode_field_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64
 	return 0;
 }
 
-// Enhanced Class cluster decoding with hierarchy and type info
-static int decode_class_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64 *ref_counter) {
+static int decode_class_cluster_ext (ClusterStream *s, DartCtx *ctx, RList *class_list, ut64 *ref_counter) {
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
 		return -1;
@@ -2145,7 +1874,7 @@ static int decode_class_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64
 	if (count == 0 || count > 50000) {
 		return 0;
 	}
-	if (G_VERBOSE > 1) {
+	if (ctx->verbose > 1) {
 		fprintf (stderr, "[r2flutter] Class cluster (ext): count=%" PRIu64 "\n", count);
 	}
 	for (ut64 i = 0; i < count; i++) {
@@ -2191,9 +1920,7 @@ static int decode_class_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64
 			ut64 dummy = 0;
 			cs_read_ref_id (s, &dummy);
 		}
-		if (ctx->classes) {
-			r_list_append (ctx->classes, ci);
-		}
+		r_list_append (class_list, ci);
 		if (ctx->refs && ci->ref_id < ctx->refs_count) {
 			ctx->refs[ci->ref_id] = ci;
 		}
@@ -2202,14 +1929,13 @@ static int decode_class_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64
 	return 0;
 }
 
-// Library cluster decoding for URI resolution
 typedef struct {
 	ut64 ref_id;
 	char *uri;
 	ut64 name_ref;
 } LibraryInfo;
 
-static void free_library_info(void *p) {
+static void free_library_info (void *p) {
 	LibraryInfo *li = (LibraryInfo *)p;
 	if (li) {
 		free (li->uri);
@@ -2217,7 +1943,7 @@ static void free_library_info(void *p) {
 	}
 }
 
-static int decode_library_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64 *ref_counter) {
+static int decode_library_cluster_ext (ClusterStream *s, DartCtx *ctx, RList *libraries, ut64 *ref_counter) {
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
 		return -1;
@@ -2225,7 +1951,7 @@ static int decode_library_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut
 	if (count == 0 || count > 10000) {
 		return 0;
 	}
-	if (G_VERBOSE > 1) {
+	if (ctx->verbose > 1) {
 		fprintf (stderr, "[r2flutter] Library cluster: count=%" PRIu64 "\n", count);
 	}
 	for (ut64 i = 0; i < count; i++) {
@@ -2239,9 +1965,7 @@ static int decode_library_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut
 			ut64 dummy = 0;
 			cs_read_ref_id (s, &dummy);
 		}
-		if (ctx->libraries) {
-			r_list_append (ctx->libraries, li);
-		}
+		r_list_append (libraries, li);
 		if (ctx->refs && li->ref_id < ctx->refs_count) {
 			ctx->refs[li->ref_id] = li;
 		}
@@ -2249,14 +1973,13 @@ static int decode_library_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut
 	return 0;
 }
 
-// Resolve names after fill phase for classes
-static void resolve_class_names(ClassExtractCtx *ctx) {
-	if (!ctx || !ctx->refs || !ctx->classes) {
+static void resolve_class_names (DartCtx *ctx, RList *class_list) {
+	if (!ctx || !ctx->refs || !class_list) {
 		return;
 	}
 	RListIter *it;
 	DartClassInfo *ci;
-	r_list_foreach (ctx->classes, it, ci) {
+	r_list_foreach (class_list, it, ci) {
 		if (!ci) {
 			continue;
 		}
@@ -2281,59 +2004,23 @@ static void resolve_class_names(ClassExtractCtx *ctx) {
 	}
 }
 
-// Main class extraction function
-RList *dart_pool_extract_classes(RCore *core) {
-	if (!core) {
-		return NULL;
-	}
-	ut64 vm_data = 0, vm_instr = 0, iso_data = 0, iso_instr = 0;
-	int ok = find_snapshots_with_r2 (core, &vm_data, &vm_instr, &iso_data, &iso_instr);
-	if (ok != 0 || !iso_data) {
-		return NULL;
-	}
-	// Use isolate snapshot for class extraction
-	ut64 snapshot_base = iso_data;
-	ClassExtractCtx ctx = { 0 };
-	ctx.core = core;
-	ctx.vm_data = vm_data;
-	ctx.vm_instr = vm_instr;
-	ctx.iso_data = iso_data;
-	ctx.iso_instr = iso_instr;
-	extract_snapshot_hash_flags (core, vm_data, ctx.snapshot_hash);
-	DartVerLayout layout_tmp;
-	bool layout_is_dynamic = false;
-	ctx.layout = load_layout_from_json (ctx.snapshot_hash, &layout_tmp);
-	if (!ctx.layout) {
-		ctx.layout = dart_pick_layout_by_hash (ctx.snapshot_hash);
-		layout_is_dynamic = true;
-	}
-	if (ctx.layout) {
-		ctx.compressed_word_size = ctx.layout->compressed_word_size;
-	} else {
-		ctx.compressed_word_size = 4;
-	}
+static int parse_snapshot_header (DartCtx *ctx, ut64 snapshot_base, ut64 *out_nb, ut64 *out_no, ut64 *out_nc, ut64 *out_itlen, ut64 *out_itdata, ut64 *out_total_len, ut64 *out_cluster_start) {
 	ut8 hdr[4 + 8 + 8];
-	if (!read_mem (core, snapshot_base, hdr, sizeof (hdr))) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
+	if (!read_mem (ctx, snapshot_base, hdr, sizeof (hdr))) {
+		return -1;
 	}
 	uint32_t magic = *(uint32_t *)(hdr + 0);
 	if (magic != 0xdcdcf5f5) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
+		return -1;
 	}
 	uint64_t length_ex_magic = *(uint64_t *)(hdr + 4);
-	uint64_t total_len = length_ex_magic + 4;
+	*out_total_len = length_ex_magic + 4;
 	ut64 cursor = snapshot_base + 4 + 8 + 8 + 32;
 	const int max_scan = 1024;
 	ut8 b = 0;
 	int scanned = 0;
 	while (scanned < max_scan) {
-		if (!read_mem (core, cursor + scanned, &b, 1)) {
+		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
 			break;
 		}
 		if (b == '\0') {
@@ -2342,67 +2029,82 @@ RList *dart_pool_extract_classes(RCore *core) {
 		scanned++;
 	}
 	cursor += (ut64)(scanned + 1);
-	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, next = cursor;
-	if (!read_uleb128_at (core, next, &nb, &next)) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
+	ut64 next = cursor;
+	if (!read_uleb128_at (ctx, next, out_nb, &next)) {
+		return -1;
+	}
+	if (!read_uleb128_at (ctx, next, out_no, &next)) {
+		return -1;
+	}
+	if (!read_uleb128_at (ctx, next, out_nc, &next)) {
+		return -1;
+	}
+	if (!read_uleb128_at (ctx, next, out_itlen, &next)) {
+		return -1;
+	}
+	if (!read_uleb128_at (ctx, next, out_itdata, &next)) {
+		return -1;
+	}
+	*out_cluster_start = next;
+	return 0;
+}
+
+
+RList *dart_pool_extract_classes (DartCtx *ctx) {
+	if (!ctx || !ctx->core) {
 		return NULL;
 	}
-	if (!read_uleb128_at (core, next, &no, &next)) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
+	if (find_snapshots (ctx) != 0 || !ctx->iso_data) {
 		return NULL;
 	}
-	if (!read_uleb128_at (core, next, &nc, &next)) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
+	ut64 snapshot_base = ctx->iso_data;
+	extract_snapshot_hash_flags (ctx, ctx->vm_data);
+	DartVerLayout layout_tmp;
+	bool layout_is_dynamic = false;
+	ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
+	if (!ctx->layout) {
+		ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
+		layout_is_dynamic = true;
 	}
-	if (!read_uleb128_at (core, next, &itlen, &next)) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
+	if (ctx->layout) {
+		ctx->compressed_word_size = ctx->layout->compressed_word_size;
+	} else {
+		ctx->compressed_word_size = 4;
 	}
-	if (!read_uleb128_at (core, next, &itdata, &next)) {
+	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, total_len = 0, cluster_start = 0;
+	if (parse_snapshot_header (ctx, snapshot_base, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) != 0) {
 		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
+			free ((void *)ctx->layout);
+			ctx->layout = NULL;
 		}
 		return NULL;
 	}
 	bool header_valid = (nc > 0 && nc < 10000 && no > 0 && no < 1000000);
 	if (!header_valid) {
-		if (G_VERBOSE > 0) {
+		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] class extraction: invalid header (clusters=%" PRIu64 " objs=%" PRIu64 ")\n", nc, no);
 		}
 		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
+			free ((void *)ctx->layout);
+			ctx->layout = NULL;
 		}
 		return r_list_newf ((RListFree)dart_class_info_free);
 	}
-	ctx.num_base_objects = nb;
-	ctx.num_objects = no;
-	ctx.num_clusters = nc;
-	ctx.classes = r_list_newf ((RListFree)dart_class_info_free);
-	ctx.strings = r_list_newf (free_dart_string);
-	ctx.libraries = r_list_newf (free_library_info);
-	ctx.fields = r_list_newf ((RListFree)dart_field_info_free);
+	ctx->num_base_objects = nb;
+	ctx->num_objects = no;
+	ctx->num_clusters = nc;
+	RList *class_list = r_list_newf ((RListFree)dart_class_info_free);
+	ctx->strings = r_list_newf (free_dart_string);
+	RList *libraries = r_list_newf (free_library_info);
 	ut64 total_refs = nb + no + 16;
-	ctx.refs_count = total_refs;
-	ctx.refs = (void **)calloc (total_refs, sizeof (void *));
+	ctx->refs_count = total_refs;
+	ctx->refs = (void **)calloc (total_refs, sizeof (void *));
 	ClusterStream stream = {
-		.core = core,
-		.cursor = next,
+		.ctx = ctx,
+		.cursor = cluster_start,
 		.end = snapshot_base + total_len
 	};
 	ut64 ref_counter = nb + 1;
-	if (G_VERBOSE > 1) {
-		fprintf (stderr, "[r2flutter] class extraction: clusters=%" PRIu64 " cid_class=%d/%d/%d stream=0x%" PFMT64x "-0x%" PFMT64x "\n",
-			nc, kClassCid, kFieldCid_extract, kLibraryCid_extract, stream.cursor, stream.end);
-	}
 	for (ut64 ci2 = 0; ci2 < nc && stream.cursor < stream.end; ci2++) {
 		uint32_t tags = 0;
 		if (!cs_read_u32 (&stream, &tags)) {
@@ -2411,94 +2113,62 @@ RList *dart_pool_extract_classes(RCore *core) {
 		uint32_t cid = (tags >> 12) & 0xFFFFF;
 		bool is_canonical = tags & 1;
 		(void)is_canonical;
-		if (G_VERBOSE > 1 && ci2 < 30) {
-			fprintf (stderr, "[r2flutter] cluster[%" PRIu64 "] cid=%u tags=0x%08x cursor=0x%" PFMT64x "\n",
-				ci2, cid, tags, stream.cursor);
-		}
 		int rc = 0;
 		switch (cid) {
 		case kOneByteStringCid:
 		case kTwoByteStringCid:
 		case kStringCid:
-			rc = decode_string_cluster (&stream, (DartCtx *)&ctx, &ref_counter, false);
+			rc = decode_string_cluster (&stream, ctx, &ref_counter, false);
 			break;
 		case kClassCid:
-			rc = decode_class_cluster_ext (&stream, &ctx, &ref_counter);
+			rc = decode_class_cluster_ext (&stream, ctx, class_list, &ref_counter);
 			break;
 		case kFieldCid_extract:
-			rc = decode_field_cluster_ext (&stream, &ctx, &ref_counter);
+			rc = decode_field_cluster_ext (&stream, ctx, &ref_counter);
 			break;
 		case kLibraryCid_extract:
-			rc = decode_library_cluster_ext (&stream, &ctx, &ref_counter);
+			rc = decode_library_cluster_ext (&stream, ctx, libraries, &ref_counter);
 			break;
 		default:
-			{
-				ut64 count = 0;
-				if (cs_read_unsigned (&stream, &count)) {
-					if (count < 100000) {
-						for (ut64 j = 0; j < count; j++) {
-							ref_counter++;
-							ut64 skip = 0;
-							for (int k = 0; k < 8 && stream.cursor < stream.end; k++) {
-								if (!cs_read_unsigned (&stream, &skip)) {
-									break;
-								}
-								if (skip == 0) {
-									break;
-								}
-							}
-						}
-					}
-				}
-			}
+			skip_generic_cluster (&stream);
 			break;
 		}
 		if (rc < 0) {
 			break;
 		}
 	}
-	resolve_class_names (&ctx);
-	if (G_VERBOSE > 0) {
+	resolve_class_names (ctx, class_list);
+	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] Extracted classes from clusters: %d\n",
-			ctx.classes? r_list_length (ctx.classes): 0);
+			class_list? r_list_length (class_list): 0);
 	}
-	// If no classes found from clusters, try to extract type strings from the const section
-	if (!ctx.classes || r_list_length (ctx.classes) == 0) {
-		if (G_VERBOSE > 0) {
+	if (!class_list || r_list_length (class_list) == 0) {
+		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] Falling back to string-based type extraction\n");
 		}
-		// Scan the const section (between vm_data and iso_data) for type-like strings
-		ut64 scan_start = vm_data;
-		ut64 scan_end = iso_data;
+		ut64 scan_start = ctx->vm_data;
+		ut64 scan_end = ctx->iso_data;
 		if (scan_end > scan_start && (scan_end - scan_start) < 0x100000) {
 			ut64 pos = scan_start;
 			int class_count = 0;
 			while (pos < scan_end - 4 && class_count < 2000) {
 				ut8 buf[128];
 				int to_read = (scan_end - pos > 127)? 127: (int)(scan_end - pos);
-				if (!read_mem (core, pos, buf, to_read)) {
+				if (!read_mem (ctx, pos, buf, to_read)) {
 					break;
 				}
-				// Look for printable strings that look like class names
 				int slen = 0;
 				while (slen < to_read && buf[slen] >= 0x20 && buf[slen] < 0x7f) {
 					slen++;
 				}
 				if (slen >= 3 && slen < 80 && buf[slen] == 0) {
-					// Check if it looks like a class/type name
-					// Class names: PascalCase (e.g., ArgumentError) or _PascalCase (e.g., _List)
-					// Exclude: function names (_lowercase...), method patterns (get:, set:), etc.
 					char *s = (char *)buf;
 					bool is_type = false;
-					// Skip common non-class prefixes
 					if (strncmp (s, "get:", 4) == 0 || strncmp (s, "set:", 4) == 0 ||
 					    strncmp (s, "init:", 5) == 0 || strncmp (s, "dyn:", 4) == 0 ||
 					    strncmp (s, "vm:", 3) == 0 || strncmp (s, "dart:", 5) == 0 ||
 					    strncmp (s, "package:", 8) == 0 || strchr (s, ':') != NULL) {
-						// Skip these
 					} else if (s[0] >= 'A' && s[0] <= 'Z') {
-						// PascalCase: starts with uppercase
-						// Verify it's not all uppercase (constants)
 						bool has_lower = false;
 						for (int i = 1; i < slen && !has_lower; i++) {
 							if (s[i] >= 'a' && s[i] <= 'z') {
@@ -2507,8 +2177,6 @@ RList *dart_pool_extract_classes(RCore *core) {
 						}
 						is_type = has_lower;
 					} else if (s[0] == '_' && slen > 1 && s[1] >= 'A' && s[1] <= 'Z') {
-						// _PascalCase: private class
-						// Verify it has lowercase after the second char
 						bool has_lower = false;
 						for (int i = 2; i < slen && !has_lower; i++) {
 							if (s[i] >= 'a' && s[i] <= 'z') {
@@ -2520,10 +2188,10 @@ RList *dart_pool_extract_classes(RCore *core) {
 					if (is_type) {
 						DartClassInfo *ci = R_NEW0 (DartClassInfo);
 						ci->name = strdup (s);
-						ci->ref_id = 0; // Unknown ref
+						ci->ref_id = 0;
 						ci->instance_size = 0;
 						ci->flags = 0;
-						r_list_append (ctx.classes, ci);
+						r_list_append (class_list, ci);
 						class_count++;
 					}
 					pos += slen + 1;
@@ -2531,40 +2199,35 @@ RList *dart_pool_extract_classes(RCore *core) {
 					pos++;
 				}
 			}
-			if (G_VERBOSE > 0) {
-				fprintf (stderr, "[r2flutter] Extracted %d type names from strings\n", class_count);
-			}
 		}
 	}
-	RList *result = ctx.classes;
-	ctx.classes = NULL;
-	free (ctx.refs);
-	r_list_free (ctx.strings);
-	r_list_free (ctx.libraries);
-	r_list_free (ctx.fields);
+	free (ctx->refs);
+	ctx->refs = NULL;
+	ctx->refs_count = 0;
+	r_list_free (ctx->strings);
+	ctx->strings = NULL;
+	r_list_free (libraries);
 	if (layout_is_dynamic) {
-		free ((void *)ctx.layout);
+		free ((void *)ctx->layout);
+		ctx->layout = NULL;
 	}
-	return result;
+	return class_list;
 }
 
-// Get class hierarchy as list of ancestor names
-RList *dart_pool_get_class_hierarchy(RCore *core, ut64 class_ref) {
-	(void)core;
+RList *dart_pool_get_class_hierarchy (DartCtx *ctx, ut64 class_ref) {
+	(void)ctx;
 	(void)class_ref;
 	return r_list_newf (free);
 }
 
-// Extract fields for a specific class
-RList *dart_pool_extract_fields(RCore *core, ut64 class_ref) {
-	(void)core;
+RList *dart_pool_extract_fields (DartCtx *ctx, ut64 class_ref) {
+	(void)ctx;
 	(void)class_ref;
 	return r_list_newf ((RListFree)dart_field_info_free);
 }
 
-// Dump classes to JSON
-char *dart_pool_dump_classes_json(RCore *core) {
-	RList *classes = dart_pool_extract_classes (core);
+char *dart_pool_dump_classes_json (DartCtx *ctx) {
+	RList *classes = dart_pool_extract_classes (ctx);
 	if (!classes || r_list_length (classes) == 0) {
 		if (classes) {
 			dart_class_list_free (classes);
@@ -2621,9 +2284,8 @@ char *dart_pool_dump_classes_json(RCore *core) {
 	return pj_drain (pj);
 }
 
-// Dump classes to r2 script format
-char *dart_pool_dump_classes_r2(RCore *core) {
-	RList *classes = dart_pool_extract_classes (core);
+char *dart_pool_dump_classes_r2 (DartCtx *ctx) {
+	RList *classes = dart_pool_extract_classes (ctx);
 	if (!classes) {
 		return strdup ("# No classes found\n");
 	}
@@ -2677,15 +2339,16 @@ char *dart_pool_dump_classes_r2(RCore *core) {
 	return r_strbuf_drain (sb);
 }
 
+
 // ============================================================================
-// String Extraction Implementation
+// String Extraction
 // ============================================================================
 
-void dart_string_ref_free(DartStringRef *sr) {
+void dart_string_ref_free (DartStringRef *sr) {
 	free (sr);
 }
 
-void dart_string_info_free(DartStringInfo *si) {
+void dart_string_info_free (DartStringInfo *si) {
 	if (si) {
 		free (si->value);
 		if (si->references) {
@@ -2695,32 +2358,11 @@ void dart_string_info_free(DartStringInfo *si) {
 	}
 }
 
-void dart_string_list_free(RList *list) {
+void dart_string_list_free (RList *list) {
 	r_list_free (list);
 }
 
-// Internal context for string extraction
-typedef struct {
-	RCore *core;
-	ut64 vm_data;
-	ut64 vm_instr;
-	ut64 iso_data;
-	ut64 iso_instr;
-	char snapshot_hash[33];
-	const DartVerLayout *layout;
-	int compressed_word_size;
-	RList *strings;     // DartStringInfo*
-	RList *functions;   // for reference tracking
-	RList *classes;     // for reference tracking
-	void **refs;
-	ut64 refs_count;
-	ut64 num_base_objects;
-	ut64 num_objects;
-	ut64 num_clusters;
-} StringExtractCtx;
-
-// Decode OneByteString cluster for string extraction
-static int decode_one_byte_string_cluster(ClusterStream *s, StringExtractCtx *ctx, ut64 *ref_counter) {
+static int decode_one_byte_string_cluster (ClusterStream *s, RList *string_list, DartCtx *ctx, ut64 *ref_counter) {
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
 		return -1;
@@ -2728,7 +2370,7 @@ static int decode_one_byte_string_cluster(ClusterStream *s, StringExtractCtx *ct
 	if (count == 0 || count > 100000) {
 		return 0;
 	}
-	if (G_VERBOSE > 1) {
+	if (ctx->verbose > 1) {
 		fprintf (stderr, "[r2flutter] OneByteString cluster: count=%" PRIu64 "\n", count);
 	}
 	for (ut64 i = 0; i < count; i++) {
@@ -2739,9 +2381,6 @@ static int decode_one_byte_string_cluster(ClusterStream *s, StringExtractCtx *ct
 		bool is_two_byte = (encoded & 1) != 0;
 		ut64 length = encoded >> 1;
 		if (length > 65536) {
-			if (G_VERBOSE > 0) {
-				fprintf (stderr, "[r2flutter] String too long: %" PRIu64 ", skipping\n", length);
-			}
 			continue;
 		}
 		DartStringInfo *si = R_NEW0 (DartStringInfo);
@@ -2788,9 +2427,7 @@ static int decode_one_byte_string_cluster(ClusterStream *s, StringExtractCtx *ct
 				}
 			}
 		}
-		if (ctx->strings) {
-			r_list_append (ctx->strings, si);
-		}
+		r_list_append (string_list, si);
 		if (ctx->refs && si->ref_id < ctx->refs_count) {
 			ctx->refs[si->ref_id] = si;
 		}
@@ -2798,17 +2435,13 @@ static int decode_one_byte_string_cluster(ClusterStream *s, StringExtractCtx *ct
 	return 0;
 }
 
-// Decode TwoByteString cluster (UTF-16)
-static int decode_two_byte_string_cluster(ClusterStream *s, StringExtractCtx *ctx, ut64 *ref_counter) {
+static int decode_two_byte_string_cluster (ClusterStream *s, RList *string_list, DartCtx *ctx, ut64 *ref_counter) {
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
 		return -1;
 	}
 	if (count == 0 || count > 100000) {
 		return 0;
-	}
-	if (G_VERBOSE > 1) {
-		fprintf (stderr, "[r2flutter] TwoByteString cluster: count=%" PRIu64 "\n", count);
 	}
 	for (ut64 i = 0; i < count; i++) {
 		ut64 encoded = 0;
@@ -2817,9 +2450,6 @@ static int decode_two_byte_string_cluster(ClusterStream *s, StringExtractCtx *ct
 		}
 		ut64 length = encoded >> 1;
 		if (length > 65536) {
-			if (G_VERBOSE > 0) {
-				fprintf (stderr, "[r2flutter] TwoByteString too long: %" PRIu64 ", skipping\n", length);
-			}
 			continue;
 		}
 		DartStringInfo *si = R_NEW0 (DartStringInfo);
@@ -2863,9 +2493,7 @@ static int decode_two_byte_string_cluster(ClusterStream *s, StringExtractCtx *ct
 			}
 			free (raw);
 		}
-		if (ctx->strings) {
-			r_list_append (ctx->strings, si);
-		}
+		r_list_append (string_list, si);
 		if (ctx->refs && si->ref_id < ctx->refs_count) {
 			ctx->refs[si->ref_id] = si;
 		}
@@ -2873,8 +2501,7 @@ static int decode_two_byte_string_cluster(ClusterStream *s, StringExtractCtx *ct
 	return 0;
 }
 
-// Track string references from function clusters
-static void track_string_refs_from_functions(StringExtractCtx *ctx, ClusterStream *s, ut64 *ref_counter) {
+static void track_string_refs_from_functions (DartCtx *ctx, ClusterStream *s, ut64 *ref_counter) {
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
 		return;
@@ -2906,8 +2533,7 @@ static void track_string_refs_from_functions(StringExtractCtx *ctx, ClusterStrea
 	}
 }
 
-// Track string references from class clusters
-static void track_string_refs_from_classes(StringExtractCtx *ctx, ClusterStream *s, ut64 *ref_counter) {
+static void track_string_refs_from_classes (DartCtx *ctx, ClusterStream *s, ut64 *ref_counter) {
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
 		return;
@@ -2939,196 +2565,104 @@ static void track_string_refs_from_classes(StringExtractCtx *ctx, ClusterStream 
 	}
 }
 
-// Main string extraction function
-RList *dart_pool_extract_strings(RCore *core) {
-	if (!core) {
+RList *dart_pool_extract_strings (DartCtx *ctx) {
+	if (!ctx || !ctx->core) {
 		return NULL;
 	}
-	ut64 vm_data = 0, vm_instr = 0, iso_data = 0, iso_instr = 0;
-	int ok = find_snapshots_with_r2 (core, &vm_data, &vm_instr, &iso_data, &iso_instr);
-	if (ok != 0 || !iso_data) {
+	if (find_snapshots (ctx) != 0 || !ctx->iso_data) {
 		return NULL;
 	}
-	ut64 snapshot_base = iso_data;
-	StringExtractCtx ctx = { 0 };
-	ctx.core = core;
-	ctx.vm_data = vm_data;
-	ctx.vm_instr = vm_instr;
-	ctx.iso_data = iso_data;
-	ctx.iso_instr = iso_instr;
-	extract_snapshot_hash_flags (core, vm_data, ctx.snapshot_hash);
+	ut64 snapshot_base = ctx->iso_data;
+	extract_snapshot_hash_flags (ctx, ctx->vm_data);
 	DartVerLayout layout_tmp;
 	bool layout_is_dynamic = false;
-	ctx.layout = load_layout_from_json (ctx.snapshot_hash, &layout_tmp);
-	if (!ctx.layout) {
-		ctx.layout = dart_pick_layout_by_hash (ctx.snapshot_hash);
+	ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
+	if (!ctx->layout) {
+		ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
 		layout_is_dynamic = true;
 	}
-	if (ctx.layout) {
-		ctx.compressed_word_size = ctx.layout->compressed_word_size;
+	if (ctx->layout) {
+		ctx->compressed_word_size = ctx->layout->compressed_word_size;
 	} else {
-		ctx.compressed_word_size = 4;
+		ctx->compressed_word_size = 4;
 	}
-	ut8 hdr[4 + 8 + 8];
-	if (!read_mem (core, snapshot_base, hdr, sizeof (hdr))) {
+	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, total_len = 0, cluster_start = 0;
+	if (parse_snapshot_header (ctx, snapshot_base, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) != 0) {
 		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
-	}
-	uint32_t magic = *(uint32_t *)(hdr + 0);
-	if (magic != 0xdcdcf5f5) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
-	}
-	uint64_t length_ex_magic = *(uint64_t *)(hdr + 4);
-	uint64_t total_len = length_ex_magic + 4;
-	ut64 cursor = snapshot_base + 4 + 8 + 8 + 32;
-	const int max_scan = 1024;
-	ut8 b = 0;
-	int scanned = 0;
-	while (scanned < max_scan) {
-		if (!read_mem (core, cursor + scanned, &b, 1)) {
-			break;
-		}
-		if (b == '\0') {
-			break;
-		}
-		scanned++;
-	}
-	cursor += (ut64)(scanned + 1);
-	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, next = cursor;
-	if (!read_uleb128_at (core, next, &nb, &next)) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
-	}
-	if (!read_uleb128_at (core, next, &no, &next)) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
-	}
-	if (!read_uleb128_at (core, next, &nc, &next)) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
-	}
-	if (!read_uleb128_at (core, next, &itlen, &next)) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
-		}
-		return NULL;
-	}
-	if (!read_uleb128_at (core, next, &itdata, &next)) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
+			free ((void *)ctx->layout);
+			ctx->layout = NULL;
 		}
 		return NULL;
 	}
 	bool header_valid = (nc > 0 && nc < 10000 && no > 0 && no < 1000000);
 	if (!header_valid) {
-		if (G_VERBOSE > 0) {
-			fprintf (stderr, "[r2flutter] string extraction: invalid header\n");
-		}
 		if (layout_is_dynamic) {
-			free ((void *)ctx.layout);
+			free ((void *)ctx->layout);
+			ctx->layout = NULL;
 		}
 		return r_list_newf ((RListFree)dart_string_info_free);
 	}
-	ctx.num_base_objects = nb;
-	ctx.num_objects = no;
-	ctx.num_clusters = nc;
-	ctx.strings = r_list_newf ((RListFree)dart_string_info_free);
+	ctx->num_base_objects = nb;
+	ctx->num_objects = no;
+	ctx->num_clusters = nc;
+	RList *string_list = r_list_newf ((RListFree)dart_string_info_free);
 	ut64 total_refs = nb + no + 16;
-	ctx.refs_count = total_refs;
-	ctx.refs = (void **)calloc (total_refs, sizeof (void *));
+	ctx->refs_count = total_refs;
+	ctx->refs = (void **)calloc (total_refs, sizeof (void *));
 	ClusterStream stream = {
-		.core = core,
-		.cursor = next,
+		.ctx = ctx,
+		.cursor = cluster_start,
 		.end = snapshot_base + total_len
 	};
 	ut64 ref_counter = nb + 1;
-	int cid_one_byte = ctx.layout? ctx.layout->cid_one_byte_string: kOneByteStringCid;
-	int cid_two_byte = ctx.layout? ctx.layout->cid_two_byte_string: kTwoByteStringCid;
-	int cid_string = ctx.layout? ctx.layout->cid_string: kStringCid;
-	int cid_function = ctx.layout? ctx.layout->cid_function: kFunctionCid;
-	int cid_class = ctx.layout? ctx.layout->cid_class: kClassCid;
-	if (G_VERBOSE > 1) {
-		fprintf (stderr, "[r2flutter] string extraction: clusters=%" PRIu64 " cid_one_byte=%d cid_two_byte=%d stream=0x%" PFMT64x "-0x%" PFMT64x "\n",
-			nc, cid_one_byte, cid_two_byte, stream.cursor, stream.end);
-	}
+	int cid_one_byte = ctx->layout? ctx->layout->cid_one_byte_string: kOneByteStringCid;
+	int cid_two_byte = ctx->layout? ctx->layout->cid_two_byte_string: kTwoByteStringCid;
+	int cid_string = ctx->layout? ctx->layout->cid_string: kStringCid;
+	int cid_function = ctx->layout? ctx->layout->cid_function: kFunctionCid;
+	int cid_class = ctx->layout? ctx->layout->cid_class: kClassCid;
 	for (ut64 ci2 = 0; ci2 < nc && stream.cursor < stream.end; ci2++) {
 		uint32_t tags = 0;
 		if (!cs_read_u32 (&stream, &tags)) {
 			break;
 		}
 		uint32_t cid = 0;
-		if (ctx.layout && ctx.layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER) {
+		if (ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER) {
 			cid = (tags >> 12) & 0xFFFFF;
-		} else if (ctx.layout && ctx.layout->tag_style == DART_TAG_STYLE_CID_SHIFT1) {
+		} else if (ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_CID_SHIFT1) {
 			cid = tags >> 1;
 		} else {
 			cid = (tags >> 12) & 0xFFFFF;
 		}
-		if (G_VERBOSE > 1 && ci2 < 30) {
-			fprintf (stderr, "[r2flutter] string cluster[%" PRIu64 "] cid=%u tags=0x%08x\n", ci2, cid, tags);
-		}
 		int rc = 0;
 		if ((int)cid == cid_one_byte || (int)cid == cid_string) {
-			rc = decode_one_byte_string_cluster (&stream, &ctx, &ref_counter);
+			rc = decode_one_byte_string_cluster (&stream, string_list, ctx, &ref_counter);
 		} else if ((int)cid == cid_two_byte) {
-			rc = decode_two_byte_string_cluster (&stream, &ctx, &ref_counter);
+			rc = decode_two_byte_string_cluster (&stream, string_list, ctx, &ref_counter);
 		} else if ((int)cid == cid_function) {
-			track_string_refs_from_functions (&ctx, &stream, &ref_counter);
+			track_string_refs_from_functions (ctx, &stream, &ref_counter);
 		} else if ((int)cid == cid_class) {
-			track_string_refs_from_classes (&ctx, &stream, &ref_counter);
+			track_string_refs_from_classes (ctx, &stream, &ref_counter);
 		} else {
-			ut64 count = 0;
-			if (cs_read_unsigned (&stream, &count)) {
-				if (count < 100000) {
-					for (ut64 j = 0; j < count; j++) {
-						ref_counter++;
-						ut64 skip = 0;
-						for (int k = 0; k < 8 && stream.cursor < stream.end; k++) {
-							if (!cs_read_unsigned (&stream, &skip)) {
-								break;
-							}
-							if (skip == 0) {
-								break;
-							}
-						}
-					}
-				}
-			}
+			skip_generic_cluster (&stream);
 		}
 		if (rc < 0) {
 			break;
 		}
 	}
-	if (G_VERBOSE > 0) {
+	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] Extracted strings from clusters: %d\n",
-			ctx.strings? r_list_length (ctx.strings): 0);
+			string_list? r_list_length (string_list): 0);
 	}
-	// Fallback: scan data section for strings if cluster parsing found nothing
-	if (!ctx.strings || r_list_length (ctx.strings) == 0) {
-		if (G_VERBOSE > 0) {
+	if (!string_list || r_list_length (string_list) == 0) {
+		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] Falling back to data section string scan\n");
 		}
-		ut64 kAlign = ctx.layout && ctx.layout->max_alignment? (ut64)ctx.layout->max_alignment: 16;
+		ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
 		ut64 data_image_base = snapshot_base + ((total_len + (kAlign - 1)) & ~(kAlign - 1));
-		ut64 data_image_end = ctx.iso_instr? ctx.iso_instr: (data_image_base + (1ULL << 20));
-		// For iOS binaries, also try vm_data to iso_data range
-		if (ctx.vm_data > 0 && ctx.iso_data > ctx.vm_data) {
-			data_image_base = ctx.vm_data;
-			data_image_end = ctx.iso_data;
-		}
-		if (G_VERBOSE > 1) {
-			fprintf (stderr, "[r2flutter] data scan range: 0x%" PFMT64x "-0x%" PFMT64x "\n", data_image_base, data_image_end);
+		ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: (data_image_base + (1ULL << 20));
+		if (ctx->vm_data > 0 && ctx->iso_data > ctx->vm_data) {
+			data_image_base = ctx->vm_data;
+			data_image_end = ctx->iso_data;
 		}
 		if (data_image_end > data_image_base && (data_image_end - data_image_base) < 0x400000) {
 			ut64 pos = data_image_base;
@@ -3136,7 +2670,7 @@ RList *dart_pool_extract_strings(RCore *core) {
 			while (pos < data_image_end - 4 && str_count < 10000) {
 				ut8 buf[256];
 				int to_read = (data_image_end - pos > 255)? 255: (int)(data_image_end - pos);
-				if (!read_mem (core, pos, buf, to_read)) {
+				if (!read_mem (ctx, pos, buf, to_read)) {
 					break;
 				}
 				int slen = 0;
@@ -3151,30 +2685,27 @@ RList *dart_pool_extract_strings(RCore *core) {
 					si->flags = 0;
 					si->address = pos;
 					si->references = r_list_newf ((RListFree)dart_string_ref_free);
-					r_list_append (ctx.strings, si);
+					r_list_append (string_list, si);
 					str_count++;
 					pos += slen + 1;
 				} else {
 					pos++;
 				}
 			}
-			if (G_VERBOSE > 0) {
-				fprintf (stderr, "[r2flutter] Extracted %d strings from data section scan\n", str_count);
-			}
 		}
 	}
-	RList *result = ctx.strings;
-	ctx.strings = NULL;
-	free (ctx.refs);
+	free (ctx->refs);
+	ctx->refs = NULL;
+	ctx->refs_count = 0;
 	if (layout_is_dynamic) {
-		free ((void *)ctx.layout);
+		free ((void *)ctx->layout);
+		ctx->layout = NULL;
 	}
-	return result;
+	return string_list;
 }
 
-// Dump strings to JSON
-char *dart_pool_dump_strings_json(RCore *core) {
-	RList *strings = dart_pool_extract_strings (core);
+char *dart_pool_dump_strings_json (DartCtx *ctx) {
+	RList *strings = dart_pool_extract_strings (ctx);
 	if (!strings || r_list_length (strings) == 0) {
 		if (strings) {
 			dart_string_list_free (strings);
@@ -3230,9 +2761,8 @@ char *dart_pool_dump_strings_json(RCore *core) {
 	return pj_drain (pj);
 }
 
-// Dump strings to r2 script
-char *dart_pool_dump_strings_r2(RCore *core) {
-	RList *strings = dart_pool_extract_strings (core);
+char *dart_pool_dump_strings_r2 (DartCtx *ctx) {
+	RList *strings = dart_pool_extract_strings (ctx);
 	if (!strings) {
 		return strdup ("# No strings found\n");
 	}

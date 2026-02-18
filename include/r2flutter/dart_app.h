@@ -6,6 +6,7 @@
 #include <r_list.h>
 
 #include <stddef.h>
+#include "dart_r2.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,7 +23,8 @@ typedef struct DartApp {
 	ut64 base_addr;
 	ut64 heap_base;
 	char *file_path;
-	RList *functions; // list of DartFunction*
+	RList *functions;
+	DartCtx dctx;
 } DartApp;
 
 DartApp *dart_app_new(const char *path);

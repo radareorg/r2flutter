@@ -9,11 +9,11 @@
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 
-static bool is_library(const char *name) {
+static bool is_library (const char *name) {
 	return r_str_endswith (name, ".so") || r_str_endswith (name, ".dylib") || r_str_endswith (name, ".aot") || r_str_endswith (name, ".bin") || r_str_startswith (name, "lib");
 }
 
-static char *find_lib_in_dir(const char *dir) {
+static char *find_lib_in_dir (const char *dir) {
 	if (!dir) {
 		return NULL;
 	}
@@ -22,10 +22,8 @@ static char *find_lib_in_dir(const char *dir) {
 		return NULL;
 	}
 	struct dirent *ent;
-	// Prefer libapp.so explicitly if present
 	char *preferred = NULL;
 
-	// iOS .app bundle support: look for App.framework/App inside Frameworks
 	if (r_str_endswith (dir, ".app")) {
 		char *path = r_str_newf ("%s/Frameworks/App.framework/App", dir);
 		struct stat st;
@@ -57,7 +55,7 @@ static char *find_lib_in_dir(const char *dir) {
 	return preferred;
 }
 
-static void print_usage(const char *argv0) {
+static void print_usage (const char *argv0) {
 	printf ("Usage: %s [options] <libapp_path_or_dir>\n", argv0);
 	printf ("Options:\n");
 	printf ("  -h, --help                 Show help\n");
@@ -79,7 +77,7 @@ static void print_usage(const char *argv0) {
 	printf ("  --dump-strings-r2          Print strings as r2 comments\n");
 }
 
-int main(int argc, char **argv) {
+int main (int argc, char **argv) {
 	if (argc < 2) {
 		print_usage (argv[0]);
 		return 1;
@@ -88,7 +86,8 @@ int main(int argc, char **argv) {
 	const char *libapp_path_in = NULL;
 	int opt_quiet = 0;
 	int opt_no_dump = 0;
-	// Parse flags, keep last non-flag as path
+	DartCtx dctx = { 0 };
+
 	for (int i = 1; i < argc; i++) {
 		const char *a = argv[i];
 		if (!a) {
@@ -102,49 +101,47 @@ int main(int argc, char **argv) {
 				printf ("r2flutter 0.1\n");
 				return 0;
 			} else if (!strcmp (a, "-v")) {
-				dart_pool_set_verbose (1);
+				dctx.verbose = 1;
 			} else if (!strcmp (a, "-vv")) {
-				dart_pool_set_verbose (2);
+				dctx.verbose = 2;
 			} else if (!strcmp (a, "--no-stubs")) {
-				dart_pool_set_no_stubs (1);
+				dctx.no_stubs = 1;
 			} else if (!strcmp (a, "--dump-snapshot-json")) {
-				dart_pool_set_dump_snapshot_json (1);
+				dctx.dump_snapshot_json = 1;
 			} else if (!strcmp (a, "--dump-it")) {
-				dart_pool_set_dump_it (1);
+				dctx.dump_it = 1;
 			} else if (!strcmp (a, "--quiet")) {
 				opt_quiet = 1;
-				dart_pool_set_quiet (1);
+				dctx.quiet = 1;
 			} else if (!strcmp (a, "--no-dump")) {
 				opt_no_dump = 1;
 			} else if (!strcmp (a, "--use-name-pool")) {
-				dart_pool_set_use_name_pool (1);
+				dctx.use_name_pool = 1;
 			} else if (!strcmp (a, "--dump-classes")) {
-				dart_pool_set_dump_classes (1);
+				dctx.dump_classes = 1;
 			} else if (!strcmp (a, "--dump-classes-r2")) {
-				dart_pool_set_dump_classes (2);
+				dctx.dump_classes = 2;
 			} else if (!strcmp (a, "--dump-fields")) {
-				dart_pool_set_dump_fields (1);
+				dctx.dump_fields = 1;
 			} else if (!strcmp (a, "--dump-types")) {
-				dart_pool_set_dump_classes (3);
+				dctx.dump_classes = 3;
 			} else if (!strcmp (a, "--dump-strings")) {
-				dart_pool_set_dump_strings (1);
+				dctx.dump_strings = 1;
 			} else if (!strcmp (a, "--dump-strings-r2")) {
-				dart_pool_set_dump_strings (2);
+				dctx.dump_strings = 2;
 			} else if (!strncmp (a, "--dump-fns=", 11)) {
 				int n = atoi (a + 11);
 				if (n > 0) {
-					dart_pool_set_dump_fns (n);
+					dctx.dump_fns = n;
 				}
 			} else if (!strcmp (a, "--dump-fns")) {
 				if (i + 1 < argc) {
 					int n = atoi (argv[i + 1]);
 					if (n > 0) {
-						dart_pool_set_dump_fns (n);
+						dctx.dump_fns = n;
 					}
 					i++;
 				}
-			} else {
-				// Unknown flag, ignore to be lenient
 			}
 		} else {
 			libapp_path_in = a;
@@ -159,7 +156,6 @@ int main(int argc, char **argv) {
 	struct stat st;
 	if (stat (libapp_path_in, &st) == 0) {
 		if (S_ISDIR (st.st_mode)) {
-			// Prefer libapp.so explicitly if present in dir
 			char *candidate = r_str_newf ("%s/%s", libapp_path_in, "libapp.so");
 			struct stat st2;
 			if (candidate && stat (candidate, &st2) == 0 && S_ISREG (st2.st_mode)) {
@@ -196,8 +192,9 @@ int main(int argc, char **argv) {
 		free (libapp_path);
 		return 1;
 	}
-	// Ensure binary info/symbols are loaded for queries like `isj`
 	r_core_bin_load (core, NULL, 0);
+
+	dctx.core = core;
 
 	DartApp *app = dart_app_new (libapp_path);
 	if (!app) {
@@ -213,6 +210,7 @@ int main(int argc, char **argv) {
 		app->base_addr = 0;
 	}
 	app->heap_base = 0;
+	memcpy (&app->dctx, &dctx, sizeof (DartCtx));
 
 	if (!opt_quiet) {
 		fprintf (stderr, "libapp is loaded at 0x%" PFMT64x "\n", app->base_addr);
@@ -220,16 +218,15 @@ int main(int argc, char **argv) {
 		fprintf (stderr, "app->file_path = %s\n", app->file_path? app->file_path: "(null)");
 	}
 
-	int dump_strings_mode = dart_pool_get_dump_strings ();
-	if (dump_strings_mode > 0) {
-		if (dump_strings_mode == 2) {
-			char *r2out = dart_pool_dump_strings_r2 (core);
+	if (dctx.dump_strings > 0) {
+		if (dctx.dump_strings == 2) {
+			char *r2out = dart_pool_dump_strings_r2 (&dctx);
 			if (r2out) {
 				printf ("%s", r2out);
 				free (r2out);
 			}
 		} else {
-			char *json = dart_pool_dump_strings_json (core);
+			char *json = dart_pool_dump_strings_json (&dctx);
 			if (json) {
 				printf ("%s\n", json);
 				free (json);
@@ -241,22 +238,15 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
-	int dump_classes_mode = dart_pool_get_dump_classes ();
-	if (dump_classes_mode > 0) {
-		if (dump_classes_mode == 2) {
-			char *r2out = dart_pool_dump_classes_r2 (core);
+	if (dctx.dump_classes > 0) {
+		if (dctx.dump_classes == 2) {
+			char *r2out = dart_pool_dump_classes_r2 (&dctx);
 			if (r2out) {
 				printf ("%s", r2out);
 				free (r2out);
 			}
-		} else if (dump_classes_mode == 3) {
-			char *json = dart_pool_dump_classes_json (core);
-			if (json) {
-				printf ("%s\n", json);
-				free (json);
-			}
 		} else {
-			char *json = dart_pool_dump_classes_json (core);
+			char *json = dart_pool_dump_classes_json (&dctx);
 			if (json) {
 				printf ("%s\n", json);
 				free (json);
@@ -270,8 +260,8 @@ int main(int argc, char **argv) {
 
 	dart_app_load_info (app);
 
-	if (dart_pool_get_dump_fns () > 0) {
-		int limit = dart_pool_get_dump_fns ();
+	if (dctx.dump_fns > 0) {
+		int limit = dctx.dump_fns;
 		int count = 0;
 		if (app->functions) {
 			RListIter *it;
