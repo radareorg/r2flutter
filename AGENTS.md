@@ -33,6 +33,7 @@ Tests
 - Run with `make test` which wraps `r2r test/db` in a Python timeout (180s) to avoid hanging on heavy samples.
 - Add each new test as a single file under `test/db/cmd/`.
   - Example: `test/db/cmd/json-android` runs the CLI and expects a single JSON line.
+- It's important to ensure the behaviour is correct on both iOS and Android binaries before accepting a fix
 
 CLI Flags (debugging)
 - `-v` / `-vv`: increase stderr verbosity for snapshot discovery.

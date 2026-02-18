@@ -1,0 +1,14 @@
+{
+  "name": "dump-strings-android",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--dump-strings", "100", "bins/android/first/"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "\"value\":",
+      "\"canonical\":true",
+      "Base64Codec",
+      "is not true."
+    ]
+  }
+}

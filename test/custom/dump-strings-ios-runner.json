@@ -1,0 +1,13 @@
+{
+  "name": "dump-strings-ios-runner",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--dump-strings", "100", "bins/ios/Runner.app"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "\"value\":",
+      "\"canonical\":true",
+      "\"two_byte\":true"
+    ]
+  }
+}
