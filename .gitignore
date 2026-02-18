@@ -1,5 +1,5 @@
 build/
-bin/r2flutter
+bin
 *.o
 *.so
 *.dylib
