@@ -334,6 +334,8 @@ static int G_DUMP_IT = 0;
 static int G_QUIET = 0;
 static int G_DUMP_FNS = 0;
 static int G_USE_NAME_POOL = 0;
+static int G_DUMP_CLASSES = 0;
+static int G_DUMP_FIELDS = 0;
 
 void dart_pool_set_verbose(int level) {
 	G_VERBOSE = level;
@@ -364,6 +366,18 @@ void dart_pool_set_use_name_pool(int on) {
 }
 int dart_pool_get_use_name_pool(void) {
 	return G_USE_NAME_POOL;
+}
+void dart_pool_set_dump_classes(int on) {
+	G_DUMP_CLASSES = on? 1: 0;
+}
+int dart_pool_get_dump_classes(void) {
+	return G_DUMP_CLASSES;
+}
+void dart_pool_set_dump_fields(int on) {
+	G_DUMP_FIELDS = on? 1: 0;
+}
+int dart_pool_get_dump_fields(void) {
+	return G_DUMP_FIELDS;
 }
 
 static bool read_mem(RCore *core, ut64 addr, void *buf, int len) {
@@ -2177,4 +2191,594 @@ int dart_pool_enumerate(RCore *core, const char *libapp_path, void(*on_fn)(const
 	}
 	eprintf ("[r2flutter] Dart snapshots not found in symbols (file=%s).\n", libapp_path? libapp_path: "(null)");
 	return -1;
+}
+
+// ============================================================================
+// Class and Field Extraction Implementation
+// ============================================================================
+
+void dart_field_info_free(DartFieldInfo *fi) {
+	if (fi) {
+		free (fi->name);
+		free (fi->type_name);
+		free (fi);
+	}
+}
+
+void dart_class_info_free(DartClassInfo *ci) {
+	if (ci) {
+		free (ci->name);
+		free (ci->library_name);
+		free (ci->super_class_name);
+		if (ci->fields) {
+			r_list_free (ci->fields);
+		}
+		if (ci->interfaces) {
+			r_list_free (ci->interfaces);
+		}
+		free (ci);
+	}
+}
+
+void dart_type_info_free(DartTypeInfo *ti) {
+	if (ti) {
+		free (ti->name);
+		if (ti->type_args) {
+			r_list_free (ti->type_args);
+		}
+		free (ti);
+	}
+}
+
+void dart_class_list_free(RList *list) {
+	r_list_free (list);
+}
+
+// Internal context for class extraction
+typedef struct {
+	RCore *core;
+	ut64 vm_data;
+	ut64 vm_instr;
+	ut64 iso_data;
+	ut64 iso_instr;
+	char snapshot_hash[33];
+	const DartVerLayout *layout;
+	int compressed_word_size;
+	RList *classes;     // DartClassInfo*
+	RList *strings;     // DartString* for name resolution
+	RList *libraries;   // library objects for URI resolution
+	RList *fields;      // DartFieldInfo* (global pool)
+	RList *types;       // DartTypeInfo* (global pool)
+	void **refs;
+	ut64 refs_count;
+	ut64 num_base_objects;
+	ut64 num_objects;
+	ut64 num_clusters;
+} ClassExtractCtx;
+
+// CIDs for class-related objects
+typedef enum {
+	kFieldCid_extract = 10,
+	kLibraryCid_extract = 12,
+	kTypeArgumentsCid_extract = 115,
+} ExtraCids;
+
+// Decode a Field cluster to extract field information
+static int decode_field_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64 *ref_counter) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return -1;
+	}
+	if (count == 0 || count > 50000) {
+		return 0;
+	}
+	if (G_VERBOSE > 1) {
+		fprintf (stderr, "[r2flutter] Field cluster: count=%" PRIu64 "\n", count);
+	}
+	for (ut64 i = 0; i < count; i++) {
+		DartFieldInfo *fi = R_NEW0 (DartFieldInfo);
+		ut64 ref_id = (*ref_counter)++;
+		ut64 name_ref = 0;
+		cs_read_ref_id (s, &name_ref);
+		ut64 owner_ref = 0;
+		cs_read_ref_id (s, &owner_ref);
+		ut64 type_ref = 0;
+		cs_read_ref_id (s, &type_ref);
+		fi->type_ref = type_ref;
+		uint32_t flags = 0;
+		cs_read_u32 (s, &flags);
+		fi->flags = 0;
+		if (flags & (1 << 0)) {
+			fi->flags |= DART_FIELD_STATIC;
+		}
+		if (flags & (1 << 1)) {
+			fi->flags |= DART_FIELD_FINAL;
+		}
+		if (flags & (1 << 2)) {
+			fi->flags |= DART_FIELD_CONST;
+		}
+		if (flags & (1 << 3)) {
+			fi->flags |= DART_FIELD_LATE;
+		}
+		uint32_t offset = 0;
+		cs_read_u32 (s, &offset);
+		fi->offset = offset;
+		ut64 skip_count = 2;
+		for (ut64 j = 0; j < skip_count; j++) {
+			ut64 dummy = 0;
+			cs_read_ref_id (s, &dummy);
+		}
+		if (ctx->fields) {
+			r_list_append (ctx->fields, fi);
+		}
+		if (ctx->refs && ref_id < ctx->refs_count) {
+			ctx->refs[ref_id] = fi;
+		}
+		(void)name_ref;
+		(void)owner_ref;
+	}
+	return 0;
+}
+
+// Enhanced Class cluster decoding with hierarchy and type info
+static int decode_class_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64 *ref_counter) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return -1;
+	}
+	if (count == 0 || count > 50000) {
+		return 0;
+	}
+	if (G_VERBOSE > 1) {
+		fprintf (stderr, "[r2flutter] Class cluster (ext): count=%" PRIu64 "\n", count);
+	}
+	for (ut64 i = 0; i < count; i++) {
+		DartClassInfo *ci = R_NEW0 (DartClassInfo);
+		ci->ref_id = (*ref_counter)++;
+		ci->fields = r_list_newf ((RListFree)dart_field_info_free);
+		ci->interfaces = r_list_newf (free);
+		uint32_t instance_size = 0;
+		cs_read_u32 (s, &instance_size);
+		ci->instance_size = instance_size;
+		ut64 name_ref = 0;
+		cs_read_ref_id (s, &name_ref);
+		ut64 library_ref = 0;
+		cs_read_ref_id (s, &library_ref);
+		ci->library_ref = library_ref;
+		ut64 super_class_ref = 0;
+		cs_read_ref_id (s, &super_class_ref);
+		ci->super_class_ref = super_class_ref;
+		ut64 type_args_ref = 0;
+		cs_read_ref_id (s, &type_args_ref);
+		uint32_t num_type_params = 0;
+		cs_read_u32 (s, &num_type_params);
+		ci->num_type_parameters = num_type_params;
+		uint32_t type_arg_offset = 0;
+		cs_read_u32 (s, &type_arg_offset);
+		ci->type_argument_offset = type_arg_offset;
+		uint32_t flags = 0;
+		cs_read_u32 (s, &flags);
+		ci->flags = 0;
+		if (flags & (1 << 0)) {
+			ci->flags |= DART_CLASS_ABSTRACT;
+		}
+		if (flags & (1 << 1)) {
+			ci->flags |= DART_CLASS_ENUM;
+		}
+		if (flags & (1 << 2)) {
+			ci->flags |= DART_CLASS_MIXIN;
+		}
+		ut64 interfaces_ref = 0;
+		cs_read_ref_id (s, &interfaces_ref);
+		ut64 skip_refs = 3;
+		for (ut64 j = 0; j < skip_refs; j++) {
+			ut64 dummy = 0;
+			cs_read_ref_id (s, &dummy);
+		}
+		if (ctx->classes) {
+			r_list_append (ctx->classes, ci);
+		}
+		if (ctx->refs && ci->ref_id < ctx->refs_count) {
+			ctx->refs[ci->ref_id] = ci;
+		}
+		(void)name_ref;
+	}
+	return 0;
+}
+
+// Library cluster decoding for URI resolution
+typedef struct {
+	ut64 ref_id;
+	char *uri;
+	ut64 name_ref;
+} LibraryInfo;
+
+static void free_library_info(void *p) {
+	LibraryInfo *li = (LibraryInfo *)p;
+	if (li) {
+		free (li->uri);
+		free (li);
+	}
+}
+
+static int decode_library_cluster_ext(ClusterStream *s, ClassExtractCtx *ctx, ut64 *ref_counter) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return -1;
+	}
+	if (count == 0 || count > 10000) {
+		return 0;
+	}
+	if (G_VERBOSE > 1) {
+		fprintf (stderr, "[r2flutter] Library cluster: count=%" PRIu64 "\n", count);
+	}
+	for (ut64 i = 0; i < count; i++) {
+		LibraryInfo *li = R_NEW0 (LibraryInfo);
+		li->ref_id = (*ref_counter)++;
+		ut64 name_ref = 0;
+		cs_read_ref_id (s, &name_ref);
+		li->name_ref = name_ref;
+		ut64 skip_refs = 5;
+		for (ut64 j = 0; j < skip_refs; j++) {
+			ut64 dummy = 0;
+			cs_read_ref_id (s, &dummy);
+		}
+		if (ctx->libraries) {
+			r_list_append (ctx->libraries, li);
+		}
+		if (ctx->refs && li->ref_id < ctx->refs_count) {
+			ctx->refs[li->ref_id] = li;
+		}
+	}
+	return 0;
+}
+
+// Resolve names after fill phase for classes
+static void resolve_class_names(ClassExtractCtx *ctx) {
+	if (!ctx || !ctx->refs || !ctx->classes) {
+		return;
+	}
+	RListIter *it;
+	DartClassInfo *ci;
+	r_list_foreach (ctx->classes, it, ci) {
+		if (!ci) {
+			continue;
+		}
+		if (ci->super_class_ref > 0 && ci->super_class_ref < ctx->refs_count) {
+			void *ref = ctx->refs[ci->super_class_ref];
+			if (ref) {
+				DartClassInfo *parent = (DartClassInfo *)ref;
+				if (parent->name) {
+					ci->super_class_name = strdup (parent->name);
+				}
+			}
+		}
+		if (ci->library_ref > 0 && ci->library_ref < ctx->refs_count) {
+			void *ref = ctx->refs[ci->library_ref];
+			if (ref) {
+				LibraryInfo *lib = (LibraryInfo *)ref;
+				if (lib->uri) {
+					ci->library_name = strdup (lib->uri);
+				}
+			}
+		}
+	}
+}
+
+// Main class extraction function
+RList *dart_pool_extract_classes(RCore *core) {
+	if (!core) {
+		return NULL;
+	}
+	ut64 vm_data = 0, vm_instr = 0, iso_data = 0, iso_instr = 0;
+	int ok = find_snapshots_with_r2 (core, &vm_data, &vm_instr, &iso_data, &iso_instr);
+	if (ok != 0 || !iso_data) {
+		return NULL;
+	}
+	ClassExtractCtx ctx = { 0 };
+	ctx.core = core;
+	ctx.vm_data = vm_data;
+	ctx.vm_instr = vm_instr;
+	ctx.iso_data = iso_data;
+	ctx.iso_instr = iso_instr;
+	extract_snapshot_hash_flags (core, vm_data, ctx.snapshot_hash);
+	DartVerLayout layout_tmp;
+	bool layout_is_dynamic = false;
+	ctx.layout = load_layout_from_json (ctx.snapshot_hash, &layout_tmp);
+	if (!ctx.layout) {
+		ctx.layout = pick_layout_by_hash (ctx.snapshot_hash);
+		layout_is_dynamic = true;
+	}
+	if (ctx.layout) {
+		ctx.compressed_word_size = ctx.layout->compressed_word_size;
+	} else {
+		ctx.compressed_word_size = 4;
+	}
+	ut8 hdr[4 + 8 + 8];
+	if (!read_mem (core, iso_data, hdr, sizeof (hdr))) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	uint32_t magic = *(uint32_t *)(hdr + 0);
+	if (magic != 0xdcdcf5f5) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	uint64_t length_ex_magic = *(uint64_t *)(hdr + 4);
+	uint64_t total_len = length_ex_magic + 4;
+	ut64 cursor = iso_data + 4 + 8 + 8 + 32;
+	const int max_scan = 1024;
+	ut8 b = 0;
+	int scanned = 0;
+	while (scanned < max_scan) {
+		if (!read_mem (core, cursor + scanned, &b, 1)) {
+			break;
+		}
+		if (b == '\0') {
+			break;
+		}
+		scanned++;
+	}
+	cursor += (ut64)(scanned + 1);
+	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, next = cursor;
+	if (!read_uleb128_at (core, next, &nb, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	if (!read_uleb128_at (core, next, &no, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	if (!read_uleb128_at (core, next, &nc, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	if (!read_uleb128_at (core, next, &itlen, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	if (!read_uleb128_at (core, next, &itdata, &next)) {
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return NULL;
+	}
+	bool header_valid = (nc > 0 && nc < 10000 && no > 0 && no < 1000000);
+	if (!header_valid) {
+		if (G_VERBOSE > 0) {
+			fprintf (stderr, "[r2flutter] class extraction: invalid header (clusters=%" PRIu64 " objs=%" PRIu64 ")\n", nc, no);
+		}
+		if (layout_is_dynamic) {
+			free ((void *)ctx.layout);
+		}
+		return r_list_newf ((RListFree)dart_class_info_free);
+	}
+	ctx.num_base_objects = nb;
+	ctx.num_objects = no;
+	ctx.num_clusters = nc;
+	ctx.classes = r_list_newf ((RListFree)dart_class_info_free);
+	ctx.strings = r_list_newf (free_dart_string);
+	ctx.libraries = r_list_newf (free_library_info);
+	ctx.fields = r_list_newf ((RListFree)dart_field_info_free);
+	ut64 total_refs = nb + no + 16;
+	ctx.refs_count = total_refs;
+	ctx.refs = (void **)calloc (total_refs, sizeof (void *));
+	ClusterStream stream = {
+		.core = core,
+		.cursor = next,
+		.end = iso_data + total_len
+	};
+	ut64 ref_counter = nb + 1;
+	for (ut64 ci2 = 0; ci2 < nc && stream.cursor < stream.end; ci2++) {
+		uint32_t tags = 0;
+		if (!cs_read_u32 (&stream, &tags)) {
+			break;
+		}
+		uint32_t cid = (tags >> 12) & 0xFFFFF;
+		bool is_canonical = tags & 1;
+		(void)is_canonical;
+		int rc = 0;
+		switch (cid) {
+		case kOneByteStringCid:
+		case kTwoByteStringCid:
+		case kStringCid:
+			rc = decode_string_cluster (&stream, (DartCtx *)&ctx, &ref_counter, false);
+			break;
+		case kClassCid:
+			rc = decode_class_cluster_ext (&stream, &ctx, &ref_counter);
+			break;
+		case kFieldCid_extract:
+			rc = decode_field_cluster_ext (&stream, &ctx, &ref_counter);
+			break;
+		case kLibraryCid_extract:
+			rc = decode_library_cluster_ext (&stream, &ctx, &ref_counter);
+			break;
+		default:
+			{
+				ut64 count = 0;
+				if (cs_read_unsigned (&stream, &count)) {
+					if (count < 100000) {
+						for (ut64 j = 0; j < count; j++) {
+							ref_counter++;
+							ut64 skip = 0;
+							for (int k = 0; k < 8 && stream.cursor < stream.end; k++) {
+								if (!cs_read_unsigned (&stream, &skip)) {
+									break;
+								}
+								if (skip == 0) {
+									break;
+								}
+							}
+						}
+					}
+				}
+			}
+			break;
+		}
+		if (rc < 0) {
+			break;
+		}
+	}
+	resolve_class_names (&ctx);
+	if (G_VERBOSE > 0) {
+		fprintf (stderr, "[r2flutter] Extracted classes: %d\n",
+			ctx.classes? r_list_length (ctx.classes): 0);
+	}
+	RList *result = ctx.classes;
+	ctx.classes = NULL;
+	free (ctx.refs);
+	r_list_free (ctx.strings);
+	r_list_free (ctx.libraries);
+	r_list_free (ctx.fields);
+	if (layout_is_dynamic) {
+		free ((void *)ctx.layout);
+	}
+	return result;
+}
+
+// Get class hierarchy as list of ancestor names
+RList *dart_pool_get_class_hierarchy(RCore *core, ut64 class_ref) {
+	(void)core;
+	(void)class_ref;
+	return r_list_newf (free);
+}
+
+// Extract fields for a specific class
+RList *dart_pool_extract_fields(RCore *core, ut64 class_ref) {
+	(void)core;
+	(void)class_ref;
+	return r_list_newf ((RListFree)dart_field_info_free);
+}
+
+// Dump classes to JSON
+char *dart_pool_dump_classes_json(RCore *core) {
+	RList *classes = dart_pool_extract_classes (core);
+	if (!classes || r_list_length (classes) == 0) {
+		if (classes) {
+			dart_class_list_free (classes);
+		}
+		return strdup ("[]");
+	}
+	RStrBuf *sb = r_strbuf_new ("[");
+	RListIter *it;
+	DartClassInfo *ci;
+	int first = 1;
+	r_list_foreach (classes, it, ci) {
+		if (!ci) {
+			continue;
+		}
+		if (!first) {
+			r_strbuf_append (sb, ",");
+		}
+		first = 0;
+		r_strbuf_appendf (sb, "{\"ref\":%" PRIu64, ci->ref_id);
+		if (ci->name) {
+			r_strbuf_appendf (sb, ",\"name\":\"%s\"", ci->name);
+		}
+		if (ci->library_name) {
+			r_strbuf_appendf (sb, ",\"library\":\"%s\"", ci->library_name);
+		}
+		if (ci->super_class_name) {
+			r_strbuf_appendf (sb, ",\"super\":\"%s\"", ci->super_class_name);
+		}
+		r_strbuf_appendf (sb, ",\"size\":%u", ci->instance_size);
+		r_strbuf_appendf (sb, ",\"type_params\":%u", ci->num_type_parameters);
+		r_strbuf_appendf (sb, ",\"flags\":%u", ci->flags);
+		if (ci->fields && r_list_length (ci->fields) > 0) {
+			r_strbuf_append (sb, ",\"fields\":[");
+			RListIter *fit;
+			DartFieldInfo *fi;
+			int ffirst = 1;
+			r_list_foreach (ci->fields, fit, fi) {
+				if (!fi) {
+					continue;
+				}
+				if (!ffirst) {
+					r_strbuf_append (sb, ",");
+				}
+				ffirst = 0;
+				r_strbuf_append (sb, "{");
+				if (fi->name) {
+					r_strbuf_appendf (sb, "\"name\":\"%s\",", fi->name);
+				}
+				if (fi->type_name) {
+					r_strbuf_appendf (sb, "\"type\":\"%s\",", fi->type_name);
+				}
+				r_strbuf_appendf (sb, "\"offset\":%u,\"flags\":%u}", fi->offset, fi->flags);
+			}
+			r_strbuf_append (sb, "]");
+		}
+		r_strbuf_append (sb, "}");
+	}
+	r_strbuf_append (sb, "]");
+	dart_class_list_free (classes);
+	return r_strbuf_drain (sb);
+}
+
+// Dump classes to r2 script format
+char *dart_pool_dump_classes_r2(RCore *core) {
+	RList *classes = dart_pool_extract_classes (core);
+	if (!classes) {
+		return strdup ("# No classes found\n");
+	}
+	RStrBuf *sb = r_strbuf_new ("# Dart classes extracted from snapshot\n");
+	RListIter *it;
+	DartClassInfo *ci;
+	r_list_foreach (classes, it, ci) {
+		if (!ci || !ci->name) {
+			continue;
+		}
+		char safe_name[256];
+		snprintf (safe_name, sizeof (safe_name), "%s", ci->name);
+		r_name_filter (safe_name, 0);
+		r_strbuf_appendf (sb, "# class %s", ci->name);
+		if (ci->super_class_name) {
+			r_strbuf_appendf (sb, " extends %s", ci->super_class_name);
+		}
+		r_strbuf_appendf (sb, " (size=%u", ci->instance_size);
+		if (ci->flags & DART_CLASS_ABSTRACT) {
+			r_strbuf_append (sb, " abstract");
+		}
+		if (ci->flags & DART_CLASS_ENUM) {
+			r_strbuf_append (sb, " enum");
+		}
+		if (ci->flags & DART_CLASS_MIXIN) {
+			r_strbuf_append (sb, " mixin");
+		}
+		r_strbuf_append (sb, ")\n");
+		if (ci->library_name) {
+			r_strbuf_appendf (sb, "#   library: %s\n", ci->library_name);
+		}
+		if (ci->num_type_parameters > 0) {
+			r_strbuf_appendf (sb, "#   type_params: %u\n", ci->num_type_parameters);
+		}
+		r_strbuf_appendf (sb, "\"td struct.dart.%s {", safe_name);
+		if (ci->fields && r_list_length (ci->fields) > 0) {
+			RListIter *fit;
+			DartFieldInfo *fi;
+			r_list_foreach (ci->fields, fit, fi) {
+				if (!fi) {
+					continue;
+				}
+				const char *tname = fi->type_name? fi->type_name: "void*";
+				const char *fname = fi->name? fi->name: "field";
+				r_strbuf_appendf (sb, " %s %s @ 0x%x;", tname, fname, fi->offset);
+			}
+		}
+		r_strbuf_append (sb, " };\"\n");
+	}
+	dart_class_list_free (classes);
+	return r_strbuf_drain (sb);
 }

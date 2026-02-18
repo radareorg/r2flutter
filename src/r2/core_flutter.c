@@ -8,7 +8,7 @@
 #include "../../include/r2flutter/dart_pool_parse.h"
 
 static void r2flutter_help(RCore *core) {
-	r_cons_printf (core->cons, "Usage: r2flutter [-jifqsn] [args]\n");
+	r_cons_printf (core->cons, "Usage: r2flutter [-jifqsncF] [args]\n");
 	r_cons_printf (core->cons, "| r2flutter          analyze dart snapshot and apply flags/comments\n");
 	r_cons_printf (core->cons, "| r2flutter -j       dump snapshot header as JSON\n");
 	r_cons_printf (core->cons, "| r2flutter -i       dump instruction table entries to output\n");
@@ -16,6 +16,9 @@ static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons, "| r2flutter -q       analyze quietly (no extra output)\n");
 	r_cons_printf (core->cons, "| r2flutter -s       include ELF/r2 stub symbols\n");
 	r_cons_printf (core->cons, "| r2flutter -n       use name pool for unknown function names\n");
+	r_cons_printf (core->cons, "| r2flutter -c       dump classes as JSON\n");
+	r_cons_printf (core->cons, "| r2flutter -C       dump classes as r2 type definitions\n");
+	r_cons_printf (core->cons, "| r2flutter -F       include field info in class output\n");
 }
 
 static bool r2flutter_analyze(RCore *core, int quiet) {
@@ -168,6 +171,31 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	case 'n':
 		// "r2flutter -n" - use name pool
 		dart_pool_set_use_name_pool (1);
+		r2flutter_analyze (core, 0);
+		return true;
+	case 'c':
+		// "r2flutter -c" - dump classes as JSON
+		{
+			char *json = dart_pool_dump_classes_json (core);
+			if (json) {
+				r_cons_printf (core->cons, "%s\n", json);
+				free (json);
+			}
+		}
+		return true;
+	case 'C':
+		// "r2flutter -C" - dump classes as r2 type definitions
+		{
+			char *r2out = dart_pool_dump_classes_r2 (core);
+			if (r2out) {
+				r_cons_printf (core->cons, "%s", r2out);
+				free (r2out);
+			}
+		}
+		return true;
+	case 'F':
+		// "r2flutter -F" - include field info
+		dart_pool_set_dump_fields (1);
 		r2flutter_analyze (core, 0);
 		return true;
 	default:

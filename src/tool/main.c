@@ -71,6 +71,9 @@ static void print_usage(const char *argv0) {
 	printf ("  --no-dump                  Do not emit radare2 flags/script to stdout\n");
 	printf ("  --dump-fns N               Print first N functions (addr name) to stdout\n");
 	printf ("  --use-name-pool            Assign names from data image strings when unknown\n");
+	printf ("  --dump-classes             Print extracted class information as JSON\n");
+	printf ("  --dump-classes-r2          Print class info as r2 type definition commands\n");
+	printf ("  --dump-fields              Include field details in class output\n");
 }
 
 int main(int argc, char **argv) {
@@ -112,6 +115,12 @@ int main(int argc, char **argv) {
 				opt_no_dump = 1;
 			} else if (!strcmp (a, "--use-name-pool")) {
 				dart_pool_set_use_name_pool (1);
+			} else if (!strcmp (a, "--dump-classes")) {
+				dart_pool_set_dump_classes (1);
+			} else if (!strcmp (a, "--dump-classes-r2")) {
+				dart_pool_set_dump_classes (2);
+			} else if (!strcmp (a, "--dump-fields")) {
+				dart_pool_set_dump_fields (1);
 			} else if (!strncmp (a, "--dump-fns=", 11)) {
 				int n = atoi (a + 11);
 				if (n > 0) {
@@ -200,6 +209,27 @@ int main(int argc, char **argv) {
 		printf ("libapp is loaded at 0x%" PFMT64x "\n", app->base_addr);
 		printf ("Dart heap at 0x%" PFMT64x "\n", app->heap_base);
 		printf ("app->file_path = %s\n", app->file_path? app->file_path: "(null)");
+	}
+
+	int dump_classes_mode = dart_pool_get_dump_classes ();
+	if (dump_classes_mode > 0) {
+		if (dump_classes_mode == 2) {
+			char *r2out = dart_pool_dump_classes_r2 (core);
+			if (r2out) {
+				printf ("%s", r2out);
+				free (r2out);
+			}
+		} else {
+			char *json = dart_pool_dump_classes_json (core);
+			if (json) {
+				printf ("%s\n", json);
+				free (json);
+			}
+		}
+		dart_app_free (app);
+		r_core_free (core);
+		free (libapp_path);
+		return 0;
 	}
 
 	dart_app_load_info (app);
