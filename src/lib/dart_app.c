@@ -95,7 +95,8 @@ void dart_app_load_info(DartApp *app) {
 		app->heap_base = (ut64)heap_base;
 	}
 	if (!dart_pool_is_quiet ()) {
-		R_LOG_INFO ("Found %d functions (from Dart ObjectPool)", app->functions? r_list_length (app->functions): 0);
+		printf ("Found %d functions (from Dart ObjectPool)\n",
+				app->functions? r_list_length (app->functions): 0);
 	}
 }
 

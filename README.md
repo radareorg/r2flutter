@@ -1,12 +1,15 @@
 # r2flutter - Dart/Flutter support for Radare2
 
-<p align="center">
-<img width="250px" height="500px" src="doc/images/r2flutter500.png" />
-</p>
+<p>
+<img border="0" align="left" width="125px" height="125px" src="doc/images/r2flutter500.png" />
 
+[![ci](https://github.com/trufae/r2flutter/actions/workflows/ci.yml/badge.svg)](https://github.com/trufae/r2flutter/actions/workflows/ci.yml)
+
+<br />
 This utility integrates with radare2 but does NOT rely on r2 analysis (afl/aflj).
 It is self-contained C code (no Dart VM headers or libs) and will read the Dart
 snapshots/constant pool directly to derive names and addresses.
+</p>
 
 ## Features
 
@@ -53,3 +56,10 @@ $
 
 - radare2 (with development headers)
 - pkg-config
+
+## Other Projects
+
+- https://github.com/dart-lang/sdk
+- https://github.com/worawit/blutter
+- https://github.com/zboralski/unflutter
+- https://github.com/Impact-I/reFlutter

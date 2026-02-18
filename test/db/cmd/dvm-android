@@ -1,11 +1,9 @@
 NAME=test-one
 FILE=-
 CMDS=<<EOF
-pwd
 !!../bin/r2flutter bins/android/first/
 EOF
 EXPECT=<<EOF
-/Users/pancake/prg/blutter/r2flutter/test
 libapp is loaded at 0x0
 Dart heap at 0x0
 app->file_path = bins/android/first//libapp.so
