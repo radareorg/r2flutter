@@ -27,7 +27,7 @@ Quick Start
   - This produces `r2flutter/offsets.json` keyed by snapshot hash (read from VM snapshot data in libapp.so).
 - Build and run r2flutter:
   - `make -C r2flutter`
-  - `./r2flutter/blutter_r2 r2flutter/arm64-v8a r2flutter/out`
+  - `./bin/r2flutter r2flutter/arm64-v8a r2flutter/out`
 - Outputs:
   - `r2flutter/out/addNames.r2`: method flags with names + addresses.
   - `r2flutter/out/r2_dart_struct.h`: simple struct header.
@@ -54,7 +54,7 @@ How It Works (High-level)
    - Emits each function via callback with name, address, and size.
 
 Usage in radare2 sessions (Android ELF and iOS Mach-O)
-- After running `blutter_r2`, execute the script in radare2 to load names:
+- After running `r2flutter`, execute the script in radare2 to load names:
   - `radare2 -q r2flutter/arm64-v8a/libapp.so -c "e bin.cache=true; . r2flutter/out/addNames.r2"`
 - You’ll see `method.*` flags and comments across the binary.
 

@@ -5,10 +5,10 @@ def run(cmd, cwd=None):
     p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return p.returncode, p.stdout, p.stderr
 
-def blutter_json(target):
-    rc, out, err = run([os.path.join(os.path.dirname(__file__), '..', 'blutter_r2'), '--quiet', '--no-dump', '--dump-snapshot-json', target])
+def r2flutter_json(target):
+    rc, out, err = run([os.path.join(os.path.dirname(__file__), '..', 'bin', 'r2flutter'), '--quiet', '--no-dump', '--dump-snapshot-json', target])
     if rc != 0 or not out.strip():
-        raise RuntimeError('blutter_r2 failed: %s' % err)
+        raise RuntimeError('r2flutter failed: %s' % err)
     return json.loads(out.strip().splitlines()[-1])
 
 def round_up(x,a):
@@ -57,7 +57,7 @@ def read_cstr(buf, off, maxlen=128):
     return ''.join(out)
 
 def derive_offsets(target):
-    j = blutter_json(target)
+    j = r2flutter_json(target)
     iso_data = j['iso_data']
     iso_instr = j['iso_instr']
     total = j['cluster']['total']

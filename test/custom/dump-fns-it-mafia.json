@@ -1,7 +1,7 @@
 {
   "name": "dump-fns-it-mafia",
   "cwd": "test",
-  "cmd": ["../bin/blutter_r2", "--quiet", "--no-dump", "--no-stubs", "--dump-fns", "5", "bins/android/mafia/"],
+  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--no-stubs", "--dump-fns", "5", "bins/android/mafia/"],
   "timeout": 30,
   "expect": {
     "contains": [

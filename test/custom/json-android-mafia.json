@@ -1,7 +1,7 @@
 {
   "name": "json-android-mafia",
   "cwd": "test",
-  "cmd": ["../bin/blutter_r2", "--quiet", "--no-dump", "--dump-snapshot-json", "bins/android/mafia/"],
+  "cmd": ["../bin/r2flutter", "--quiet", "--no-dump", "--dump-snapshot-json", "bins/android/mafia/"],
   "timeout": 30,
   "expect": {
     "json": {

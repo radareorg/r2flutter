@@ -1,10 +1,10 @@
 NAME=help
 FILE=-
 CMDS=<<EOF
-!!../blutter_r2 -h
+!!../bin/r2flutter -h
 EOF
 EXPECT=<<EOF
-Usage: ../blutter_r2 [options] <libapp_path_or_dir>
+Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
 Options:
   -h, --help                 Show help
   -V, --version              Show version

@@ -2,7 +2,7 @@ NAME=test-one
 FILE=-
 CMDS=<<EOF
 pwd
-!!../blutter_r2 bins/android/first/
+!!../bin/r2flutter bins/android/first/
 EOF
 EXPECT=<<EOF
 /Users/pancake/prg/blutter/r2flutter/test

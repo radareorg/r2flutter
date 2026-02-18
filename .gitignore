@@ -1,5 +1,5 @@
 build/
-bin/blutter_r2
+bin/r2flutter
 *.o
 *.so
 *.dylib

@@ -23,7 +23,7 @@ make
 ## Usage
 
 ```bash
-./blutter_r2 [options] <libapp_path_or_dir>
+./r2flutter [options] <libapp_path_or_dir>
 ```
 
 Options
@@ -50,4 +50,4 @@ Options
 ## Current Status
 
 This component sources names from the Dart ObjectPool (work-in-progress), mirroring
-`./blutter`, without using afl or depending on Dart VM.
+`blutter`, without using afl or depending on Dart VM.

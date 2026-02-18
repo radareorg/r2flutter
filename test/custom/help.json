@@ -1,7 +1,7 @@
 {
   "name": "help",
   "cwd": "test",
-  "cmd": ["../bin/blutter_r2", "-h"],
+  "cmd": ["../bin/r2flutter", "-h"],
   "timeout": 10,
   "expect": {
     "contains": [

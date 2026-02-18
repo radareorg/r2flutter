@@ -18,7 +18,7 @@ LIB_OBJ = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(LIB_SRC))
 MAIN_OBJ = $(BUILD_DIR)/main.o
 
 # Artifacts
-BIN_FILE = $(BIN_DIR)/blutter_r2
+BIN_FILE = $(BIN_DIR)/r2flutter
 STATIC_LIB = $(BUILD_DIR)/libr2flutter.a
 
 all: $(BIN_FILE)
@@ -51,7 +51,7 @@ fmt indent format:
 	clang-format-radare2 $(shell find src include -name '*.[ch]')
 
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR)/blutter_r2
+	rm -rf $(BUILD_DIR) $(BIN_DIR)/r2flutter
 	$(MAKE) -C src/r2 clean
 
 test-r2r:
