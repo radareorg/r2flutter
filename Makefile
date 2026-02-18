@@ -10,7 +10,7 @@ BUILD_DIR = build
 BIN_DIR = bin
 
 # Source files
-LIB_SRC = $(SRC_DIR)/dart_app.c $(SRC_DIR)/dart_dumper.c $(SRC_DIR)/dart_pool_parse.c
+LIB_SRC = $(SRC_DIR)/dart_app.c $(SRC_DIR)/dart_dumper.c $(SRC_DIR)/dart_pool_parse.c $(SRC_DIR)/dart_version.c
 MAIN_SRC = src/tool/main.c
 
 # Object files
