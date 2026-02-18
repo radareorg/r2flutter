@@ -1,3 +1,5 @@
+/* r2flutter - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
+
 // Dart SDK version detection and layout profiles
 //
 // Supported Dart SDK versions: 2.10.0 - 3.10.7

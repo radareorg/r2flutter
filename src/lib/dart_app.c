@@ -1,3 +1,5 @@
+/* r2flutter - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

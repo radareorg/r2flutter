@@ -1,3 +1,5 @@
+/* r2flutter - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
+
 #include <r_core.h>
 #include <r_flag.h>
 #include <r_util/r_name.h>

@@ -1,3 +1,5 @@
+/* r2flutter - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +10,7 @@
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
+#include "../../include/r2flutter/version.h"
 
 static bool is_library (const char *name) {
 	return r_str_endswith (name, ".so") || r_str_endswith (name, ".dylib") || r_str_endswith (name, ".aot") || r_str_endswith (name, ".bin") || r_str_startswith (name, "lib");
@@ -98,7 +101,7 @@ int main (int argc, char **argv) {
 				print_usage (argv[0]);
 				return 0;
 			} else if (!strcmp (a, "-V") || !strcmp (a, "--version")) {
-				printf ("r2flutter 0.1\n");
+				printf ("r2flutter %s\n", R2FLUTTER_VERSION);
 				return 0;
 			} else if (!strcmp (a, "-v")) {
 				dctx.verbose = 1;

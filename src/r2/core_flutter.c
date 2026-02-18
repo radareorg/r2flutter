@@ -1,32 +1,30 @@
 /* radare2 - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
 
 #include <r_core.h>
-#include <r_cons.h>
-#include <r_lib.h>
+#include "../../include/r2flutter/version.h"
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 
 static void r2flutter_help (RCore *core) {
-	r_cons_printf (core->cons, "Usage: r2flutter [-jifqsncFSt] [args]\n");
-	r_cons_printf (core->cons, "| r2flutter          analyze dart snapshot and apply flags/comments\n");
-	r_cons_printf (core->cons, "| r2flutter -j       dump snapshot header as JSON\n");
-	r_cons_printf (core->cons, "| r2flutter -i       dump instruction table entries to output\n");
-	r_cons_printf (core->cons, "| r2flutter -f [n]   list first N discovered functions (default 20)\n");
-	r_cons_printf (core->cons, "| r2flutter -q       analyze quietly (no extra output)\n");
-	r_cons_printf (core->cons, "| r2flutter -s       include ELF/r2 stub symbols\n");
-	r_cons_printf (core->cons, "| r2flutter -n       use name pool for unknown function names\n");
-	r_cons_printf (core->cons, "| r2flutter -c       dump classes as JSON\n");
-	r_cons_printf (core->cons, "| r2flutter -C       dump classes as r2 type definitions\n");
-	r_cons_printf (core->cons, "| r2flutter -F       include field info in class output\n");
-	r_cons_printf (core->cons, "| r2flutter -S       dump all strings as JSON\n");
-	r_cons_printf (core->cons, "| r2flutter -t       dump strings as r2 comments\n");
+	r_cons_printf (core->cons, \
+	"Usage: r2flutter [-jifqsncFSt] [args]\n"
+	"| r2flutter          analyze dart snapshot and apply flags/comments\n"
+	"| r2flutter -j       dump snapshot header as JSON\n"
+	"| r2flutter -i       dump instruction table entries to output\n"
+	"| r2flutter -f [n]   list first N discovered functions (default 20)\n"
+	"| r2flutter -q       analyze quietly (no extra output)\n"
+	"| r2flutter -s       include ELF/r2 stub symbols\n"
+	"| r2flutter -n       use name pool for unknown function names\n"
+	"| r2flutter -c       dump classes as JSON\n"
+	"| r2flutter -C       dump classes as r2 type definitions\n"
+	"| r2flutter -F       include field info in class output\n"
+	"| r2flutter -S       dump all strings as JSON\n"
+	"| r2flutter -t       dump strings as r2 comments\n");
 }
 
 static bool r2flutter_analyze (RCore *core, DartCtx *dctx, int quiet) {
-	const char *filepath = core->bin && core->bin->cur
-		? core->bin->cur->file
-		: NULL;
+	const char *filepath = R_UNWRAP4 (core, bin, cur, file);
 	if (!filepath) {
 		R_LOG_ERROR ("r2flutter: no file loaded");
 		return false;
@@ -48,7 +46,8 @@ static bool r2flutter_analyze (RCore *core, DartCtx *dctx, int quiet) {
 	dart_app_load_info (app);
 
 	if (!quiet) {
-		r_cons_printf (core->cons, "r2flutter: loaded %d functions from Dart snapshot\n", app->functions? r_list_length (app->functions): 0);
+		size_t count = app->functions? r_list_length (app->functions): 0;
+		R_LOG_INFO ("Loaded %d functions from Dart snapshot", count);
 	}
 
 	dart_dumper_apply_to_core (app);
@@ -218,7 +217,7 @@ RCorePlugin r_core_plugin_flutter = {
 		.desc = "Dart/Flutter AOT snapshot analyzer",
 		.author = "pancake, Ahmeth4n",
 		.license = "LGPL-3.0",
-		.version = "0.1.0",
+		.version = R2FLUTTER_VERSION,
 	},
 	.call = r_cmd_r2flutter_call,
 };
