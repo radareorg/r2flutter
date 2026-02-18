@@ -41,8 +41,7 @@ static bool r2flutter_analyze(RCore *core, int quiet) {
 	dart_app_load_info (app);
 
 	if (!quiet) {
-		r_cons_printf (core->cons, "r2flutter: loaded %d functions from Dart snapshot\n",
-			app->functions? r_list_length (app->functions): 0);
+		r_cons_printf (core->cons, "r2flutter: loaded %d functions from Dart snapshot\n", app->functions? r_list_length (app->functions): 0);
 	}
 
 	dart_dumper_apply_to_core (app);
@@ -109,52 +108,53 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		dart_pool_set_dump_it (1);
 		r2flutter_analyze (core, 1);
 		return true;
-	case 'f': {
-		// "r2flutter -f [N]" - list functions
-		int n = 20;
-		if (*rest) {
-			int v = atoi (rest);
-			if (v > 0) {
-				n = v;
+	case 'f':
+		{
+			// "r2flutter -f [N]" - list functions
+			int n = 20;
+			if (*rest) {
+				int v = atoi (rest);
+				if (v > 0) {
+					n = v;
+				}
 			}
-		}
-		dart_pool_set_quiet (1);
-		dart_pool_set_dump_fns (n);
+			dart_pool_set_quiet (1);
+			dart_pool_set_dump_fns (n);
 		const char *filepath = core->bin && core->bin->cur
 			? core->bin->cur->file
 			: NULL;
-		if (!filepath) {
-			R_LOG_ERROR ("r2flutter: no file loaded");
-			return true;
-		}
-		DartApp *app = dart_app_new (filepath);
-		if (!app) {
-			return true;
-		}
-		app->core = core;
-		app->base_addr = r_bin_get_baddr (core->bin);
-		if (app->base_addr == UT64_MAX) {
-			app->base_addr = 0;
-		}
-		app->heap_base = 0;
-		dart_app_load_info (app);
-		int count = 0;
-		if (app->functions) {
-			RListIter *it;
-			DartFunction *fn;
-			r_list_foreach (app->functions, it, fn) {
+			if (!filepath) {
+				R_LOG_ERROR ("r2flutter: no file loaded");
+				return true;
+			}
+			DartApp *app = dart_app_new (filepath);
+			if (!app) {
+				return true;
+			}
+			app->core = core;
+			app->base_addr = r_bin_get_baddr (core->bin);
+			if (app->base_addr == UT64_MAX) {
+				app->base_addr = 0;
+			}
+			app->heap_base = 0;
+			dart_app_load_info (app);
+			int count = 0;
+			if (app->functions) {
+				RListIter *it;
+				DartFunction *fn;
+				r_list_foreach (app->functions, it, fn) {
 				if (!fn || !fn->name) {
-					continue;
-				}
-				r_cons_printf (core->cons, "0x%08" PFMT64x " %s\n", fn->addr, fn->name);
-				if (++count >= n) {
-					break;
+						continue;
+					}
+					r_cons_printf (core->cons, "0x%08" PFMT64x " %s\n", fn->addr, fn->name);
+					if (++count >= n) {
+						break;
+					}
 				}
 			}
+			dart_app_free (app);
+			return true;
 		}
-		dart_app_free (app);
-		return true;
-	}
 	case 'q':
 		// "r2flutter -q" - quiet analyze
 		dart_pool_set_quiet (1);

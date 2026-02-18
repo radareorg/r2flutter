@@ -423,14 +423,15 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 	return name_by_ep;
 }
 
+#define CHUNK_SIZE 4096
+
 static RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
 	if (!ctx || !ctx->core) {
 		return NULL;
 	}
 	const char *needle1 = "package:";
 	const char *needle2 = "dart:";
-	const int chunk = 4096;
-	ut8 buf[chunk];
+	ut8 buf[CHUNK_SIZE];
 	RList *out = r_list_newf (free);
 	if (!out) {
 		return NULL;
@@ -440,9 +441,9 @@ static RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_i
 		limit = (1ULL << 22);
 	}
 	ut64 cap = 512;
-	for (ut64 off = 0; off < limit; off += (chunk - 8)) {
+	for (ut64 off = 0; off < limit; off += (sizeof (buf) - 8)) {
 		ut64 addr = data_image_base + off;
-		int toread = (int) ((off + chunk <= limit)? chunk: (limit - off));
+		int toread = (int) ((off + sizeof (buf) <= limit)? sizeof (buf): (limit - off));
 		if (toread <= 0) {
 			break;
 		}
@@ -1283,11 +1284,13 @@ static int find_snapshots_with_r2(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut
 			}
 			ut64 vaddr = sec->vaddr;
 			ut64 size = sec->vsize;
-			const int chunk = 4096;
-			ut8 buf[chunk];
-			for (ut64 off = 0; off + 4 <= size; off += (chunk - 16)) {
+			if (G_VERBOSE > 0) {
+				fprintf (stderr, "[r2flutter] scanning section '%s' vaddr=0x%" PFMT64x " size=0x%" PFMT64x "\n", sec->name? sec->name: "(null)", (ut64)vaddr, (ut64)size);
+			}
+			ut8 buf[4096];
+			for (ut64 off = 0; off + 4 <= size; off += (sizeof (buf) - 16)) {
 				ut64 addr = vaddr + off;
-				int toread = (int) ((off + chunk <= size)? chunk: (size - off));
+				int toread = (int) ((off + sizeof (buf) <= size)? sizeof (buf): (size - off));
 				if (toread <= 0) {
 					break;
 				}
