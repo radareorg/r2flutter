@@ -8,8 +8,9 @@
 
 static void r2flutter_help (RCore *core) {
 	r_cons_printf (core->cons, \
-	"Usage: r2flutter [-jifqsncFSt] [args]\n"
+	"Usage: r2flutter [-jifqsncFStH] [args]\n"
 	"| r2flutter          analyze dart snapshot and apply flags/comments\n"
+	"| r2flutter -H       dump Dart AOT snapshot header info\n"
 	"| r2flutter -j       dump snapshot header as JSON\n"
 	"| r2flutter -i       dump instruction table entries to output\n"
 	"| r2flutter -f [n]   list first N discovered functions (default 20)\n"
@@ -95,6 +96,15 @@ static bool r_cmd_r2flutter_call (RCorePluginSession *cps, const char *input) {
 	}
 
 	switch (flag) {
+	case 'H':
+		{
+			char *hdr = dart_pool_dump_header (&dctx);
+			if (hdr) {
+				r_cons_printf (core->cons, "%s", hdr);
+				free (hdr);
+			}
+		}
+		return true;
 	case 'j':
 		dctx.dump_snapshot_json = 1;
 		dctx.quiet = 1;

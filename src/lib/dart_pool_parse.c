@@ -2801,3 +2801,182 @@ char *dart_pool_dump_strings_r2 (DartCtx *ctx) {
 	dart_string_list_free (strings);
 	return r_strbuf_drain (sb);
 }
+
+static bool read_snapshot_hdr (DartCtx *ctx, ut64 base, uint32_t *out_magic, uint64_t *out_total_len, uint64_t *out_kind, char *out_hash, int hashsz, char *out_flags, int flagssz, ut64 *out_nb, ut64 *out_no, ut64 *out_nc, ut64 *out_itlen, ut64 *out_itdata) {
+	if (!ctx || !base) {
+		return false;
+	}
+	ut8 hdr[4 + 8 + 8];
+	if (!read_mem (ctx, base, hdr, sizeof (hdr))) {
+		return false;
+	}
+	uint32_t magic = *(uint32_t *) (hdr + 0);
+	if (out_magic) {
+		*out_magic = magic;
+	}
+	if (magic != 0xdcdcf5f5) {
+		return false;
+	}
+	uint64_t length_ex_magic = *(uint64_t *) (hdr + 4);
+	if (out_total_len) {
+		*out_total_len = length_ex_magic + 4;
+	}
+	if (out_kind) {
+		*out_kind = *(uint64_t *) (hdr + 12);
+	}
+	ut64 cursor = base + 4 + 8 + 8;
+	ut8 hashbuf[32];
+	if (read_mem (ctx, cursor, hashbuf, 32) && out_hash && hashsz > 32) {
+		memcpy (out_hash, hashbuf, 32);
+		out_hash[32] = '\0';
+	}
+	cursor += 32;
+	int scanned = 0;
+	ut8 b = 0;
+	while (scanned < 1024) {
+		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
+			break;
+		}
+		if (b == '\0') {
+			break;
+		}
+		scanned++;
+	}
+	if (out_flags && flagssz > 0) {
+		int tocopy = scanned < (flagssz - 1) ? scanned : (flagssz - 1);
+		if (tocopy > 0) {
+			read_mem (ctx, cursor, (ut8 *)out_flags, tocopy);
+		}
+		out_flags[tocopy] = '\0';
+	}
+	cursor += (ut64) (scanned + 1);
+	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0;
+	ut64 next = cursor;
+	if (!read_uleb128_at (ctx, next, &nb, &next)) {
+		return false;
+	}
+	if (!read_uleb128_at (ctx, next, &no, &next)) {
+		return false;
+	}
+	if (!read_uleb128_at (ctx, next, &nc, &next)) {
+		return false;
+	}
+	if (!read_uleb128_at (ctx, next, &itlen, &next)) {
+		return false;
+	}
+	if (!read_uleb128_at (ctx, next, &itdata, &next)) {
+		return false;
+	}
+	if (out_nb) {
+		*out_nb = nb;
+	}
+	if (out_no) {
+		*out_no = no;
+	}
+	if (out_nc) {
+		*out_nc = nc;
+	}
+	if (out_itlen) {
+		*out_itlen = itlen;
+	}
+	if (out_itdata) {
+		*out_itdata = itdata;
+	}
+	return true;
+}
+
+char *dart_pool_dump_header (DartCtx *ctx) {
+	if (!ctx || !ctx->core) {
+		return NULL;
+	}
+	int ok = find_snapshots (ctx);
+	if (ok != 0) {
+		return strdup ("Error: Dart snapshots not found\n");
+	}
+	extract_snapshot_hash_flags (ctx, ctx->vm_data);
+	ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
+	derive_layout_from_flags (ctx);
+
+	RStrBuf *sb = r_strbuf_new ("");
+
+	r_strbuf_appendf (sb, "Dart AOT Snapshot Header\n");
+	r_strbuf_appendf (sb, "========================\n\n");
+
+	const char *version = dart_version_from_hash (ctx->snapshot_hash);
+	r_strbuf_appendf (sb, "snapshot_hash: %s\n", ctx->snapshot_hash[0] ? ctx->snapshot_hash : "(unknown)");
+	r_strbuf_appendf (sb, "dart_version:  %s\n", version ? version : "unknown");
+
+	if (ctx->layout) {
+		const DartVerLayout *l = ctx->layout;
+		const char *tag_name = "unknown";
+		switch (l->tag_style) {
+		case DART_TAG_STYLE_CID_INT32:
+			tag_name = "CID_INT32 (v2.10-2.13)";
+			break;
+		case DART_TAG_STYLE_CID_SHIFT1:
+			tag_name = "CID_SHIFT1 (v2.14-3.3)";
+			break;
+		case DART_TAG_STYLE_OBJECT_HEADER:
+			tag_name = "OBJECT_HEADER (v3.4+)";
+			break;
+		}
+		r_strbuf_appendf (sb, "tag_style:     %s\n", tag_name);
+		r_strbuf_appendf (sb, "cws:           %d\n", l->compressed_word_size);
+		r_strbuf_appendf (sb, "alignment:     %d\n", l->max_alignment);
+		r_strbuf_appendf (sb, "header_fields: %d\n", l->header_fields);
+		r_strbuf_appendf (sb, "it_capacity:   %" PRIu64 "\n", (uint64_t)l->it_cap);
+	}
+
+	r_strbuf_appendf (sb, "\nSnapshot Addresses\n");
+	r_strbuf_appendf (sb, "------------------\n");
+	r_strbuf_appendf (sb, "vm_data:       0x%" PFMT64x "\n", (ut64)ctx->vm_data);
+	r_strbuf_appendf (sb, "vm_instr:      0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
+	r_strbuf_appendf (sb, "iso_data:      0x%" PFMT64x "\n", (ut64)ctx->iso_data);
+	r_strbuf_appendf (sb, "iso_instr:     0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+
+	ut64 addrs[2] = { ctx->vm_data, ctx->iso_data };
+	const char *labels[2] = { "VM", "Isolate" };
+	for (int si = 0; si < 2; si++) {
+		if (!addrs[si]) {
+			continue;
+		}
+		uint32_t magic = 0;
+		uint64_t total_len = 0, kind = 0;
+		char hash[33] = {0};
+		char flags[512] = {0};
+		ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0;
+		if (!read_snapshot_hdr (ctx, addrs[si], &magic, &total_len, &kind, hash, sizeof (hash), flags, sizeof (flags), &nb, &no, &nc, &itlen, &itdata)) {
+			r_strbuf_appendf (sb, "\n%s Snapshot: failed to read header at 0x%" PFMT64x "\n", labels[si], (ut64)addrs[si]);
+			continue;
+		}
+		r_strbuf_appendf (sb, "\n%s Snapshot (0x%" PFMT64x ")\n", labels[si], (ut64)addrs[si]);
+		r_strbuf_appendf (sb, "  magic:       0x%08x\n", magic);
+		r_strbuf_appendf (sb, "  total_len:   %" PRIu64 " bytes\n", total_len);
+		r_strbuf_appendf (sb, "  kind:        %" PRIu64 "\n", kind);
+		r_strbuf_appendf (sb, "  hash:        %s\n", hash[0] ? hash : "(empty)");
+		r_strbuf_appendf (sb, "  flags:       %s\n", flags[0] ? flags : "(none)");
+		r_strbuf_appendf (sb, "  base_objects: %" PRIu64 "\n", (uint64_t)nb);
+		r_strbuf_appendf (sb, "  objects:     %" PRIu64 "\n", (uint64_t)no);
+		r_strbuf_appendf (sb, "  clusters:    %" PRIu64 "\n", (uint64_t)nc);
+		r_strbuf_appendf (sb, "  it_length:   %" PRIu64 "\n", (uint64_t)itlen);
+		r_strbuf_appendf (sb, "  it_data_off: %" PRIu64 "\n", (uint64_t)itdata);
+	}
+
+	if (ctx->layout) {
+		const DartVerLayout *l = ctx->layout;
+		r_strbuf_appendf (sb, "\nClass IDs (CID Table)\n");
+		r_strbuf_appendf (sb, "---------------------\n");
+		r_strbuf_appendf (sb, "  cid_class:          %d\n", l->cid_class);
+		r_strbuf_appendf (sb, "  cid_function:       %d\n", l->cid_function);
+		r_strbuf_appendf (sb, "  cid_code:           %d\n", l->cid_code);
+		r_strbuf_appendf (sb, "  cid_string:         %d\n", l->cid_string);
+		r_strbuf_appendf (sb, "  cid_one_byte_string: %d\n", l->cid_one_byte_string);
+		r_strbuf_appendf (sb, "  cid_two_byte_string: %d\n", l->cid_two_byte_string);
+		r_strbuf_appendf (sb, "  cid_array:          %d\n", l->cid_array);
+		r_strbuf_appendf (sb, "  cid_mint:           %d\n", l->cid_mint);
+		r_strbuf_appendf (sb, "  cid_object_pool:    %d\n", l->cid_object_pool);
+		r_strbuf_appendf (sb, "  num_predefined:     %d\n", l->num_predefined_cids);
+	}
+
+	return r_strbuf_drain (sb);
+}

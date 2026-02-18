@@ -93,6 +93,7 @@ typedef struct DartTypeInfo {
 // ============================================================================
 
 int dart_pool_enumerate (DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
+char *dart_pool_dump_header (DartCtx *ctx);
 
 // ============================================================================
 // Class Extraction API

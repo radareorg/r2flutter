@@ -76,6 +76,7 @@ static void print_usage (const char *argv0) {
 	printf ("  --dump-classes-r2          Print class info as r2 type definition commands\n");
 	printf ("  --dump-fields              Include field details in class output\n");
 	printf ("  --dump-types               Print string-based type names as JSON array\n");
+	printf ("  --dump-header              Print Dart AOT snapshot header info\n");
 	printf ("  --dump-strings             Print all extracted strings as JSON\n");
 	printf ("  --dump-strings-r2          Print strings as r2 comments\n");
 }
@@ -128,7 +129,9 @@ int main (int argc, char **argv) {
 				dctx.dump_fields = 1;
 			} else if (!strcmp (a, "--dump-types")) {
 				dctx.dump_classes = 3;
-			} else if (!strcmp (a, "--dump-strings")) {
+			} else if (!strcmp (a, "--dump-header")) {
+			dctx.dump_header = 1;
+		} else if (!strcmp (a, "--dump-strings")) {
 				dctx.dump_strings = 1;
 			} else if (!strcmp (a, "--dump-strings-r2")) {
 				dctx.dump_strings = 2;
@@ -219,6 +222,19 @@ int main (int argc, char **argv) {
 		fprintf (stderr, "libapp is loaded at 0x%" PFMT64x "\n", app->base_addr);
 		fprintf (stderr, "Dart heap at 0x%" PFMT64x "\n", app->heap_base);
 		fprintf (stderr, "app->file_path = %s\n", app->file_path? app->file_path: "(null)");
+	}
+
+	if (dctx.dump_header) {
+		app->dctx.dump_header = 1;
+		char *hdr = dart_pool_dump_header (&app->dctx);
+		if (hdr) {
+			printf ("%s", hdr);
+			free (hdr);
+		}
+		dart_app_free (app);
+		r_core_free (core);
+		free (libapp_path);
+		return 0;
 	}
 
 	if (dctx.dump_strings > 0) {
