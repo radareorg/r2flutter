@@ -10,7 +10,7 @@ Build
 
 Usage
 - Use bin/r2flutter cli program to test the changes and implementation of the dart aot snapshots
-- Use LEARN.md as a document to store anotations and important findings and discoveries while solving more tasks
+- Update doc/learn.md to record anotations and important findings and discoveries while solving more tasks
 - When using radare2 to read the raw contents of a file you should use `r2 -n` to not load the sections and actually read physical address instead of the virtual mapped ones.
 
 Coding Rules

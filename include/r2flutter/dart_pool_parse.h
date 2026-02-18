@@ -53,6 +53,9 @@ typedef struct DartFieldInfo {
 	ut32 offset;
 	ut32 flags;
 	ut64 type_ref;
+	ut64 ref_id;
+	ut64 name_ref;
+	ut64 owner_ref;
 } DartFieldInfo;
 
 #define DART_FIELD_STATIC  (1 << 0)
@@ -73,6 +76,7 @@ typedef struct DartClassInfo {
 	ut32 flags;
 	RList *fields;
 	RList *interfaces;
+	ut64 name_ref;
 } DartClassInfo;
 
 #define DART_CLASS_ABSTRACT (1 << 0)
