@@ -1,8 +1,8 @@
 NAME=json-ios-runner
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -q -n --dump-snapshot bins/ios/Runner.app
+!!../bin/r2flutter -q -n -j --dump-header bins/ios/Runner.app
 EOF
 EXPECT=<<EOF
-{"kind":3,"hash":"d20a1be77c3d3c41b2a5accaee1ce549","vm_data":1771776,"vm_instr":16384,"iso_data":1807872,"iso_instr":59136,"cluster":{"base":4,"objs":13577,"clusters":17,"it_len":10115,"it_off":15106,"total":536223},"cws":4}
+{"kind":3,"hash":"d20a1be77c3d3c41b2a5accaee1ce549","vm_data":1771776,"vm_instr":16384,"iso_data":1807872,"iso_instr":59136,"cluster":{"base":4,"objs":13577,"clusters":17,"it_len":10115,"it_off":15106,"total":536223},"cws":4,"dart_version":"3.4.3","tag_style":"OBJECT_HEADER","alignment":16,"header_fields":5,"it_capacity":20000,"cid_table":{"cid_class":5,"cid_function":7,"cid_code":18,"cid_string":92,"cid_one_byte_string":93,"cid_two_byte_string":94,"cid_array":89,"cid_mint":60,"cid_object_pool":22,"num_predefined":174}}
 EOF

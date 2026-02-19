@@ -2,6 +2,12 @@
 
 This document summarizes key technical findings discovered during the implementation of class extraction features in r2flutter.
 
+## Dump Header JSON Superset
+
+**Finding**: `-j --dump-header` emits the same snapshot/cluster fields as the old dump-snapshot JSON, plus layout metadata (version, tag style, CID table).
+
+This makes the legacy dump-snapshot flag redundant and keeps scripts relying on `cluster` and snapshot addresses intact.
+
 ## Production AOT Snapshots Lack Class Metadata
 
 **Finding**: Class definitions (kClassCid=5) are not serialized in production Flutter builds.

@@ -60,7 +60,6 @@ static char *find_lib_in_dir (const char *dir) {
 
 typedef enum {
 	ACTION_NONE = 0,
-	ACTION_DUMP_SNAPSHOT,
 	ACTION_DUMP_STRINGS,
 	ACTION_DUMP_CLASSES,
 	ACTION_DUMP_TYPES,
@@ -76,12 +75,11 @@ static void print_usage (const char *argv0) {
 	printf ("  -V, --version    Show version\n");
 	printf ("  -v               Verbose (stderr info)\n");
 	printf ("  -vv              More verbose (dump headers)\n");
-	printf ("  -j               Output in JSON format (default)\n");
+	printf ("  -j               Output in JSON format\n");
 	printf ("  -r               Output in radare2 format\n");
 	printf ("  -q               Quiet mode (suppress non-essential output)\n");
 	printf ("  -n               Do not emit radare2 flags/script to stdout\n");
 	printf ("Actions:\n");
-	printf ("  --dump-snapshot  Print snapshot header info\n");
 	printf ("  --dump-strings   Print all extracted strings\n");
 	printf ("  --dump-classes   Print extracted class information\n");
 	printf ("  --dump-types     Print string-based type names\n");
@@ -104,6 +102,7 @@ int main (int argc, char **argv) {
 	int opt_quiet = 0;
 	int opt_no_dump = 0;
 	int opt_r2 = 0;
+	int opt_json = 0;
 	int dump_fns_count = 0;
 	DumpAction action = ACTION_NONE;
 	DartCtx dctx = { 0 };
@@ -126,15 +125,15 @@ int main (int argc, char **argv) {
 				dctx.verbose = 2;
 			} else if (!strcmp (a, "-j")) {
 				opt_r2 = 0;
+				opt_json = 1;
 			} else if (!strcmp (a, "-r")) {
 				opt_r2 = 1;
+				opt_json = 0;
 			} else if (!strcmp (a, "-q")) {
 				opt_quiet = 1;
 				dctx.quiet = 1;
 			} else if (!strcmp (a, "-n")) {
 				opt_no_dump = 1;
-			} else if (!strcmp (a, "--dump-snapshot")) {
-				action = ACTION_DUMP_SNAPSHOT;
 			} else if (!strcmp (a, "--dump-strings")) {
 				action = ACTION_DUMP_STRINGS;
 			} else if (!strcmp (a, "--dump-classes")) {
@@ -240,10 +239,6 @@ int main (int argc, char **argv) {
 	char *output = NULL;
 
 	switch (action) {
-	case ACTION_DUMP_SNAPSHOT:
-		app->dctx.dump_snapshot_json = opt_r2 ? 0 : 1;
-		dart_app_load_info (app);
-		break;
 	case ACTION_DUMP_STRINGS:
 		if (opt_r2) {
 			output = dart_pool_dump_strings_r2 (&dctx);
@@ -269,6 +264,7 @@ int main (int argc, char **argv) {
 		break;
 	case ACTION_DUMP_HEADER:
 		app->dctx.dump_header = 1;
+		app->dctx.dump_header_json = opt_r2 ? 0 : opt_json;
 		output = dart_pool_dump_header (&app->dctx);
 		break;
 	case ACTION_DUMP_FNS:

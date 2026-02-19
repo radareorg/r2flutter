@@ -38,7 +38,7 @@ Tests
 CLI Flags (debugging)
 - `-v` / `-vv`: increase stderr verbosity for snapshot discovery.
 - `--no-stubs`: skip emitting ELF/r2 stub functions.
-- `--dump-snapshot-json`: emit one JSON line with snapshot + cluster info.
+- `-j --dump-header`: emit one JSON line with snapshot + cluster info.
 - `--dump-it`: print InstructionTable index→address pairs to stderr.
 - `--quiet`: suppress non-essential stdout (handy for JSON-only tests).
 - `--no-dump`: suppress printing radare2 flags/script.

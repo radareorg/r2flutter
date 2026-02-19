@@ -10,12 +10,11 @@ Modifiers:
   -V, --version    Show version
   -v               Verbose (stderr info)
   -vv              More verbose (dump headers)
-  -j               Output in JSON format (default)
+  -j               Output in JSON format
   -r               Output in radare2 format
   -q               Quiet mode (suppress non-essential output)
   -n               Do not emit radare2 flags/script to stdout
 Actions:
-  --dump-snapshot  Print snapshot header info
   --dump-strings   Print all extracted strings
   --dump-classes   Print extracted class information
   --dump-types     Print string-based type names

@@ -3145,12 +3145,69 @@ char *dart_pool_dump_header (DartCtx *ctx) {
 	ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
 	derive_layout_from_flags (ctx);
 
+	const char *version = dart_version_from_hash (ctx->snapshot_hash);
+	if (ctx->dump_header_json) {
+		ut64 header_addr = ctx->iso_data ? ctx->iso_data : ctx->vm_data;
+		uint64_t total_len = 0, kind = 0;
+		ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0;
+		if (header_addr) {
+			read_snapshot_hdr (ctx, header_addr, NULL, &total_len, &kind, NULL, 0, NULL, 0, &nb, &no, &nc, &itlen, &itdata);
+		}
+
+		RStrBuf *sb = r_strbuf_new ("");
+		r_strbuf_appendf (sb, "{\"kind\":%" PRIu64, (uint64_t)kind);
+		r_strbuf_appendf (sb, ",\"hash\":\"%s\"", ctx->snapshot_hash[0] ? ctx->snapshot_hash : "");
+		r_strbuf_appendf (sb, ",\"vm_data\":%" PFMT64u, (ut64)ctx->vm_data);
+		r_strbuf_appendf (sb, ",\"vm_instr\":%" PFMT64u, (ut64)ctx->vm_instr);
+		r_strbuf_appendf (sb, ",\"iso_data\":%" PFMT64u, (ut64)ctx->iso_data);
+		r_strbuf_appendf (sb, ",\"iso_instr\":%" PFMT64u, (ut64)ctx->iso_instr);
+		r_strbuf_appendf (sb, ",\"cluster\":{\"base\":%" PRIu64 ",\"objs\":%" PRIu64 ",\"clusters\":%" PRIu64 ",\"it_len\":%" PRIu64 ",\"it_off\":%" PRIu64 ",\"total\":%" PRIu64 "}",
+			(uint64_t)nb,
+			(uint64_t)no,
+			(uint64_t)nc,
+			(uint64_t)itlen,
+			(uint64_t)itdata,
+			(uint64_t)total_len);
+		r_strbuf_appendf (sb, ",\"cws\":%d", ctx->compressed_word_size);
+		r_strbuf_appendf (sb, ",\"dart_version\":\"%s\"", version ? version : "unknown");
+		if (ctx->layout) {
+			const DartVerLayout *l = ctx->layout;
+			const char *tag_name = "unknown";
+			switch (l->tag_style) {
+			case DART_TAG_STYLE_CID_INT32:
+				tag_name = "CID_INT32";
+				break;
+			case DART_TAG_STYLE_CID_SHIFT1:
+				tag_name = "CID_SHIFT1";
+				break;
+			case DART_TAG_STYLE_OBJECT_HEADER:
+				tag_name = "OBJECT_HEADER";
+				break;
+			}
+			r_strbuf_appendf (sb, ",\"tag_style\":\"%s\"", tag_name);
+			r_strbuf_appendf (sb, ",\"alignment\":%d", l->max_alignment);
+			r_strbuf_appendf (sb, ",\"header_fields\":%d", l->header_fields);
+			r_strbuf_appendf (sb, ",\"it_capacity\":%" PRIu64, (uint64_t)l->it_cap);
+			r_strbuf_appendf (sb, ",\"cid_table\":{\"cid_class\":%d,\"cid_function\":%d,\"cid_code\":%d,\"cid_string\":%d,\"cid_one_byte_string\":%d,\"cid_two_byte_string\":%d,\"cid_array\":%d,\"cid_mint\":%d,\"cid_object_pool\":%d,\"num_predefined\":%d}",
+				l->cid_class,
+				l->cid_function,
+				l->cid_code,
+				l->cid_string,
+				l->cid_one_byte_string,
+				l->cid_two_byte_string,
+				l->cid_array,
+				l->cid_mint,
+				l->cid_object_pool,
+				l->num_predefined_cids);
+		}
+		r_strbuf_append (sb, "}");
+		return r_strbuf_drain (sb);
+	}
+
 	RStrBuf *sb = r_strbuf_new ("");
 
 	r_strbuf_appendf (sb, "Dart AOT Snapshot Header\n");
 	r_strbuf_appendf (sb, "========================\n\n");
-
-	const char *version = dart_version_from_hash (ctx->snapshot_hash);
 	r_strbuf_appendf (sb, "snapshot_hash: %s\n", ctx->snapshot_hash[0] ? ctx->snapshot_hash : "(unknown)");
 	r_strbuf_appendf (sb, "dart_version:  %s\n", version ? version : "unknown");
 

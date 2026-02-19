@@ -48,6 +48,7 @@ typedef struct {
 	int dump_fields;
 	int dump_strings;
 	int dump_header;
+	int dump_header_json;
 } DartCtx;
 
 int dart_r2_find_snapshots(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso_data, ut64 *iso_instr);

@@ -1,7 +1,7 @@
 {
   "name": "json-android",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-snapshot", "bins/android/first/"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "-j", "--dump-header", "bins/android/first/"],
   "timeout": 30,
   "expect": {
     "json": {

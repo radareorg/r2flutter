@@ -6,7 +6,7 @@ def run(cmd, cwd=None):
     return p.returncode, p.stdout, p.stderr
 
 def r2flutter_json(target):
-    rc, out, err = run([os.path.join(os.path.dirname(__file__), '..', 'bin', 'r2flutter'), '--quiet', '--no-dump', '--dump-snapshot-json', target])
+    rc, out, err = run([os.path.join(os.path.dirname(__file__), '..', 'bin', 'r2flutter'), '--quiet', '--no-dump', '-j', '--dump-header', target])
     if rc != 0 or not out.strip():
         raise RuntimeError('r2flutter failed: %s' % err)
     return json.loads(out.strip().splitlines()[-1])
