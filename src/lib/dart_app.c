@@ -13,7 +13,7 @@
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 
-extern int dart_pool_enumerate (DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
+extern int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
 
 typedef unsigned long long ull;
 
@@ -84,7 +84,7 @@ static void add_fn_cb(const char *name, unsigned long long addr, unsigned long l
 	r_list_append (app->functions, fn);
 }
 
-void dart_app_load_info (DartApp *app) {
+void dart_app_load_info(DartApp *app) {
 	if (!app || !app->file_path) {
 		return;
 	}
@@ -97,7 +97,7 @@ void dart_app_load_info (DartApp *app) {
 	}
 	if (!app->dctx.quiet) {
 		printf ("Found %d functions (from Dart ObjectPool)\n",
-				app->functions? r_list_length (app->functions): 0);
+			app->functions? r_list_length (app->functions): 0);
 	}
 }
 

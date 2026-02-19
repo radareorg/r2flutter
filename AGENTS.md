@@ -7,6 +7,7 @@ Build
 - Requires radare2 dev headers (`r_core`) and `pkg-config`.
 - Build with `make` (uses pkg-config to resolve r2 includes/libs).
 - Do not build with gcc oneliners, always use `make`
+- Run `make fmt` to format/indent the source code
 
 Usage
 - Use bin/r2flutter cli program to test the changes and implementation of the dart aot snapshots

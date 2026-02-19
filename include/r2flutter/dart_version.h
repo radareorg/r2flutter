@@ -14,9 +14,9 @@ extern "C" {
 
 // Tag encoding styles across Dart versions
 typedef enum {
-	DART_TAG_STYLE_CID_INT32 = 0,     // v2.10-2.13: raw int32 CID
-	DART_TAG_STYLE_CID_SHIFT1 = 1,    // v2.14-3.3: (cid << 1) | canonical
-	DART_TAG_STYLE_OBJECT_HEADER = 2  // v3.4.3+: ObjectHeader with ClassIdTag at bits 12-31
+	DART_TAG_STYLE_CID_INT32 = 0, // v2.10-2.13: raw int32 CID
+	DART_TAG_STYLE_CID_SHIFT1 = 1, // v2.14-3.3: (cid << 1) | canonical
+	DART_TAG_STYLE_OBJECT_HEADER = 2 // v3.4.3+: ObjectHeader with ClassIdTag at bits 12-31
 } DartTagStyle;
 
 // Version layout information for Dart snapshots

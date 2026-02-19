@@ -6,25 +6,25 @@
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 
-static void r2flutter_help (RCore *core) {
-	r_cons_printf (core->cons, \
-	"Usage: r2flutter [-jifqsncFStH] [args]\n"
-	"| r2flutter          analyze dart snapshot and apply flags/comments\n"
-	"| r2flutter -H       dump Dart AOT snapshot header info\n"
-	"| r2flutter -j       dump snapshot header as JSON\n"
-	"| r2flutter -i       dump instruction table entries to output\n"
-	"| r2flutter -f [n]   list first N discovered functions (default 20)\n"
-	"| r2flutter -q       analyze quietly (no extra output)\n"
-	"| r2flutter -s       include ELF/r2 stub symbols\n"
-	"| r2flutter -n       use name pool for unknown function names\n"
-	"| r2flutter -c       dump classes as JSON\n"
-	"| r2flutter -C       dump classes as r2 type definitions\n"
-	"| r2flutter -F       include field info in class output\n"
-	"| r2flutter -S       dump all strings as JSON\n"
-	"| r2flutter -t       dump strings as r2 comments\n");
+static void r2flutter_help(RCore *core) {
+	r_cons_printf (core->cons,
+		"Usage: r2flutter [-jifqsncFStH] [args]\n"
+		"| r2flutter          analyze dart snapshot and apply flags/comments\n"
+		"| r2flutter -H       dump Dart AOT snapshot header info\n"
+		"| r2flutter -j       dump snapshot header as JSON\n"
+		"| r2flutter -i       dump instruction table entries to output\n"
+		"| r2flutter -f [n]   list first N discovered functions (default 20)\n"
+		"| r2flutter -q       analyze quietly (no extra output)\n"
+		"| r2flutter -s       include ELF/r2 stub symbols\n"
+		"| r2flutter -n       use name pool for unknown function names\n"
+		"| r2flutter -c       dump classes as JSON\n"
+		"| r2flutter -C       dump classes as r2 type definitions\n"
+		"| r2flutter -F       include field info in class output\n"
+		"| r2flutter -S       dump all strings as JSON\n"
+		"| r2flutter -t       dump strings as r2 comments\n");
 }
 
-static bool r2flutter_analyze (RCore *core, DartCtx *dctx, int quiet) {
+static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
 	const char *filepath = R_UNWRAP4 (core, bin, cur, file);
 	if (!filepath) {
 		R_LOG_ERROR ("r2flutter: no file loaded");
@@ -57,7 +57,7 @@ static bool r2flutter_analyze (RCore *core, DartCtx *dctx, int quiet) {
 	return true;
 }
 
-static bool r_cmd_r2flutter_call (RCorePluginSession *cps, const char *input) {
+static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	RCore *core = cps->core;
 	if (!core) {
 		return false;
@@ -125,9 +125,9 @@ static bool r_cmd_r2flutter_call (RCorePluginSession *cps, const char *input) {
 			}
 			dctx.quiet = 1;
 			dctx.dump_fns = n;
-			const char *filepath = core->bin && core->bin->cur
-				? core->bin->cur->file
-				: NULL;
+		const char *filepath = core->bin && core->bin->cur
+			? core->bin->cur->file
+			: NULL;
 			if (!filepath) {
 				R_LOG_ERROR ("r2flutter: no file loaded");
 				return true;
@@ -150,7 +150,7 @@ static bool r_cmd_r2flutter_call (RCorePluginSession *cps, const char *input) {
 				RListIter *it;
 				DartFunction *fn;
 				r_list_foreach (app->functions, it, fn) {
-					if (!fn || !fn->name) {
+				if (!fn || !fn->name) {
 						continue;
 					}
 					r_cons_printf (core->cons, "0x%08" PFMT64x " %s\n", fn->addr, fn->name);

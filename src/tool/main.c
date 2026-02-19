@@ -12,11 +12,11 @@
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "../../include/r2flutter/version.h"
 
-static bool is_library (const char *name) {
+static bool is_library(const char *name) {
 	return r_str_endswith (name, ".so") || r_str_endswith (name, ".dylib") || r_str_endswith (name, ".aot") || r_str_endswith (name, ".bin") || r_str_startswith (name, "lib");
 }
 
-static char *find_lib_in_dir (const char *dir) {
+static char *find_lib_in_dir(const char *dir) {
 	if (!dir) {
 		return NULL;
 	}
@@ -68,7 +68,7 @@ typedef enum {
 	ACTION_DUMP_IT,
 } DumpAction;
 
-static void print_usage (const char *argv0) {
+static void print_usage(const char *argv0) {
 	printf ("Usage: %s [options] <libapp_path_or_dir>\n", argv0);
 	printf ("Modifiers:\n");
 	printf ("  -h, --help       Show help\n");
@@ -92,7 +92,7 @@ static void print_usage (const char *argv0) {
 	printf ("  --dump-fields    Include field details in class output\n");
 }
 
-int main (int argc, char **argv) {
+int main(int argc, char **argv) {
 	if (argc < 2) {
 		print_usage (argv[0]);
 		return 1;
@@ -264,7 +264,7 @@ int main (int argc, char **argv) {
 		break;
 	case ACTION_DUMP_HEADER:
 		app->dctx.dump_header = 1;
-		app->dctx.dump_header_json = opt_r2 ? 0 : opt_json;
+		app->dctx.dump_header_json = opt_r2? 0: opt_json;
 		output = dart_pool_dump_header (&app->dctx);
 		break;
 	case ACTION_DUMP_FNS:
