@@ -87,6 +87,7 @@ static void print_usage(const char *argv0) {
 	printf ("  --dump-r2script       Print radare2 script for snapshot analysis\n");
 	printf ("Options:\n");
 	printf ("  --no-stubs            Do not emit ELF/r2 stub functions\n");
+	printf ("  --limit <N>           Limit output to N items (applies to dump-funcs, etc.)\n");
 	printf ("  --use-name-pool       Assign names from data image strings when unknown\n");
 	printf ("  --dump-fields         Include field details in class output\n");
 }
@@ -130,6 +131,11 @@ int main(int argc, char **argv) {
 				action = ACTION_DUMP_HEADER;
 			} else if (!strcmp (a, "--dump-funcs")) {
 				action = ACTION_DUMP_FUNCS;
+			} else if (!strcmp (a, "--limit")) {
+				if (i + 1 < argc) {
+					dctx.dump_fns_limit = atoi (argv[i + 1]);
+					i++;
+				}
 			} else if (!strcmp (a, "--dump-it")) {
 				action = ACTION_DUMP_IT;
 				dctx.dump_it = 1;
@@ -251,14 +257,24 @@ int main(int argc, char **argv) {
 		break;
 	case ACTION_DUMP_FUNCS:
 		dart_app_load_info (app);
-		if (app->functions) {
-			RListIter *it;
-			DartFunction *fn;
-			r_list_foreach (app->functions, it, fn) {
-				if (!fn || !fn->name) {
-					continue;
+		if (opt_json) {
+			output = dart_dumper_dump_funcs_json (app);
+		} else {
+			if (app->functions) {
+				RListIter *it;
+				DartFunction *fn;
+				int count = 0;
+				int limit = dctx.dump_fns_limit ? dctx.dump_fns_limit : -1;
+				r_list_foreach (app->functions, it, fn) {
+					if (!fn || !fn->name) {
+						continue;
+					}
+					if (limit > 0 && count >= limit) {
+						break;
+					}
+					printf ("0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
+					count++;
 				}
-				printf ("0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
 			}
 		}
 		break;

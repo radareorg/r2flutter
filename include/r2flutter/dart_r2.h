@@ -43,6 +43,7 @@ typedef struct {
 	int dump_it;
 	int quiet;
 	int dump_fns;
+	int dump_fns_limit;
 	int use_name_pool;
 	int dump_classes;
 	int dump_fields;

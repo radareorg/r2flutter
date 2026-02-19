@@ -58,7 +58,7 @@ test-r2r:
 	r2r -t 30 test/db
 
 test: $(BIN_FILE)
-	@echo "Running custom Python testsuite"
+	@echo "Running custom testsuite"
 	@python3 scripts/run_tests.py
 
 .PHONY: all clean test test-r2r r2 user-install user-uninstall fmt indent format

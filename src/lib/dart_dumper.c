@@ -152,6 +152,39 @@ char *dart_dumper_dump4radare2(DartApp *app) {
 	return r_strbuf_drain (sb);
 }
 
+char *dart_dumper_dump_funcs_json(DartApp *app) {
+	if (!app || !app->functions || r_list_length (app->functions) == 0) {
+		return strdup ("[]");
+	}
+
+	PJ *pj = pj_new ();
+	pj_a (pj);
+
+	RListIter *it;
+	DartFunction *fn;
+	int count = 0;
+	int limit = app->dctx.dump_fns_limit ? app->dctx.dump_fns_limit : -1;
+	r_list_foreach (app->functions, it, fn) {
+		if (!fn || !fn->name) {
+			continue;
+		}
+		if (limit > 0 && count >= limit) {
+			break;
+		}
+		pj_o (pj);
+		pj_kn (pj, "addr", fn->addr);
+		pj_ks (pj, "name", fn->name);
+		if (fn->size) {
+			pj_kn (pj, "size", fn->size);
+		}
+		pj_end (pj);
+		count++;
+	}
+	pj_end (pj);
+
+	return pj_drain (pj);
+}
+
 void dart_dumper_apply_to_core(DartApp *app) {
 	if (!app || !app->core) {
 		return;

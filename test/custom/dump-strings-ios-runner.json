@@ -1,7 +1,7 @@
 {
   "name": "dump-strings-ios-runner",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-strings", "100", "bins/ios/Runner.app"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-strings", "-j", "bins/ios/Runner.app"],
   "timeout": 30,
   "expect": {
     "contains": [

@@ -1,7 +1,7 @@
 {
   "name": "dump-strings-android",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-strings", "100", "bins/android/first/"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-strings", "-j", "bins/android/first/"],
   "timeout": 30,
   "expect": {
     "contains": [
