@@ -3050,33 +3050,41 @@ char *dart_pool_dump_strings_r2 (DartCtx *ctx) {
 	return r_strbuf_drain (sb);
 }
 
-static bool read_snapshot_hdr (DartCtx *ctx, ut64 base, uint32_t *out_magic, uint64_t *out_total_len, uint64_t *out_kind, char *out_hash, int hashsz, char *out_flags, int flagssz, ut64 *out_nb, ut64 *out_no, ut64 *out_nc, ut64 *out_itlen, ut64 *out_itdata) {
+typedef struct {
+	bool ok;
+	uint32_t magic;
+	uint64_t total_len;
+	uint64_t kind;
+	char hash[33];
+	char flags[512];
+	ut64 nb;
+	ut64 no;
+	ut64 nc;
+	ut64 itlen;
+	ut64 itdata;
+} SnapshotHeader;
+
+static SnapshotHeader read_snapshot_hdr (DartCtx *ctx, ut64 base) {
+	SnapshotHeader hdr = { 0 };
 	if (!ctx || !base) {
-		return false;
+		return hdr;
 	}
-	ut8 hdr[4 + 8 + 8];
-	if (!read_mem (ctx, base, hdr, sizeof (hdr))) {
-		return false;
+	ut8 buf[4 + 8 + 8];
+	if (!read_mem (ctx, base, buf, sizeof (buf))) {
+		return hdr;
 	}
-	uint32_t magic = *(uint32_t *) (hdr + 0);
-	if (out_magic) {
-		*out_magic = magic;
+	hdr.magic = *(uint32_t *) (buf + 0);
+	if (hdr.magic != 0xdcdcf5f5) {
+		return hdr;
 	}
-	if (magic != 0xdcdcf5f5) {
-		return false;
-	}
-	uint64_t length_ex_magic = *(uint64_t *) (hdr + 4);
-	if (out_total_len) {
-		*out_total_len = length_ex_magic + 4;
-	}
-	if (out_kind) {
-		*out_kind = *(uint64_t *) (hdr + 12);
-	}
+	uint64_t length_ex_magic = *(uint64_t *) (buf + 4);
+	hdr.total_len = length_ex_magic + 4;
+	hdr.kind = *(uint64_t *) (buf + 12);
 	ut64 cursor = base + 4 + 8 + 8;
 	ut8 hashbuf[32];
-	if (read_mem (ctx, cursor, hashbuf, 32) && out_hash && hashsz > 32) {
-		memcpy (out_hash, hashbuf, 32);
-		out_hash[32] = '\0';
+	if (read_mem (ctx, cursor, hashbuf, 32)) {
+		memcpy (hdr.hash, hashbuf, 32);
+		hdr.hash[32] = '\0';
 	}
 	cursor += 32;
 	int scanned = 0;
@@ -3090,47 +3098,30 @@ static bool read_snapshot_hdr (DartCtx *ctx, ut64 base, uint32_t *out_magic, uin
 		}
 		scanned++;
 	}
-	if (out_flags && flagssz > 0) {
-		int tocopy = scanned < (flagssz - 1) ? scanned : (flagssz - 1);
-		if (tocopy > 0) {
-			read_mem (ctx, cursor, (ut8 *)out_flags, tocopy);
-		}
-		out_flags[tocopy] = '\0';
+	int tocopy = scanned < (int)(sizeof (hdr.flags) - 1) ? scanned : (int)(sizeof (hdr.flags) - 1);
+	if (tocopy > 0) {
+		read_mem (ctx, cursor, (ut8 *)hdr.flags, tocopy);
 	}
+	hdr.flags[tocopy] = '\0';
 	cursor += (ut64) (scanned + 1);
-	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0;
 	ut64 next = cursor;
-	if (!read_uleb128_at (ctx, next, &nb, &next)) {
-		return false;
+	if (!read_uleb128_at (ctx, next, &hdr.nb, &next)) {
+		return hdr;
 	}
-	if (!read_uleb128_at (ctx, next, &no, &next)) {
-		return false;
+	if (!read_uleb128_at (ctx, next, &hdr.no, &next)) {
+		return hdr;
 	}
-	if (!read_uleb128_at (ctx, next, &nc, &next)) {
-		return false;
+	if (!read_uleb128_at (ctx, next, &hdr.nc, &next)) {
+		return hdr;
 	}
-	if (!read_uleb128_at (ctx, next, &itlen, &next)) {
-		return false;
+	if (!read_uleb128_at (ctx, next, &hdr.itlen, &next)) {
+		return hdr;
 	}
-	if (!read_uleb128_at (ctx, next, &itdata, &next)) {
-		return false;
+	if (!read_uleb128_at (ctx, next, &hdr.itdata, &next)) {
+		return hdr;
 	}
-	if (out_nb) {
-		*out_nb = nb;
-	}
-	if (out_no) {
-		*out_no = no;
-	}
-	if (out_nc) {
-		*out_nc = nc;
-	}
-	if (out_itlen) {
-		*out_itlen = itlen;
-	}
-	if (out_itdata) {
-		*out_itdata = itdata;
-	}
-	return true;
+	hdr.ok = true;
+	return hdr;
 }
 
 char *dart_pool_dump_header (DartCtx *ctx) {
@@ -3148,26 +3139,22 @@ char *dart_pool_dump_header (DartCtx *ctx) {
 	const char *version = dart_version_from_hash (ctx->snapshot_hash);
 	if (ctx->dump_header_json) {
 		ut64 header_addr = ctx->iso_data ? ctx->iso_data : ctx->vm_data;
-		uint64_t total_len = 0, kind = 0;
-		ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0;
-		if (header_addr) {
-			read_snapshot_hdr (ctx, header_addr, NULL, &total_len, &kind, NULL, 0, NULL, 0, &nb, &no, &nc, &itlen, &itdata);
-		}
+		SnapshotHeader sh = read_snapshot_hdr (ctx, header_addr);
 
 		RStrBuf *sb = r_strbuf_new ("");
-		r_strbuf_appendf (sb, "{\"kind\":%" PRIu64, (uint64_t)kind);
+		r_strbuf_appendf (sb, "{\"kind\":%" PRIu64, (uint64_t)sh.kind);
 		r_strbuf_appendf (sb, ",\"hash\":\"%s\"", ctx->snapshot_hash[0] ? ctx->snapshot_hash : "");
 		r_strbuf_appendf (sb, ",\"vm_data\":%" PFMT64u, (ut64)ctx->vm_data);
 		r_strbuf_appendf (sb, ",\"vm_instr\":%" PFMT64u, (ut64)ctx->vm_instr);
 		r_strbuf_appendf (sb, ",\"iso_data\":%" PFMT64u, (ut64)ctx->iso_data);
 		r_strbuf_appendf (sb, ",\"iso_instr\":%" PFMT64u, (ut64)ctx->iso_instr);
 		r_strbuf_appendf (sb, ",\"cluster\":{\"base\":%" PRIu64 ",\"objs\":%" PRIu64 ",\"clusters\":%" PRIu64 ",\"it_len\":%" PRIu64 ",\"it_off\":%" PRIu64 ",\"total\":%" PRIu64 "}",
-			(uint64_t)nb,
-			(uint64_t)no,
-			(uint64_t)nc,
-			(uint64_t)itlen,
-			(uint64_t)itdata,
-			(uint64_t)total_len);
+			(uint64_t)sh.nb,
+			(uint64_t)sh.no,
+			(uint64_t)sh.nc,
+			(uint64_t)sh.itlen,
+			(uint64_t)sh.itdata,
+			(uint64_t)sh.total_len);
 		r_strbuf_appendf (sb, ",\"cws\":%d", ctx->compressed_word_size);
 		r_strbuf_appendf (sb, ",\"dart_version\":\"%s\"", version ? version : "unknown");
 		if (ctx->layout) {
@@ -3245,26 +3232,22 @@ char *dart_pool_dump_header (DartCtx *ctx) {
 		if (!addrs[si]) {
 			continue;
 		}
-		uint32_t magic = 0;
-		uint64_t total_len = 0, kind = 0;
-		char hash[33] = {0};
-		char flags[512] = {0};
-		ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0;
-		if (!read_snapshot_hdr (ctx, addrs[si], &magic, &total_len, &kind, hash, sizeof (hash), flags, sizeof (flags), &nb, &no, &nc, &itlen, &itdata)) {
+		SnapshotHeader sh = read_snapshot_hdr (ctx, addrs[si]);
+		if (!sh.ok) {
 			r_strbuf_appendf (sb, "\n%s Snapshot: failed to read header at 0x%" PFMT64x "\n", labels[si], (ut64)addrs[si]);
 			continue;
 		}
 		r_strbuf_appendf (sb, "\n%s Snapshot (0x%" PFMT64x ")\n", labels[si], (ut64)addrs[si]);
-		r_strbuf_appendf (sb, "  magic:       0x%08x\n", magic);
-		r_strbuf_appendf (sb, "  total_len:   %" PRIu64 " bytes\n", total_len);
-		r_strbuf_appendf (sb, "  kind:        %" PRIu64 "\n", kind);
-		r_strbuf_appendf (sb, "  hash:        %s\n", hash[0] ? hash : "(empty)");
-		r_strbuf_appendf (sb, "  flags:       %s\n", flags[0] ? flags : "(none)");
-		r_strbuf_appendf (sb, "  base_objects: %" PRIu64 "\n", (uint64_t)nb);
-		r_strbuf_appendf (sb, "  objects:     %" PRIu64 "\n", (uint64_t)no);
-		r_strbuf_appendf (sb, "  clusters:    %" PRIu64 "\n", (uint64_t)nc);
-		r_strbuf_appendf (sb, "  it_length:   %" PRIu64 "\n", (uint64_t)itlen);
-		r_strbuf_appendf (sb, "  it_data_off: %" PRIu64 "\n", (uint64_t)itdata);
+		r_strbuf_appendf (sb, "  magic:       0x%08x\n", sh.magic);
+		r_strbuf_appendf (sb, "  total_len:   %" PRIu64 " bytes\n", sh.total_len);
+		r_strbuf_appendf (sb, "  kind:        %" PRIu64 "\n", sh.kind);
+		r_strbuf_appendf (sb, "  hash:        %s\n", sh.hash[0] ? sh.hash : "(empty)");
+		r_strbuf_appendf (sb, "  flags:       %s\n", sh.flags[0] ? sh.flags : "(none)");
+		r_strbuf_appendf (sb, "  base_objects: %" PRIu64 "\n", (uint64_t)sh.nb);
+		r_strbuf_appendf (sb, "  objects:     %" PRIu64 "\n", (uint64_t)sh.no);
+		r_strbuf_appendf (sb, "  clusters:    %" PRIu64 "\n", (uint64_t)sh.nc);
+		r_strbuf_appendf (sb, "  it_length:   %" PRIu64 "\n", (uint64_t)sh.itlen);
+		r_strbuf_appendf (sb, "  it_data_off: %" PRIu64 "\n", (uint64_t)sh.itdata);
 	}
 
 	if (ctx->layout) {
