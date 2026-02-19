@@ -68,6 +68,12 @@ typedef enum {
 	ACTION_DUMP_IT,
 } DumpAction;
 
+typedef enum {
+	OUTPUT_FORMAT_NORMAL = 0,
+	OUTPUT_FORMAT_JSON,
+	OUTPUT_FORMAT_R2,
+} OutputFormat;
+
 static void print_usage(const char *argv0) {
 	printf ("Usage: %s [options] <libapp_path_or_dir>\n", argv0);
 	printf ("Modifiers:\n");
@@ -99,8 +105,7 @@ int main(int argc, char **argv) {
 
 	const char *libapp_path_in = NULL;
 	int opt_no_dump = 0;
-	int opt_r2 = 0;
-	int opt_json = 0;
+	OutputFormat output_format = OUTPUT_FORMAT_NORMAL;
 	int dump_fns_count = 0;
 	DumpAction action = ACTION_NONE;
 	DartCtx dctx = { 0 };
@@ -122,11 +127,9 @@ int main(int argc, char **argv) {
 			} else if (!strcmp (a, "-vv")) {
 				dctx.verbose = 2;
 			} else if (!strcmp (a, "-j")) {
-				opt_r2 = 0;
-				opt_json = 1;
+				output_format = OUTPUT_FORMAT_JSON;
 			} else if (!strcmp (a, "-r")) {
-				opt_r2 = 1;
-				opt_json = 0;
+				output_format = OUTPUT_FORMAT_R2;
 			} else if (!strcmp (a, "-n")) {
 				opt_no_dump = 1;
 			} else if (!strcmp (a, "--dump-strings")) {
@@ -235,32 +238,54 @@ int main(int argc, char **argv) {
 
 	switch (action) {
 	case ACTION_DUMP_STRINGS:
-		if (opt_r2) {
+		switch (output_format) {
+		case OUTPUT_FORMAT_R2:
 			output = dart_pool_dump_strings_r2 (&dctx);
-		} else {
+			break;
+		case OUTPUT_FORMAT_JSON:
 			output = dart_pool_dump_strings_json (&dctx);
+			break;
+		case OUTPUT_FORMAT_NORMAL:
+			// TODO: implement normal output for ACTION_DUMP_STRINGS
+			output = dart_pool_dump_strings_json (&dctx);
+			break;
 		}
 		break;
 	case ACTION_DUMP_CLASSES:
 		dctx.dump_classes = 1;
-		if (opt_r2) {
+		switch (output_format) {
+		case OUTPUT_FORMAT_R2:
 			output = dart_pool_dump_classes_r2 (&dctx);
-		} else {
+			break;
+		case OUTPUT_FORMAT_JSON:
 			output = dart_pool_dump_classes_json (&dctx);
+			break;
+		case OUTPUT_FORMAT_NORMAL:
+			// TODO: implement normal output for ACTION_DUMP_CLASSES
+			output = dart_pool_dump_classes_json (&dctx);
+			break;
 		}
 		break;
 	case ACTION_DUMP_TYPES:
 		dctx.dump_classes = 3;
-		if (opt_r2) {
+		switch (output_format) {
+		case OUTPUT_FORMAT_R2:
 			output = dart_pool_dump_classes_r2 (&dctx);
-		} else {
+			break;
+		case OUTPUT_FORMAT_JSON:
 			output = dart_pool_dump_classes_json (&dctx);
+			break;
+		case OUTPUT_FORMAT_NORMAL:
+			// TODO: implement normal output for ACTION_DUMP_TYPES
+			output = dart_pool_dump_classes_json (&dctx);
+			break;
 		}
 		break;
 	case ACTION_DUMP_HEADER:
 		app->dctx.dump_header = 1;
-		app->dctx.dump_header_json = opt_r2? 0: opt_json;
+		app->dctx.dump_header_json = (output_format == OUTPUT_FORMAT_JSON);
 		output = dart_pool_dump_header (&app->dctx);
+		// TODO: implement r2 output format for ACTION_DUMP_HEADER
 		break;
 	case ACTION_DUMP_FNS:
 		dart_app_load_info (app);
@@ -268,32 +293,61 @@ int main(int argc, char **argv) {
 			RListIter *it;
 			DartFunction *fn;
 			int count = 0;
-			r_list_foreach (app->functions, it, fn) {
-				if (!fn || !fn->name) {
-					continue;
+			switch (output_format) {
+			case OUTPUT_FORMAT_R2:
+				// TODO: implement r2 output format for ACTION_DUMP_FNS
+			case OUTPUT_FORMAT_JSON:
+				// TODO: implement json output format for ACTION_DUMP_FNS
+			case OUTPUT_FORMAT_NORMAL:
+				r_list_foreach (app->functions, it, fn) {
+					if (!fn || !fn->name) {
+						continue;
+					}
+					printf ("0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
+					if (++count >= dump_fns_count) {
+						break;
+					}
 				}
-				printf ("0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
-				if (++count >= dump_fns_count) {
-					break;
-				}
+				break;
 			}
 		}
 		break;
 	case ACTION_DUMP_IT:
 		dart_app_load_info (app);
+		// TODO: implement json and r2 output formats for ACTION_DUMP_IT
 		break;
 	case ACTION_NONE:
 	default:
-		dart_app_load_info (app);
-		if (!opt_no_dump) {
-			if (dctx.verbose) {
-				fprintf (stderr, "Dumping for radare2\n");
+		{
+			dart_app_load_info (app);
+			if (!opt_no_dump) {
+				switch (output_format) {
+				case OUTPUT_FORMAT_R2:
+			case OUTPUT_FORMAT_NORMAL:
+				{
+					if (dctx.verbose) {
+						fprintf (stderr, "Dumping for radare2\n");
+					}
+					char *s = dart_dumper_dump4radare2 (app);
+					printf ("%s\n", s);
+					free (s);
+					break;
+				}
+			case OUTPUT_FORMAT_JSON:
+				{
+					// TODO: implement json output format for default action
+					if (dctx.verbose) {
+						fprintf (stderr, "Dumping for radare2\n");
+					}
+					char *s = dart_dumper_dump4radare2 (app);
+					printf ("%s\n", s);
+					free (s);
+					break;
+				}
+				}
 			}
-			char *s = dart_dumper_dump4radare2 (app);
-			printf ("%s\n", s);
-			free (s);
+			break;
 		}
-		break;
 	}
 
 	if (output) {

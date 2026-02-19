@@ -96,8 +96,7 @@ void dart_app_load_info(DartApp *app) {
 		app->heap_base = (ut64)heap_base;
 	}
 	if (app->dctx.verbose) {
-		fprintf (stderr, "Found %d functions (from Dart ObjectPool)\n",
-			app->functions? r_list_length (app->functions): 0);
+		fprintf (stderr, "Found %d functions (from Dart ObjectPool)\n", app->functions? r_list_length (app->functions): 0);
 	}
 }
 
