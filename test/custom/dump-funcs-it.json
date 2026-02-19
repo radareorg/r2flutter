@@ -1,0 +1,12 @@
+{
+  "name": "dump-funcs-it",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-n", "--no-stubs", "--dump-funcs", "--limit", "5", "bins/android/first/"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "method.fn_0",
+      "0x66700"
+    ]
+  }
+}

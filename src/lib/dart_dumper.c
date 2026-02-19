@@ -163,7 +163,7 @@ char *dart_dumper_dump_funcs_json(DartApp *app) {
 	RListIter *it;
 	DartFunction *fn;
 	int count = 0;
-	int limit = app->dctx.dump_fns_limit ? app->dctx.dump_fns_limit : -1;
+	int limit = app->dctx.dump_fns_limit? app->dctx.dump_fns_limit: -1;
 	r_list_foreach (app->functions, it, fn) {
 		if (!fn || !fn->name) {
 			continue;

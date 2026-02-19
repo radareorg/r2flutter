@@ -264,7 +264,7 @@ int main(int argc, char **argv) {
 				RListIter *it;
 				DartFunction *fn;
 				int count = 0;
-				int limit = dctx.dump_fns_limit ? dctx.dump_fns_limit : -1;
+				int limit = dctx.dump_fns_limit? dctx.dump_fns_limit: -1;
 				r_list_foreach (app->functions, it, fn) {
 					if (!fn || !fn->name) {
 						continue;
