@@ -64,37 +64,31 @@ typedef enum {
 	ACTION_DUMP_CLASSES,
 	ACTION_DUMP_TYPES,
 	ACTION_DUMP_HEADER,
-	ACTION_DUMP_FNS,
+	ACTION_DUMP_FUNCS,
 	ACTION_DUMP_IT,
+	ACTION_DUMP_R2SCRIPT,
 } DumpAction;
-
-typedef enum {
-	OUTPUT_FORMAT_NORMAL = 0,
-	OUTPUT_FORMAT_JSON,
-	OUTPUT_FORMAT_R2,
-} OutputFormat;
 
 static void print_usage(const char *argv0) {
 	printf ("Usage: %s [options] <libapp_path_or_dir>\n", argv0);
 	printf ("Modifiers:\n");
-	printf ("  -h, --help       Show help\n");
-	printf ("  -V, --version    Show version\n");
-	printf ("  -v               Verbose (stderr debug info)\n");
-	printf ("  -vv              More verbose (dump headers)\n");
-	printf ("  -j               Output in JSON format\n");
-	printf ("  -r               Output in radare2 format\n");
-	printf ("  -n               Do not emit radare2 flags/script to stdout\n");
+	printf ("  -h, --help            Show help\n");
+	printf ("  -V, --version         Show version\n");
+	printf ("  -v                    Verbose (stderr debug info)\n");
+	printf ("  -vv                   More verbose (dump headers)\n");
+	printf ("  -j                    Output in JSON format\n");
 	printf ("Actions:\n");
-	printf ("  --dump-strings   Print all extracted strings\n");
-	printf ("  --dump-classes   Print extracted class information\n");
-	printf ("  --dump-types     Print string-based type names\n");
-	printf ("  --dump-header    Print Dart AOT snapshot header info\n");
-	printf ("  --dump-fns N     Print first N functions (addr name)\n");
-	printf ("  --dump-it        Print instruction table entry addresses to stderr\n");
+	printf ("  --dump-strings        Print all extracted strings\n");
+	printf ("  --dump-classes        Print extracted class information\n");
+	printf ("  --dump-types          Print string-based type names\n");
+	printf ("  --dump-header         Print Dart AOT snapshot header info\n");
+	printf ("  --dump-funcs          Print all extracted functions (addr name)\n");
+	printf ("  --dump-it             Print instruction table entry addresses to stderr\n");
+	printf ("  --dump-r2script       Print radare2 script for snapshot analysis\n");
 	printf ("Options:\n");
-	printf ("  --no-stubs       Do not emit ELF/r2 stub functions\n");
-	printf ("  --use-name-pool  Assign names from data image strings when unknown\n");
-	printf ("  --dump-fields    Include field details in class output\n");
+	printf ("  --no-stubs            Do not emit ELF/r2 stub functions\n");
+	printf ("  --use-name-pool       Assign names from data image strings when unknown\n");
+	printf ("  --dump-fields         Include field details in class output\n");
 }
 
 int main(int argc, char **argv) {
@@ -104,9 +98,7 @@ int main(int argc, char **argv) {
 	}
 
 	const char *libapp_path_in = NULL;
-	int opt_no_dump = 0;
-	OutputFormat output_format = OUTPUT_FORMAT_NORMAL;
-	int dump_fns_count = 0;
+	int opt_json = 0;
 	DumpAction action = ACTION_NONE;
 	DartCtx dctx = { 0 };
 
@@ -127,11 +119,7 @@ int main(int argc, char **argv) {
 			} else if (!strcmp (a, "-vv")) {
 				dctx.verbose = 2;
 			} else if (!strcmp (a, "-j")) {
-				output_format = OUTPUT_FORMAT_JSON;
-			} else if (!strcmp (a, "-r")) {
-				output_format = OUTPUT_FORMAT_R2;
-			} else if (!strcmp (a, "-n")) {
-				opt_no_dump = 1;
+				opt_json = 1;
 			} else if (!strcmp (a, "--dump-strings")) {
 				action = ACTION_DUMP_STRINGS;
 			} else if (!strcmp (a, "--dump-classes")) {
@@ -140,17 +128,13 @@ int main(int argc, char **argv) {
 				action = ACTION_DUMP_TYPES;
 			} else if (!strcmp (a, "--dump-header")) {
 				action = ACTION_DUMP_HEADER;
+			} else if (!strcmp (a, "--dump-funcs")) {
+				action = ACTION_DUMP_FUNCS;
 			} else if (!strcmp (a, "--dump-it")) {
 				action = ACTION_DUMP_IT;
 				dctx.dump_it = 1;
-			} else if (!strncmp (a, "--dump-fns=", 11)) {
-				action = ACTION_DUMP_FNS;
-				dump_fns_count = atoi (a + 11);
-			} else if (!strcmp (a, "--dump-fns")) {
-				action = ACTION_DUMP_FNS;
-				if (i + 1 < argc) {
-					dump_fns_count = atoi (argv[++i]);
-				}
+			} else if (!strcmp (a, "--dump-r2script")) {
+				action = ACTION_DUMP_R2SCRIPT;
 			} else if (!strcmp (a, "--no-stubs")) {
 				dctx.no_stubs = 1;
 			} else if (!strcmp (a, "--use-name-pool")) {
@@ -238,116 +222,63 @@ int main(int argc, char **argv) {
 
 	switch (action) {
 	case ACTION_DUMP_STRINGS:
-		switch (output_format) {
-		case OUTPUT_FORMAT_R2:
+		if (opt_json) {
+			output = dart_pool_dump_strings_json (&dctx);
+		} else {
 			output = dart_pool_dump_strings_r2 (&dctx);
-			break;
-		case OUTPUT_FORMAT_JSON:
-			output = dart_pool_dump_strings_json (&dctx);
-			break;
-		case OUTPUT_FORMAT_NORMAL:
-			// TODO: implement normal output for ACTION_DUMP_STRINGS
-			output = dart_pool_dump_strings_json (&dctx);
-			break;
 		}
 		break;
 	case ACTION_DUMP_CLASSES:
 		dctx.dump_classes = 1;
-		switch (output_format) {
-		case OUTPUT_FORMAT_R2:
+		if (opt_json) {
+			output = dart_pool_dump_classes_json (&dctx);
+		} else {
 			output = dart_pool_dump_classes_r2 (&dctx);
-			break;
-		case OUTPUT_FORMAT_JSON:
-			output = dart_pool_dump_classes_json (&dctx);
-			break;
-		case OUTPUT_FORMAT_NORMAL:
-			// TODO: implement normal output for ACTION_DUMP_CLASSES
-			output = dart_pool_dump_classes_json (&dctx);
-			break;
 		}
 		break;
 	case ACTION_DUMP_TYPES:
 		dctx.dump_classes = 3;
-		switch (output_format) {
-		case OUTPUT_FORMAT_R2:
+		if (opt_json) {
+			output = dart_pool_dump_classes_json (&dctx);
+		} else {
 			output = dart_pool_dump_classes_r2 (&dctx);
-			break;
-		case OUTPUT_FORMAT_JSON:
-			output = dart_pool_dump_classes_json (&dctx);
-			break;
-		case OUTPUT_FORMAT_NORMAL:
-			// TODO: implement normal output for ACTION_DUMP_TYPES
-			output = dart_pool_dump_classes_json (&dctx);
-			break;
 		}
 		break;
 	case ACTION_DUMP_HEADER:
 		app->dctx.dump_header = 1;
-		app->dctx.dump_header_json = (output_format == OUTPUT_FORMAT_JSON);
+		app->dctx.dump_header_json = opt_json;
 		output = dart_pool_dump_header (&app->dctx);
-		// TODO: implement r2 output format for ACTION_DUMP_HEADER
 		break;
-	case ACTION_DUMP_FNS:
+	case ACTION_DUMP_FUNCS:
 		dart_app_load_info (app);
-		if (app->functions && dump_fns_count > 0) {
+		if (app->functions) {
 			RListIter *it;
 			DartFunction *fn;
-			int count = 0;
-			switch (output_format) {
-			case OUTPUT_FORMAT_R2:
-				// TODO: implement r2 output format for ACTION_DUMP_FNS
-			case OUTPUT_FORMAT_JSON:
-				// TODO: implement json output format for ACTION_DUMP_FNS
-			case OUTPUT_FORMAT_NORMAL:
-				r_list_foreach (app->functions, it, fn) {
-					if (!fn || !fn->name) {
-						continue;
-					}
-					printf ("0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
-					if (++count >= dump_fns_count) {
-						break;
-					}
+			r_list_foreach (app->functions, it, fn) {
+				if (!fn || !fn->name) {
+					continue;
 				}
-				break;
+				printf ("0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
 			}
 		}
 		break;
 	case ACTION_DUMP_IT:
 		dart_app_load_info (app);
-		// TODO: implement json and r2 output formats for ACTION_DUMP_IT
+		break;
+	case ACTION_DUMP_R2SCRIPT:
+		dart_app_load_info (app);
+		if (dctx.verbose) {
+			fprintf (stderr, "Dumping radare2 script\n");
+		}
+		char *s = dart_dumper_dump4radare2 (app);
+		printf ("%s\n", s);
+		free (s);
 		break;
 	case ACTION_NONE:
 	default:
-		{
-			dart_app_load_info (app);
-			if (!opt_no_dump) {
-				switch (output_format) {
-				case OUTPUT_FORMAT_R2:
-			case OUTPUT_FORMAT_NORMAL:
-				{
-					if (dctx.verbose) {
-						fprintf (stderr, "Dumping for radare2\n");
-					}
-					char *s = dart_dumper_dump4radare2 (app);
-					printf ("%s\n", s);
-					free (s);
-					break;
-				}
-			case OUTPUT_FORMAT_JSON:
-				{
-					// TODO: implement json output format for default action
-					if (dctx.verbose) {
-						fprintf (stderr, "Dumping for radare2\n");
-					}
-					char *s = dart_dumper_dump4radare2 (app);
-					printf ("%s\n", s);
-					free (s);
-					break;
-				}
-				}
-			}
-			break;
-		}
+		eprintf ("Error: no action specified. Use --help for available actions\n");
+		ret = 1;
+		break;
 	}
 
 	if (output) {
