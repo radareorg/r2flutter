@@ -73,11 +73,10 @@ static void print_usage(const char *argv0) {
 	printf ("Modifiers:\n");
 	printf ("  -h, --help       Show help\n");
 	printf ("  -V, --version    Show version\n");
-	printf ("  -v               Verbose (stderr info)\n");
+	printf ("  -v               Verbose (stderr debug info)\n");
 	printf ("  -vv              More verbose (dump headers)\n");
 	printf ("  -j               Output in JSON format\n");
 	printf ("  -r               Output in radare2 format\n");
-	printf ("  -q               Quiet mode (suppress non-essential output)\n");
 	printf ("  -n               Do not emit radare2 flags/script to stdout\n");
 	printf ("Actions:\n");
 	printf ("  --dump-strings   Print all extracted strings\n");
@@ -99,7 +98,6 @@ int main(int argc, char **argv) {
 	}
 
 	const char *libapp_path_in = NULL;
-	int opt_quiet = 0;
 	int opt_no_dump = 0;
 	int opt_r2 = 0;
 	int opt_json = 0;
@@ -129,9 +127,6 @@ int main(int argc, char **argv) {
 			} else if (!strcmp (a, "-r")) {
 				opt_r2 = 1;
 				opt_json = 0;
-			} else if (!strcmp (a, "-q")) {
-				opt_quiet = 1;
-				dctx.quiet = 1;
 			} else if (!strcmp (a, "-n")) {
 				opt_no_dump = 1;
 			} else if (!strcmp (a, "--dump-strings")) {
@@ -229,7 +224,7 @@ int main(int argc, char **argv) {
 	app->heap_base = 0;
 	memcpy (&app->dctx, &dctx, sizeof (DartCtx));
 
-	if (!opt_quiet) {
+	if (dctx.verbose) {
 		fprintf (stderr, "libapp is loaded at 0x%" PFMT64x "\n", app->base_addr);
 		fprintf (stderr, "Dart heap at 0x%" PFMT64x "\n", app->heap_base);
 		fprintf (stderr, "app->file_path = %s\n", app->file_path? app->file_path: "(null)");
@@ -290,8 +285,10 @@ int main(int argc, char **argv) {
 	case ACTION_NONE:
 	default:
 		dart_app_load_info (app);
-		if (!opt_no_dump && !opt_quiet) {
-			printf ("Dumping for radare2\n");
+		if (!opt_no_dump) {
+			if (dctx.verbose) {
+				fprintf (stderr, "Dumping for radare2\n");
+			}
 			char *s = dart_dumper_dump4radare2 (app);
 			printf ("%s\n", s);
 			free (s);

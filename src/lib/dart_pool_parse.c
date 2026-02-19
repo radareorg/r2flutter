@@ -2293,18 +2293,16 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 		if ((int)obj_cid != cid_field) {
 			continue;
 		}
-		ut64 name_ptr = 0, owner_ptr = 0, type_ptr = 0;
+		ut64 name_ptr = 0, owner_ptr = 0;
 		ut32 kind_bits = 0, offset_val = 0;
 		if (use_compressed) {
 			name_ptr = *(ut32 *) (hdr + 8);
 			owner_ptr = *(ut32 *) (hdr + 12);
-			type_ptr = *(ut32 *) (hdr + 16);
 			kind_bits = *(ut32 *) (hdr + 24);
 			offset_val = *(ut32 *) (hdr + 28);
 		} else {
 			name_ptr = *(ut64 *) (hdr + 8);
 			owner_ptr = *(ut64 *) (hdr + 16);
-			type_ptr = *(ut64 *) (hdr + 24);
 			kind_bits = *(ut32 *) (hdr + 40);
 			offset_val = *(ut32 *) (hdr + 44);
 		}
