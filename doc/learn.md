@@ -45,6 +45,21 @@ CamelCase names matching the pattern `[A-Z][a-z]+[A-Za-z0-9]*` that contain at l
 
 This serves as a reliable fallback when cluster parsing yields no class definitions.
 
+## Heuristic String Extraction & Classification
+
+**Finding**: Production snapshots frequently omit usable string clusters, so scanning the read-only sections for raw ASCII/UTF-16 sequences is more reliable than walking snapshot metadata.
+
+Implementation details:
+1. Iterate every non-executable, readable section (covers `.rodata`, Mach-O `__DATA_CONST`, etc.).
+2. Parse printable ASCII runs (length >= 4, <= 512) directly from the bytes.
+3. Parse UTF-16LE runs by collapsing two-byte code units into UTF-8, which recovers user strings that are stored as wide characters.
+4. Classify each recovered string:
+   - `runtime`: values starting with `dart:`/containing `dartvm` internals
+   - `library`: structural metadata (`package:` URIs, `.dart` paths, CamelCase type names)
+   - `app`: anything containing whitespace or punctuation (typical user-facing strings)
+
+This produces clean `--dump-strings` output even when the clustered snapshot contains compressed or stripped string objects, while also giving analysts a quick way to filter out VM noise and focus on app-facing literals like `"Hello, Dart!"`.
+
 ## Recovering Methods Without Class Clusters
 
 Production snapshots omit the `Class` cluster, but `Function` objects are still serialized in the ROData image. r2flutter now scans the data image for objects whose CID equals `cid_function` and extracts:

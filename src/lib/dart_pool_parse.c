@@ -4,12 +4,16 @@
 #include <stdbool.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <r_core.h>
+#include <r_bin.h>
 #include <r_io.h>
 #include <r_util/r_json.h>
 #include <r_util/r_file.h>
 #include <r_util/r_name.h>
+#include <r_util/r_strbuf.h>
 #include <sdb/ht_pp.h>
 #include <r_list.h>
 #include "../../include/r2flutter/dart_pool_parse.h"
@@ -2815,432 +2819,235 @@ void dart_string_list_free(RList *list) {
 	r_list_free (list);
 }
 
-static int decode_one_byte_string_cluster(ClusterStream *s, RList *string_list, DartCtx *ctx, ut64 *ref_counter) {
-	ut64 count = 0;
-	if (!cs_read_unsigned (s, &count)) {
-		return -1;
+#define DART_STRING_SCAN_LIMIT 50000
+
+static bool is_ascii_char(ut8 ch) {
+	return (ch >= 32 && ch < 127);
+}
+
+static DartStringCategory classify_string_value(const char *s) {
+	if (!s || !*s) {
+		return DART_STRING_CAT_UNKNOWN;
 	}
-	if (count == 0 || count > 100000) {
-		return 0;
+	if (!strncmp (s, "dart:", 5) || strstr (s, "dartvm") || strstr (s, "dart/")) {
+		return DART_STRING_CAT_RUNTIME;
 	}
-	if (ctx->verbose > 1) {
-		fprintf (stderr, "[r2flutter] OneByteString cluster: count=%" PRIu64 "\n", count);
+	if (!strncmp (s, "package:", 8) || strstr (s, ".dart")) {
+		return DART_STRING_CAT_LIBRARY;
 	}
-	for (ut64 i = 0; i < count; i++) {
-		ut64 encoded = 0;
-		if (!cs_read_unsigned (s, &encoded)) {
-			return -1;
+	for (const char *p = s; *p; p++) {
+		if (isspace ((unsigned char)*p) || strchr ("!?,;:'\"", *p)) {
+			return DART_STRING_CAT_APP;
 		}
-		bool is_two_byte = (encoded & 1) != 0;
-		ut64 length = encoded >> 1;
-		if (length > 65536) {
+	}
+	if (strchr (s, '/')) {
+		return DART_STRING_CAT_LIBRARY;
+	}
+	return DART_STRING_CAT_LIBRARY;
+}
+
+static const char *string_category_name(DartStringCategory cat) {
+	switch (cat) {
+	case DART_STRING_CAT_APP: return "app";
+	case DART_STRING_CAT_LIBRARY: return "library";
+	case DART_STRING_CAT_RUNTIME: return "runtime";
+	default: return "unknown";
+	}
+}
+
+static bool looks_like_text(const char *s) {
+	if (!s) {
+		return false;
+	}
+	int alpha = 0;
+	for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+		if (*p < 0x20 && *p != '\t' && *p != '\n' && *p != '\r') {
+			return false;
+		}
+		if (isalpha (*p)) {
+			alpha++;
+		}
+	}
+	return alpha >= 1;
+}
+
+static void append_string_info(RList *list, const char *value, ut32 len, ut32 flags, ut64 addr, DartStringCategory cat, ut64 *ref_counter) {
+	if (!list || !value) {
+		return;
+	}
+	if (r_list_length (list) >= DART_STRING_SCAN_LIMIT) {
+		return;
+	}
+	DartStringInfo *si = R_NEW0 (DartStringInfo);
+	si->ref_id = ref_counter? (*ref_counter)++: 0;
+	si->length = len;
+	si->flags = flags | DART_STRING_CANONICAL;
+	si->address = addr;
+	si->category = cat;
+	si->references = r_list_newf ((RListFree)dart_string_ref_free);
+	si->value = strdup (value);
+	if (!si->value) {
+		dart_string_info_free (si);
+		return;
+	}
+	r_list_append (list, si);
+}
+
+static void scan_ascii_strings(const ut8 *buf, ut64 base, ut64 size, RList *list, ut64 *ref_counter) {
+	if (!buf || !size) {
+		return;
+	}
+	ut64 pos = 0;
+	while (pos < size) {
+		while (pos < size && !is_ascii_char (buf[pos])) {
+			pos++;
+		}
+		ut64 start = pos;
+		while (pos < size && is_ascii_char (buf[pos])) {
+			pos++;
+		}
+		ut64 length = pos - start;
+		if (length >= 4 && length <= 512) {
+			char *tmp = (char *)malloc (length + 1);
+			if (tmp) {
+				memcpy (tmp, buf + start, length);
+				tmp[length] = '\0';
+				if (looks_like_text (tmp)) {
+					append_string_info (list, tmp, (ut32)length, 0, base + start, classify_string_value (tmp), ref_counter);
+				}
+				free (tmp);
+			}
+		}
+	}
+}
+
+static bool decode_utf16le_unit(const ut8 *buf, ut64 size, ut64 idx, ut32 *out) {
+	if (idx + 1 >= size) {
+		return false;
+	}
+	uint16_t lo = buf[idx];
+	uint16_t hi = buf[idx + 1];
+	ut32 code = (hi << 8) | lo;
+	if (!code) {
+		return false;
+	}
+	*out = code;
+	return true;
+}
+
+static int emit_utf16le(const ut8 *buf, ut64 start, ut64 end, RStrBuf *sb) {
+	ut64 pos = start;
+	while (pos + 1 < end) {
+		ut32 code = 0;
+		if (!decode_utf16le_unit (buf, end, pos, &code)) {
+			break;
+		}
+		if (code < 0x20 && code != '\t' && code != '\n' && code != '\r') {
+			break;
+		}
+		if (code < 0x80) {
+			r_strbuf_append_n (sb, (const char *)&code, 1);
+		} else if (code < 0x800) {
+			char tmp[2] = {
+				(char)(0xC0 | (code >> 6)),
+				(char)(0x80 | (code & 0x3F))
+			};
+			r_strbuf_append_n (sb, tmp, 2);
+		} else {
+			char tmp[3] = {
+				(char)(0xE0 | (code >> 12)),
+				(char)(0x80 | ((code >> 6) & 0x3F)),
+				(char)(0x80 | (code & 0x3F))
+			};
+			r_strbuf_append_n (sb, tmp, 3);
+		}
+		pos += 2;
+	}
+	return (int)((pos - start) / 2);
+}
+
+static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, RList *list, ut64 *ref_counter) {
+	if (!buf || size < 8) {
+		return;
+	}
+	ut64 pos = 0;
+	while (pos + 1 < size) {
+		ut32 code = 0;
+		if (!decode_utf16le_unit (buf, size, pos, &code)) {
+			pos++;
 			continue;
 		}
-		DartStringInfo *si = R_NEW0 (DartStringInfo);
-		si->ref_id = (*ref_counter)++;
-		si->length = (ut32)length;
-		si->flags = 0;
-		if (is_two_byte) {
-			si->flags |= DART_STRING_TWO_BYTE;
-		}
-		si->references = r_list_newf ((RListFree)dart_string_ref_free);
-		if (length > 0) {
-			if (is_two_byte) {
-				ut8 *raw = (ut8 *)malloc (length * 2);
-				if (raw && cs_read_bytes (s, raw, length * 2)) {
-					si->value = (char *)malloc (length * 4 + 1);
-					if (si->value) {
-						int out_idx = 0;
-						for (ut64 j = 0; j < length; j++) {
-							uint16_t ch = raw[j * 2] | ((uint16_t)raw[j * 2 + 1] << 8);
-							if (ch < 0x80) {
-								si->value[out_idx++] = (char)ch;
-							} else if (ch < 0x800) {
-								si->value[out_idx++] = (char) (0xC0 | (ch >> 6));
-								si->value[out_idx++] = (char) (0x80 | (ch & 0x3F));
-							} else {
-								si->value[out_idx++] = (char) (0xE0 | (ch >> 12));
-								si->value[out_idx++] = (char) (0x80 | ((ch >> 6) & 0x3F));
-								si->value[out_idx++] = (char) (0x80 | (ch & 0x3F));
-							}
-						}
-						si->value[out_idx] = '\0';
-					}
-				}
-				free (raw);
-			} else {
-				si->value = (char *)malloc (length + 1);
-				if (si->value) {
-					if (cs_read_bytes (s, (ut8 *)si->value, (int)length)) {
-						si->value[length] = '\0';
-					} else {
-						free (si->value);
-						si->value = NULL;
-					}
-				}
-			}
-		}
-		r_list_append (string_list, si);
-		if (ctx->refs && si->ref_id < ctx->refs_count) {
-			ctx->refs[si->ref_id] = si;
-		}
-	}
-	return 0;
-}
-
-static int decode_two_byte_string_cluster(ClusterStream *s, RList *string_list, DartCtx *ctx, ut64 *ref_counter) {
-	ut64 count = 0;
-	if (!cs_read_unsigned (s, &count)) {
-		return -1;
-	}
-	if (count == 0 || count > 100000) {
-		return 0;
-	}
-	for (ut64 i = 0; i < count; i++) {
-		ut64 encoded = 0;
-		if (!cs_read_unsigned (s, &encoded)) {
-			return -1;
-		}
-		ut64 length = encoded >> 1;
-		if (length > 65536) {
+		if (code < 0x20 && code != '\t' && code != '\n' && code != '\r' && code != ' ') {
+			pos += 2;
 			continue;
 		}
-		DartStringInfo *si = R_NEW0 (DartStringInfo);
-		si->ref_id = (*ref_counter)++;
-		si->length = (ut32)length;
-		si->flags = DART_STRING_TWO_BYTE;
-		si->references = r_list_newf ((RListFree)dart_string_ref_free);
-		if (length > 0) {
-			ut8 *raw = (ut8 *)malloc (length * 2);
-			if (raw && cs_read_bytes (s, raw, length * 2)) {
-				si->value = (char *)malloc (length * 4 + 1);
-				if (si->value) {
-					int out_idx = 0;
-					for (ut64 j = 0; j < length; j++) {
-						uint16_t ch = raw[j * 2] | ((uint16_t)raw[j * 2 + 1] << 8);
-						if (ch >= 0xD800 && ch <= 0xDBFF && j + 1 < length) {
-							uint16_t lo = raw[(j + 1) * 2] | ((uint16_t)raw[(j + 1) * 2 + 1] << 8);
-							if (lo >= 0xDC00 && lo <= 0xDFFF) {
-								uint32_t cp = 0x10000 + ((ch - 0xD800) << 10) + (lo - 0xDC00);
-								si->value[out_idx++] = (char) (0xF0 | (cp >> 18));
-								si->value[out_idx++] = (char) (0x80 | ((cp >> 12) & 0x3F));
-								si->value[out_idx++] = (char) (0x80 | ((cp >> 6) & 0x3F));
-								si->value[out_idx++] = (char) (0x80 | (cp & 0x3F));
-								j++;
-								continue;
-							}
-						}
-						if (ch < 0x80) {
-							si->value[out_idx++] = (char)ch;
-						} else if (ch < 0x800) {
-							si->value[out_idx++] = (char) (0xC0 | (ch >> 6));
-							si->value[out_idx++] = (char) (0x80 | (ch & 0x3F));
-						} else {
-							si->value[out_idx++] = (char) (0xE0 | (ch >> 12));
-							si->value[out_idx++] = (char) (0x80 | ((ch >> 6) & 0x3F));
-							si->value[out_idx++] = (char) (0x80 | (ch & 0x3F));
-						}
-					}
-					si->value[out_idx] = '\0';
-				}
-			}
-			free (raw);
+		ut64 start = pos;
+		RStrBuf sb;
+		r_strbuf_init (&sb);
+		int units = emit_utf16le (buf, start, size, &sb);
+		if (units == 0) {
+			pos = start + 2;
+		} else {
+			pos = start + (units * 2);
 		}
-		r_list_append (string_list, si);
-		if (ctx->refs && si->ref_id < ctx->refs_count) {
-			ctx->refs[si->ref_id] = si;
-		}
-	}
-	return 0;
-}
-
-static void track_string_refs_from_functions(DartCtx *ctx, ClusterStream *s, ut64 *ref_counter) {
-	ut64 count = 0;
-	if (!cs_read_unsigned (s, &count)) {
-		return;
-	}
-	if (count == 0 || count > 100000) {
-		return;
-	}
-	for (ut64 i = 0; i < count; i++) {
-		ut64 fn_ref = (*ref_counter)++;
-		ut64 name_ref = 0;
-		cs_read_ref_id (s, &name_ref);
-		if (name_ref > 0 && name_ref < ctx->refs_count && ctx->refs[name_ref]) {
-			DartStringInfo *si = (DartStringInfo *)ctx->refs[name_ref];
-			if (si->references) {
-				DartStringRef *sr = R_NEW0 (DartStringRef);
-				sr->object_ref = fn_ref;
-				sr->object_type = DART_REF_FUNCTION;
-				sr->field_offset = 0;
-				r_list_append (si->references, sr);
+		const char *utf8 = r_strbuf_get (&sb);
+		if (utf8 && units >= 4) {
+			ut32 ulen = (ut32)strlen (utf8);
+			if (ulen >= 4 && ulen <= 512 && looks_like_text (utf8)) {
+				append_string_info (list, utf8, ulen, DART_STRING_TWO_BYTE, base + start, classify_string_value (utf8), ref_counter);
 			}
 		}
-		ut64 skip_refs = 6;
-		for (ut64 j = 0; j < skip_refs; j++) {
-			ut64 dummy = 0;
-			cs_read_ref_id (s, &dummy);
-		}
-		uint32_t kind_tag = 0;
-		cs_read_u32 (s, &kind_tag);
+		r_strbuf_fini (&sb);
 	}
 }
 
-static void track_string_refs_from_classes(DartCtx *ctx, ClusterStream *s, ut64 *ref_counter) {
-	ut64 count = 0;
-	if (!cs_read_unsigned (s, &count)) {
-		return;
+static bool should_scan_section(const RBinSection *sec) {
+	if (!sec || sec->vsize == 0) {
+		return false;
 	}
-	if (count == 0 || count > 50000) {
-		return;
+	if (!(sec->perm & R_PERM_R)) {
+		return false;
 	}
-	for (ut64 i = 0; i < count; i++) {
-		ut64 class_ref = (*ref_counter)++;
-		uint32_t instance_size = 0;
-		cs_read_u32 (s, &instance_size);
-		ut64 name_ref = 0;
-		cs_read_ref_id (s, &name_ref);
-		if (name_ref > 0 && name_ref < ctx->refs_count && ctx->refs[name_ref]) {
-			DartStringInfo *si = (DartStringInfo *)ctx->refs[name_ref];
-			if (si->references) {
-				DartStringRef *sr = R_NEW0 (DartStringRef);
-				sr->object_ref = class_ref;
-				sr->object_type = DART_REF_CLASS;
-				sr->field_offset = 0;
-				r_list_append (si->references, sr);
-			}
-		}
-		ut64 skip_refs = 6;
-		for (ut64 j = 0; j < skip_refs; j++) {
-			ut64 dummy = 0;
-			cs_read_ref_id (s, &dummy);
-		}
-	}
+	return true;
 }
 
 RList *dart_pool_extract_strings(DartCtx *ctx) {
-	if (!ctx || !ctx->core) {
+	if (!ctx || !ctx->core || !ctx->core->bin) {
 		return NULL;
 	}
-	if (find_snapshots (ctx) != 0 || !ctx->iso_data) {
-		return NULL;
-	}
-	ut64 snapshot_base = ctx->iso_data;
-	extract_snapshot_hash_flags (ctx, ctx->vm_data);
-	DartVerLayout layout_tmp;
-	bool layout_is_dynamic = false;
-	ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
-	if (!ctx->layout) {
-		ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
-		layout_is_dynamic = true;
-	}
-	derive_layout_from_flags (ctx);
-	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, total_len = 0, cluster_start = 0;
-	if (parse_snapshot_header (ctx, snapshot_base, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) != 0) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx->layout);
-			ctx->layout = NULL;
-		}
-		return NULL;
-	}
-	bool header_valid = (no > 0 && no < 10000000);
-	if (!header_valid) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx->layout);
-			ctx->layout = NULL;
-		}
-		return r_list_newf ((RListFree)dart_string_info_free);
-	}
-	ctx->num_base_objects = nb;
-	ctx->num_objects = no;
-	ctx->num_clusters = nc;
 	RList *string_list = r_list_newf ((RListFree)dart_string_info_free);
-	ut64 total_refs = nb + no + 16;
-	ctx->refs_count = total_refs;
-	ctx->refs = (void **)calloc (total_refs, sizeof (void *));
-	ClusterStream stream = {
-		.ctx = ctx,
-		.cursor = cluster_start,
-		.end = snapshot_base + total_len
-	};
-	ut64 ref_counter = nb + 1;
-	int cid_one_byte = ctx->layout? ctx->layout->cid_one_byte_string: kOneByteStringCid;
-	int cid_two_byte = ctx->layout? ctx->layout->cid_two_byte_string: kTwoByteStringCid;
-	int cid_string = ctx->layout? ctx->layout->cid_string: kStringCid;
-	int cid_function = ctx->layout? ctx->layout->cid_function: kFunctionCid;
-	int cid_class = ctx->layout? ctx->layout->cid_class: kClassCid;
-	for (ut64 ci2 = 0; ci2 < nc && stream.cursor < stream.end; ci2++) {
-		uint32_t tags = 0;
-		if (!cs_read_u32 (&stream, &tags)) {
-			break;
-		}
-		uint32_t cid = 0;
-		if (ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER) {
-			cid = (tags >> 12) & 0xFFFFF;
-		} else if (ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_CID_SHIFT1) {
-			cid = tags >> 1;
-		} else {
-			cid = (tags >> 12) & 0xFFFFF;
-		}
-		int rc = 0;
-		if ((int)cid == cid_one_byte || (int)cid == cid_string) {
-			rc = decode_one_byte_string_cluster (&stream, string_list, ctx, &ref_counter);
-		} else if ((int)cid == cid_two_byte) {
-			rc = decode_two_byte_string_cluster (&stream, string_list, ctx, &ref_counter);
-		} else if ((int)cid == cid_function) {
-			track_string_refs_from_functions (ctx, &stream, &ref_counter);
-		} else if ((int)cid == cid_class) {
-			track_string_refs_from_classes (ctx, &stream, &ref_counter);
-		} else {
-			skip_generic_cluster (&stream);
-		}
-		if (rc < 0) {
-			break;
-		}
+	if (!string_list) {
+		return NULL;
 	}
-	if (ctx->verbose > 0) {
-		fprintf (stderr, "[r2flutter] Extracted strings from clusters: %d\n", string_list? r_list_length (string_list): 0);
-	}
-	ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
-	ut64 rodata_start = snapshot_base + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
-	ut64 rodata_end = 0;
 	RBinObject *bobj = r_bin_cur_object (ctx->core->bin);
-	if (bobj && bobj->sections) {
-		RBinSection *sec;
-		RListIter *iter;
-		r_list_foreach (bobj->sections, iter, sec) {
-			if (strstr (sec->name, "const") || strstr (sec->name, "rodata")) {
-				ut64 sec_end = sec->vaddr + sec->vsize;
-				if (sec_end > rodata_end) {
-					rodata_end = sec_end;
-				}
-			}
+	if (!bobj || !bobj->sections) {
+		return string_list;
+	}
+	ut64 ref_counter = 0;
+	RListIter *iter;
+	RBinSection *sec;
+	r_list_foreach (bobj->sections, iter, sec) {
+		if (!should_scan_section (sec)) {
+			continue;
 		}
-	}
-	if (rodata_end == 0) {
-		rodata_end = ctx->iso_instr? ctx->iso_instr: (rodata_start + (4ULL << 20));
-	}
-	if (ctx->verbose > 0) {
-		fprintf (stderr, "[r2flutter] Scanning ROData image 0x%" PFMT64x " - 0x%" PFMT64x " for strings\n", rodata_start, rodata_end);
-	}
-	bool use_compressed = (ctx->compressed_word_size == 4);
-	if (ctx->verbose > 0 && use_compressed) {
-		fprintf (stderr, "[r2flutter] Using compressed pointer layout for strings\n");
-	}
-	if (rodata_end > rodata_start && (rodata_end - rodata_start) < (16ULL << 20)) {
-		ut64 pos = rodata_start;
-		int str_count = r_list_length (string_list);
-		int cid_one_alt = cid_one_byte - 1;
-		int cid_two_alt = cid_two_byte - 1;
-		while (pos < rodata_end - 24 && str_count < 50000) {
-			ut8 hdr_buf[24];
-			if (!read_mem (ctx, pos, hdr_buf, 24)) {
-				pos += 8;
-				continue;
-			}
-			ut64 header = *(ut64 *)hdr_buf;
-			ut32 obj_cid = (header >> 12) & 0xFFFFF;
-			bool is_one_byte = ((int)obj_cid == cid_one_byte || (int)obj_cid == cid_one_alt);
-			bool is_two_byte = ((int)obj_cid == cid_two_byte || (int)obj_cid == cid_two_alt);
-			if (!is_one_byte && !is_two_byte) {
-				pos += 8;
-				continue;
-			}
-			ut64 length = 0;
-			int data_offset = 16;
-			if (use_compressed) {
-				ut32 length_raw = *(ut32 *) (hdr_buf + 8);
-				length = length_raw >> 1;
-				data_offset = 12;
-			} else {
-				ut64 length_raw = *(ut64 *) (hdr_buf + 8);
-				length = length_raw >> 1;
-			}
-			if (length == 0 || length > 65536) {
-				pos += 8;
-				continue;
-			}
-			ut64 data_size = is_two_byte? (length * 2): length;
-			ut64 obj_size = data_offset + data_size;
-			obj_size = (obj_size + 7) & ~7ULL;
-			if (pos + obj_size > rodata_end) {
-				pos += 8;
-				continue;
-			}
-			ut8 *str_buf = (ut8 *)malloc (data_size + 1);
-			if (!str_buf) {
-				pos += 8;
-				continue;
-			}
-			if (!read_mem (ctx, pos + data_offset, str_buf, (int)data_size)) {
-				free (str_buf);
-				pos += 8;
-				continue;
-			}
-			str_buf[data_size] = '\0';
-			char *value = NULL;
-			if (is_two_byte) {
-				value = (char *)malloc (length * 4 + 1);
-				if (value) {
-					int out_idx = 0;
-					for (ut64 j = 0; j < length; j++) {
-						uint16_t ch = str_buf[j * 2] | ((uint16_t)str_buf[j * 2 + 1] << 8);
-						if (ch < 0x80) {
-							value[out_idx++] = (char)ch;
-						} else if (ch < 0x800) {
-							value[out_idx++] = (char) (0xC0 | (ch >> 6));
-							value[out_idx++] = (char) (0x80 | (ch & 0x3F));
-						} else {
-							value[out_idx++] = (char) (0xE0 | (ch >> 12));
-							value[out_idx++] = (char) (0x80 | ((ch >> 6) & 0x3F));
-							value[out_idx++] = (char) (0x80 | (ch & 0x3F));
-						}
-					}
-					value[out_idx] = '\0';
-				}
-			} else {
-				value = r_str_ndup ((char *)str_buf, (int)length);
-			}
-			free (str_buf);
-			if (!value) {
-				pos += obj_size;
-				continue;
-			}
-			int printable = 0;
-			int total = strlen (value);
-			for (int k = 0; k < total; k++) {
-				unsigned char c = (unsigned char)value[k];
-				if ((c >= 0x20 && c < 0x7f) || c == '\n' || c == '\r' || c == '\t' || c >= 0x80) {
-					printable++;
-				}
-			}
-			if (total < 1 || (total > 2 && printable < total * 6 / 10)) {
-				free (value);
-				pos += obj_size;
-				continue;
-			}
-			DartStringInfo *si = R_NEW0 (DartStringInfo);
-			si->ref_id = str_count;
-			si->value = value;
-			si->length = (ut32)length;
-			si->flags = is_two_byte? DART_STRING_TWO_BYTE: 0;
-			si->flags |= DART_STRING_CANONICAL;
-			si->address = pos;
-			si->references = r_list_newf ((RListFree)dart_string_ref_free);
-			r_list_append (string_list, si);
-			str_count++;
-			pos += obj_size;
+		ut64 size = sec->vsize;
+		if (size == 0 || size > (32ULL << 20)) {
+			continue;
 		}
-		if (ctx->verbose > 0) {
-			fprintf (stderr, "[r2flutter] Found %d strings in ROData image\n", str_count - (int)r_list_length (string_list) + str_count);
+		ut8 *buf = (ut8 *)malloc ((size_t)size);
+		if (!buf) {
+			continue;
 		}
-	}
-	free (ctx->refs);
-	ctx->refs = NULL;
-	ctx->refs_count = 0;
-	if (layout_is_dynamic) {
-		free ((void *)ctx->layout);
-		ctx->layout = NULL;
+		if (!read_mem (ctx, sec->vaddr, buf, (int)size)) {
+			free (buf);
+			continue;
+		}
+		scan_ascii_strings (buf, sec->vaddr, size, string_list, &ref_counter);
+		scan_utf16_strings (buf, sec->vaddr, size, string_list, &ref_counter);
+		free (buf);
+		if (r_list_length (string_list) >= DART_STRING_SCAN_LIMIT) {
+			break;
+		}
 	}
 	return string_list;
 }
@@ -3257,21 +3064,22 @@ char *dart_pool_dump_strings_json(DartCtx *ctx) {
 	pj_a (pj);
 	RListIter *it;
 	DartStringInfo *si;
-	r_list_foreach (strings, it, si) {
-		if (!si) {
-			continue;
-		}
-		pj_o (pj);
-		pj_kn (pj, "ref", si->ref_id);
-		pj_ki (pj, "len", si->length);
-		if (si->value) {
-			pj_ks (pj, "value", si->value);
-		}
-		pj_kb (pj, "two_byte", (si->flags & DART_STRING_TWO_BYTE) != 0);
-		pj_kb (pj, "canonical", (si->flags & DART_STRING_CANONICAL) != 0);
-		if (si->address) {
-			pj_kn (pj, "addr", si->address);
-		}
+		r_list_foreach (strings, it, si) {
+			if (!si) {
+				continue;
+			}
+			pj_o (pj);
+			pj_kn (pj, "ref", si->ref_id);
+			pj_ki (pj, "len", si->length);
+			if (si->value) {
+				pj_ks (pj, "value", si->value);
+			}
+			pj_ks (pj, "category", string_category_name (si->category));
+			pj_kb (pj, "two_byte", (si->flags & DART_STRING_TWO_BYTE) != 0);
+			pj_kb (pj, "canonical", (si->flags & DART_STRING_CANONICAL) != 0);
+			if (si->address) {
+				pj_kn (pj, "addr", si->address);
+			}
 		if (si->references && r_list_length (si->references) > 0) {
 			pj_ka (pj, "refs");
 			RListIter *rit;
@@ -3311,24 +3119,25 @@ char *dart_pool_dump_strings_r2(DartCtx *ctx) {
 	RListIter *it;
 	DartStringInfo *si;
 	int idx = 0;
-	r_list_foreach (strings, it, si) {
-		if (!si || !si->value) {
-			continue;
-		}
-		char safe_val[64];
-		int max_len = 60;
-		int len = strlen (si->value);
-		if (len > max_len) {
-			snprintf (safe_val, sizeof (safe_val), "%.57s...", si->value);
-		} else {
-			snprintf (safe_val, sizeof (safe_val), "%s", si->value);
-		}
-		for (char *p = safe_val; *p; p++) {
-			if (*p == '\n' || *p == '\r' || *p == '"') {
-				*p = ' ';
+		r_list_foreach (strings, it, si) {
+			if (!si || !si->value) {
+				continue;
 			}
-		}
-		r_strbuf_appendf (sb, "# str[%d] ref=%" PRIu64 " len=%u%s: \"%s\"\n", idx++, si->ref_id, si->length, (si->flags & DART_STRING_TWO_BYTE)? " (utf16)": "", safe_val);
+			char safe_val[64];
+			int max_len = 60;
+			int len = strlen (si->value);
+			if (len > max_len) {
+				snprintf (safe_val, sizeof (safe_val), "%.57s...", si->value);
+			} else {
+				snprintf (safe_val, sizeof (safe_val), "%s", si->value);
+			}
+			for (char *p = safe_val; *p; p++) {
+				if (*p == '\n' || *p == '\r' || *p == '"') {
+					*p = ' ';
+				}
+			}
+			const char *cat = string_category_name (si->category);
+			r_strbuf_appendf (sb, "# str[%d] ref=%" PRIu64 " len=%u%s cat=%s: \"%s\"\n", idx++, si->ref_id, si->length, (si->flags & DART_STRING_TWO_BYTE)? " (utf16)": "", cat, safe_val);
 		if (si->references && r_list_length (si->references) > 0) {
 			r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
 		}

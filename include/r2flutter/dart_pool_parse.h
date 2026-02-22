@@ -17,6 +17,13 @@ extern "C" {
 // String Information Structures
 // ============================================================================
 
+typedef enum {
+	DART_STRING_CAT_UNKNOWN = 0,
+	DART_STRING_CAT_APP,
+	DART_STRING_CAT_LIBRARY,
+	DART_STRING_CAT_RUNTIME
+} DartStringCategory;
+
 typedef struct DartStringInfo {
 	ut64 ref_id;
 	char *value;
@@ -24,6 +31,7 @@ typedef struct DartStringInfo {
 	ut32 flags;
 	ut64 address;
 	RList *references;
+	DartStringCategory category;
 } DartStringInfo;
 
 #define DART_STRING_TWO_BYTE (1 << 0)
