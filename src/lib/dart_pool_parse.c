@@ -2101,7 +2101,6 @@ static int parse_snapshot_header(DartCtx *ctx, ut64 snapshot_base, ut64 *out_nb,
 
 static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end);
 static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end);
-static void attach_methods_from_namepool(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end);
 
 RList *dart_pool_extract_classes(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
@@ -2424,19 +2423,19 @@ static ut32 extract_cid_from_header(DartCtx *ctx, ut64 header) {
 	}
 	switch (ctx->layout->tag_style) {
 	case DART_TAG_STYLE_OBJECT_HEADER:
-		return (ut32)((header >> 12) & 0xFFFFF);
+		return (ut32) ((header >> 12) & 0xFFFFF);
 	case DART_TAG_STYLE_CID_SHIFT1:
-		return (ut32)(header >> 1);
+		return (ut32) (header >> 1);
 	case DART_TAG_STYLE_CID_INT32:
 	default:
-		return (ut32)((header >> 12) & 0xFFFFF);
+		return (ut32) ((header >> 12) & 0xFFFFF);
 	}
 }
 
 static bool read_object_pointer(DartCtx *ctx, const ut8 *buf, ut32 off, bool use_compressed, ut64 data_base, ut64 data_end, bool restrict_range, ut64 *out_addr) {
 	(void)ctx;
 	if (use_compressed) {
-		ut32 rel = *(const ut32 *)(buf + off);
+		ut32 rel = *(const ut32 *) (buf + off);
 		ut64 addr = data_base + ((ut64)rel & ~3ULL);
 		if (addr < data_base || addr >= data_end) {
 			if (restrict_range) {
@@ -2446,7 +2445,7 @@ static bool read_object_pointer(DartCtx *ctx, const ut8 *buf, ut32 off, bool use
 		*out_addr = addr;
 		return true;
 	}
-	ut64 addr = *(const ut64 *)(buf + off);
+	ut64 addr = *(const ut64 *) (buf + off);
 	if (!addr) {
 		return false;
 	}
@@ -2546,7 +2545,7 @@ static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 d
 		if ((int)cid != cid_function) {
 			continue;
 		}
-		ut64 entry = *(ut64 *)(buf + fl.entry_off);
+		ut64 entry = *(ut64 *) (buf + fl.entry_off);
 		if (!entry || entry == UT64_MAX) {
 			continue;
 		}
@@ -2594,14 +2593,11 @@ static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 d
 		mi->entry_point = entry;
 		mi->name = strdup (method_name);
 		mi->owner_name = strdup (owner_name);
-		mi->kind_tag = *(uint32_t *)(buf + fl.kind_tag_off);
+		mi->kind_tag = *(uint32_t *) (buf + fl.kind_tag_off);
 		ht_up_insert (seen_ep, entry, mi);
 		r_list_append (owner_ci->methods, mi);
 		if (ctx->verbose > 1) {
-			fprintf (stderr, "[r2flutter] method %s.%s @0x%" PFMT64x "\n",
-				owner_name,
-				method_name,
-				(ut64)entry);
+			fprintf (stderr, "[r2flutter] method %s.%s @0x%" PFMT64x "\n", owner_name, method_name, (ut64)entry);
 		}
 		methods_found++;
 		if (methods_found >= max_methods) {
@@ -2786,10 +2782,7 @@ char *dart_pool_dump_classes_r2(DartCtx *ctx) {
 				if (!mi || !mi->name) {
 					continue;
 				}
-				r_strbuf_appendf (sb, "#   method 0x%08" PFMT64x " %s (%s)\n",
-					(ut64)mi->entry_point,
-					mi->name,
-					method_kind_name (mi->kind_tag));
+				r_strbuf_appendf (sb, "#   method 0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, mi->name, method_kind_name (mi->kind_tag));
 			}
 		}
 	}
@@ -2949,21 +2942,21 @@ static int emit_utf16le(const ut8 *buf, ut64 start, ut64 end, RStrBuf *sb) {
 			r_strbuf_append_n (sb, (const char *)&code, 1);
 		} else if (code < 0x800) {
 			char tmp[2] = {
-				(char)(0xC0 | (code >> 6)),
-				(char)(0x80 | (code & 0x3F))
+				(char) (0xC0 | (code >> 6)),
+				(char) (0x80 | (code & 0x3F))
 			};
 			r_strbuf_append_n (sb, tmp, 2);
 		} else {
 			char tmp[3] = {
-				(char)(0xE0 | (code >> 12)),
-				(char)(0x80 | ((code >> 6) & 0x3F)),
-				(char)(0x80 | (code & 0x3F))
+				(char) (0xE0 | (code >> 12)),
+				(char) (0x80 | ((code >> 6) & 0x3F)),
+				(char) (0x80 | (code & 0x3F))
 			};
 			r_strbuf_append_n (sb, tmp, 3);
 		}
 		pos += 2;
 	}
-	return (int)((pos - start) / 2);
+	return (int) ((pos - start) / 2);
 }
 
 static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, RList *list, ut64 *ref_counter) {
@@ -3005,7 +2998,7 @@ static bool should_scan_section(const RBinSection *sec) {
 	if (!sec || sec->vsize == 0) {
 		return false;
 	}
-	if (!(sec->perm & R_PERM_R)) {
+	if (! (sec->perm & R_PERM_R)) {
 		return false;
 	}
 	return true;
@@ -3064,22 +3057,22 @@ char *dart_pool_dump_strings_json(DartCtx *ctx) {
 	pj_a (pj);
 	RListIter *it;
 	DartStringInfo *si;
-		r_list_foreach (strings, it, si) {
-			if (!si) {
-				continue;
-			}
-			pj_o (pj);
-			pj_kn (pj, "ref", si->ref_id);
-			pj_ki (pj, "len", si->length);
-			if (si->value) {
-				pj_ks (pj, "value", si->value);
-			}
-			pj_ks (pj, "category", string_category_name (si->category));
-			pj_kb (pj, "two_byte", (si->flags & DART_STRING_TWO_BYTE) != 0);
-			pj_kb (pj, "canonical", (si->flags & DART_STRING_CANONICAL) != 0);
-			if (si->address) {
-				pj_kn (pj, "addr", si->address);
-			}
+	r_list_foreach (strings, it, si) {
+		if (!si) {
+			continue;
+		}
+		pj_o (pj);
+		pj_kn (pj, "ref", si->ref_id);
+		pj_ki (pj, "len", si->length);
+		if (si->value) {
+			pj_ks (pj, "value", si->value);
+		}
+		pj_ks (pj, "category", string_category_name (si->category));
+		pj_kb (pj, "two_byte", (si->flags & DART_STRING_TWO_BYTE) != 0);
+		pj_kb (pj, "canonical", (si->flags & DART_STRING_CANONICAL) != 0);
+		if (si->address) {
+			pj_kn (pj, "addr", si->address);
+		}
 		if (si->references && r_list_length (si->references) > 0) {
 			pj_ka (pj, "refs");
 			RListIter *rit;
@@ -3119,25 +3112,25 @@ char *dart_pool_dump_strings_r2(DartCtx *ctx) {
 	RListIter *it;
 	DartStringInfo *si;
 	int idx = 0;
-		r_list_foreach (strings, it, si) {
-			if (!si || !si->value) {
-				continue;
+	r_list_foreach (strings, it, si) {
+		if (!si || !si->value) {
+			continue;
+		}
+		char safe_val[64];
+		int max_len = 60;
+		int len = strlen (si->value);
+		if (len > max_len) {
+			snprintf (safe_val, sizeof (safe_val), "%.57s...", si->value);
+		} else {
+			snprintf (safe_val, sizeof (safe_val), "%s", si->value);
+		}
+		for (char *p = safe_val; *p; p++) {
+			if (*p == '\n' || *p == '\r' || *p == '"') {
+				*p = ' ';
 			}
-			char safe_val[64];
-			int max_len = 60;
-			int len = strlen (si->value);
-			if (len > max_len) {
-				snprintf (safe_val, sizeof (safe_val), "%.57s...", si->value);
-			} else {
-				snprintf (safe_val, sizeof (safe_val), "%s", si->value);
-			}
-			for (char *p = safe_val; *p; p++) {
-				if (*p == '\n' || *p == '\r' || *p == '"') {
-					*p = ' ';
-				}
-			}
-			const char *cat = string_category_name (si->category);
-			r_strbuf_appendf (sb, "# str[%d] ref=%" PRIu64 " len=%u%s cat=%s: \"%s\"\n", idx++, si->ref_id, si->length, (si->flags & DART_STRING_TWO_BYTE)? " (utf16)": "", cat, safe_val);
+		}
+		const char *cat = string_category_name (si->category);
+		r_strbuf_appendf (sb, "# str[%d] ref=%" PRIu64 " len=%u%s cat=%s: \"%s\"\n", idx++, si->ref_id, si->length, (si->flags & DART_STRING_TWO_BYTE)? " (utf16)": "", cat, safe_val);
 		if (si->references && r_list_length (si->references) > 0) {
 			r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
 		}

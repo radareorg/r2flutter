@@ -1,62 +1,10 @@
 /* r2flutter - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <dirent.h>
 #include <r_core.h>
-#include <r_flag.h>
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "../../include/r2flutter/version.h"
-
-static bool is_library(const char *name) {
-	return r_str_endswith (name, ".so") || r_str_endswith (name, ".dylib") || r_str_endswith (name, ".aot") || r_str_endswith (name, ".bin") || r_str_startswith (name, "lib");
-}
-
-static char *find_lib_in_dir(const char *dir) {
-	if (!dir) {
-		return NULL;
-	}
-	DIR *d = opendir (dir);
-	if (!d) {
-		return NULL;
-	}
-	struct dirent *ent;
-	char *preferred = NULL;
-
-	if (r_str_endswith (dir, ".app")) {
-		char *path = r_str_newf ("%s/Frameworks/App.framework/App", dir);
-		struct stat st;
-		if (path && stat (path, &st) == 0 && S_ISREG (st.st_mode)) {
-			closedir (d);
-			return path;
-		}
-		free (path);
-	}
-	while ((ent = readdir (d)) != NULL) {
-		if (ent->d_name[0] == '.') {
-			continue;
-		}
-		char *full = r_str_newf ("%s/%s", dir, ent->d_name);
-		struct stat st;
-		if (stat (full, &st) == 0 && S_ISREG (st.st_mode)) {
-			if (!strcmp (ent->d_name, "libapp.so")) {
-				closedir (d);
-				return full;
-			}
-			if (!preferred && is_library (ent->d_name)) {
-				preferred = full;
-				full = NULL;
-			}
-		}
-		free (full);
-	}
-	closedir (d);
-	return preferred;
-}
 
 typedef enum {
 	ACTION_NONE = 0,
@@ -70,25 +18,45 @@ typedef enum {
 } DumpAction;
 
 static void print_usage(const char *argv0) {
-	printf ("Usage: %s [options] <libapp_path_or_dir>\n", argv0);
-	printf ("Modifiers:\n");
-	printf ("  -h, --help            Show help\n");
-	printf ("  -V, --version         Show version\n");
-	printf ("  -v                    Verbose (stderr debug info)\n");
-	printf ("  -vv                   More verbose (dump headers)\n");
-	printf ("  -j                    Output in JSON format\n");
-	printf ("Actions:\n");
-	printf ("  --dump-strings        Print all extracted strings\n");
-	printf ("  --dump-classes        Print extracted class information\n");
-	printf ("  --dump-types          Print string-based type names\n");
-	printf ("  --dump-header         Print Dart AOT snapshot header info\n");
-	printf ("  --dump-funcs          Print all extracted functions (addr name)\n");
-	printf ("  --dump-it             Print instruction table entry addresses to stderr\n");
-	printf ("  --dump-r2script       Print radare2 script for snapshot analysis\n");
-	printf ("Options:\n");
-	printf ("  --no-stubs            Do not emit ELF/r2 stub functions\n");
-	printf ("  --limit <N>           Limit output to N items (applies to dump-funcs, etc.)\n");
-	printf ("  --use-name-pool       Assign names from data image strings when unknown\n");
+	const char *usage_text = "Usage: %s [options] <libapp_path_or_dir>\n"
+				"Modifiers:\n"
+				"  -h, --help            Show help\n"
+				"  -V, --version         Show version\n"
+				"  -v                    Verbose (stderr debug info)\n"
+				"  -vv                   More verbose (dump headers)\n"
+				"  -j                    Output in JSON format\n"
+				"Actions:\n"
+				"  --dump-strings        Print all extracted strings\n"
+				"  --dump-classes        Print extracted class information\n"
+				"  --dump-types          Print string-based type names\n"
+				"  --dump-header         Print Dart AOT snapshot header info\n"
+				"  --dump-funcs          Print all extracted functions (addr name)\n"
+				"  --dump-it             Print instruction table entry addresses to stderr\n"
+				"  --dump-r2script       Print radare2 script for snapshot analysis\n"
+				"Options:\n"
+				"  --no-stubs            Do not emit ELF/r2 stub functions\n"
+				"  --limit <N>           Limit output to N items (applies to dump-funcs, etc.)\n"
+				"  --use-name-pool       Assign names from data image strings when unknown\n";
+	printf (usage_text, argv0);
+}
+
+static char *find_libapp(const char *s) {
+	if (r_file_is_directory (s)) {
+		// Android
+		char *candidate = r_str_newf ("%s/%s", s, "libapp.so");
+		if (r_file_exists (candidate)) {
+			return candidate;
+		}
+		// iOS
+		free (candidate);
+		candidate = r_str_newf ("%s/Frameworks/App.framework/App", s);
+		if (r_file_exists (candidate)) {
+			return candidate;
+		}
+	} else if (r_file_exists (s)) {
+		return strdup (s);
+	}
+	return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -98,7 +66,7 @@ int main(int argc, char **argv) {
 	}
 
 	const char *libapp_path_in = NULL;
-	int opt_json = 0;
+	bool opt_json = false;
 	DumpAction action = ACTION_NONE;
 	DartCtx dctx = { 0 };
 
@@ -111,15 +79,17 @@ int main(int argc, char **argv) {
 			if (!strcmp (a, "-h") || !strcmp (a, "--help")) {
 				print_usage (argv[0]);
 				return 0;
-			} else if (!strcmp (a, "-V") || !strcmp (a, "--version")) {
+			}
+			if (!strcmp (a, "-V") || !strcmp (a, "--version")) {
 				printf ("r2flutter %s\n", R2FLUTTER_VERSION);
 				return 0;
-			} else if (!strcmp (a, "-v")) {
+			}
+			if (!strcmp (a, "-v")) {
 				dctx.verbose = 1;
 			} else if (!strcmp (a, "-vv")) {
 				dctx.verbose = 2;
 			} else if (!strcmp (a, "-j")) {
-				opt_json = 1;
+				opt_json = true;
 			} else if (!strcmp (a, "--dump-strings")) {
 				action = ACTION_DUMP_STRINGS;
 			} else if (!strcmp (a, "--dump-classes")) {
@@ -137,13 +107,13 @@ int main(int argc, char **argv) {
 				}
 			} else if (!strcmp (a, "--dump-it")) {
 				action = ACTION_DUMP_IT;
-				dctx.dump_it = 1;
+				dctx.dump_it = 1; // AITODO: use bool
 			} else if (!strcmp (a, "--dump-r2script")) {
 				action = ACTION_DUMP_R2SCRIPT;
 			} else if (!strcmp (a, "--no-stubs")) {
-				dctx.no_stubs = 1;
+				dctx.no_stubs = 1; // AITODO: use bool
 			} else if (!strcmp (a, "--use-name-pool")) {
-				dctx.use_name_pool = 1;
+				dctx.use_name_pool = 1; // AITODO: use bool
 			}
 		} else {
 			libapp_path_in = a;
@@ -154,42 +124,21 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	char *libapp_path = NULL;
-	struct stat st;
-	if (stat (libapp_path_in, &st) == 0) {
-		if (S_ISDIR (st.st_mode)) {
-			char *candidate = r_str_newf ("%s/%s", libapp_path_in, "libapp.so");
-			struct stat st2;
-			if (candidate && stat (candidate, &st2) == 0 && S_ISREG (st2.st_mode)) {
-				libapp_path = candidate;
-			} else {
-				free (candidate);
-				libapp_path = find_lib_in_dir (libapp_path_in);
-			}
-			if (!libapp_path) {
-				eprintf ("No suitable library file found in directory: %s\n", libapp_path_in);
-				return 1;
-			}
-		} else if (S_ISREG (st.st_mode)) {
-			libapp_path = strdup (libapp_path_in);
-		} else {
-			eprintf ("Not a regular file or directory: %s\n", libapp_path_in);
-			return 1;
-		}
-	} else {
-		eprintf ("File or directory does not exist: %s\n", libapp_path_in);
+	char *libapp_path = find_libapp (libapp_path_in);
+	if (!libapp_path) {
+		R_LOG_ERROR ("File or directory does not exist: %s", libapp_path_in);
 		return 1;
 	}
 
 	RCore *core = r_core_new ();
 	if (!core) {
-		eprintf ("Failed to create radare2 core\n");
+		R_LOG_ERROR ("Failed to create radare2 core");
 		free (libapp_path);
 		return 1;
 	}
 
 	if (!r_core_file_open (core, libapp_path, 0, 0)) {
-		fprintf (stderr, "Failed to open file: %s\n", libapp_path);
+		R_LOG_ERROR ("Failed to open file: %s", libapp_path);
 		r_core_free (core);
 		free (libapp_path);
 		return 1;
@@ -200,7 +149,7 @@ int main(int argc, char **argv) {
 
 	DartApp *app = dart_app_new (libapp_path);
 	if (!app) {
-		eprintf ("Failed to create DartApp\n");
+		R_LOG_ERROR ("Failed to create DartApp");
 		r_core_free (core);
 		free (libapp_path);
 		return 1;
@@ -282,7 +231,7 @@ int main(int argc, char **argv) {
 	case ACTION_DUMP_R2SCRIPT:
 		dart_app_load_info (app);
 		if (dctx.verbose) {
-			fprintf (stderr, "Dumping radare2 script\n");
+			R_LOG_ERROR ("Dumping radare2 script");
 		}
 		char *s = dart_dumper_dump4radare2 (app);
 		printf ("%s\n", s);
@@ -290,7 +239,7 @@ int main(int argc, char **argv) {
 		break;
 	case ACTION_NONE:
 	default:
-		eprintf ("Error: no action specified. Use --help for available actions\n");
+		R_LOG_ERROR ("no action specified. Use --help for available actions");
 		ret = 1;
 		break;
 	}
