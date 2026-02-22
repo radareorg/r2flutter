@@ -10,6 +10,7 @@
 #include <r_util/r_json.h>
 #include <r_util/r_file.h>
 #include <r_util/r_name.h>
+#include <sdb/ht_pp.h>
 #include <r_list.h>
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "../../include/r2flutter/dart_version.h"
@@ -1780,6 +1781,9 @@ void dart_class_info_free(DartClassInfo *ci) {
 		if (ci->interfaces) {
 			r_list_free (ci->interfaces);
 		}
+		if (ci->methods) {
+			r_list_free (ci->methods);
+		}
 		free (ci);
 	}
 }
@@ -1791,6 +1795,14 @@ void dart_type_info_free(DartTypeInfo *ti) {
 			r_list_free (ti->type_args);
 		}
 		free (ti);
+	}
+}
+
+void dart_method_info_free(DartMethodInfo *mi) {
+	if (mi) {
+		free (mi->name);
+		free (mi->owner_name);
+		free (mi);
 	}
 }
 
@@ -2084,6 +2096,8 @@ static int parse_snapshot_header(DartCtx *ctx, ut64 snapshot_base, ut64 *out_nb,
 }
 
 static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end);
+static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end);
+static void attach_methods_from_namepool(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end);
 
 RList *dart_pool_extract_classes(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
@@ -2251,6 +2265,16 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		ut64 data_image_base = snapshot_base + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
 		ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: (data_image_base + (4ULL << 20));
 		scan_fields_from_data_image (ctx, class_list, data_image_base, data_image_end);
+		scan_methods_from_data_image (ctx, class_list, data_image_base, data_image_end);
+		if (ctx->vm_data) {
+			ut64 vm_nb = 0, vm_no = 0, vm_nc = 0, vm_itlen = 0, vm_itdata = 0, vm_total = 0, vm_cluster = 0;
+			if (parse_snapshot_header (ctx, ctx->vm_data, &vm_nb, &vm_no, &vm_nc, &vm_itlen, &vm_itdata, &vm_total, &vm_cluster) == 0) {
+				ut64 vm_data_base = ctx->vm_data + ((vm_total + (kAlign - 1)) & ~ (kAlign - 1));
+				ut64 vm_data_end = ctx->vm_instr? ctx->vm_instr: (vm_data_base + (4ULL << 20));
+				scan_fields_from_data_image (ctx, class_list, vm_data_base, vm_data_end);
+				scan_methods_from_data_image (ctx, class_list, vm_data_base, vm_data_end);
+			}
+		}
 	}
 	if (layout_is_dynamic) {
 		free ((void *)ctx->layout);
@@ -2274,13 +2298,12 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 	int cid_field = kFieldCid;
 	int field_count = 0;
 	int max_fields = 5000;
-	HtUP *class_by_name = ht_up_new0 ();
+	HtPP *class_by_name = ht_pp_new0 ();
 	RListIter *it;
 	DartClassInfo *ci;
 	r_list_foreach (class_list, it, ci) {
 		if (ci && ci->name) {
-			ut64 h = r_str_hash64 (ci->name);
-			ht_up_update (class_by_name, h, ci);
+			ht_pp_insert (class_by_name, ci->name, ci);
 		}
 	}
 	for (ut64 pos = data_start; pos < data_end - 48 && field_count < max_fields; pos += kAlign) {
@@ -2329,8 +2352,8 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 			}
 		}
 		if (owner_name[0] && field_name[0]) {
-			ut64 h = r_str_hash64 (owner_name);
-			DartClassInfo *owner_ci = (DartClassInfo *)ht_up_find (class_by_name, h, NULL);
+			field_count++;
+			DartClassInfo *owner_ci = (DartClassInfo *)ht_pp_find (class_by_name, owner_name, NULL);
 			if (owner_ci && owner_ci->fields) {
 				DartFieldInfo *fi = R_NEW0 (DartFieldInfo);
 				fi->name = strdup (field_name);
@@ -2349,17 +2372,243 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 					fi->flags |= DART_FIELD_LATE;
 				}
 				r_list_append (owner_ci->fields, fi);
-				field_count++;
 				if (ctx->verbose > 1) {
 					fprintf (stderr, "[r2flutter] Found field: %s.%s offset=0x%x\n", owner_name, field_name, offset_val);
 				}
+			} else if (ctx->verbose > 1 && field_count < 64) {
+				fprintf (stderr, "[r2flutter] field owner miss: %s.%s\n", owner_name, field_name);
 			}
 		}
 	}
-	ht_up_free (class_by_name);
+	ht_pp_free (class_by_name);
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] Scanned %d fields from data image\n", field_count);
 	}
+}
+
+typedef struct {
+	ut32 entry_off;
+	ut32 unchecked_off;
+	ut32 name_off;
+	ut32 owner_off;
+	ut32 kind_tag_off;
+	ut32 class_name_off;
+} DartFunctionLayout;
+
+static void init_function_layout(DartCtx *ctx, DartFunctionLayout *fl) {
+	bool use_compressed = (ctx && ctx->compressed_word_size == 4);
+	if (use_compressed) {
+		fl->entry_off = 0x4;
+		fl->unchecked_off = 0x8;
+		fl->name_off = 0xc;
+		fl->owner_off = 0x10;
+		fl->kind_tag_off = 0x28;
+		fl->class_name_off = 0x4;
+	} else {
+		fl->entry_off = 0x8;
+		fl->unchecked_off = 0x10;
+		fl->name_off = 0x18;
+		fl->owner_off = 0x20;
+		fl->kind_tag_off = 0x48;
+		fl->class_name_off = 0x8;
+	}
+}
+
+static ut32 extract_cid_from_header(DartCtx *ctx, ut64 header) {
+	if (!ctx || !ctx->layout) {
+		return 0;
+	}
+	switch (ctx->layout->tag_style) {
+	case DART_TAG_STYLE_OBJECT_HEADER:
+		return (ut32)((header >> 12) & 0xFFFFF);
+	case DART_TAG_STYLE_CID_SHIFT1:
+		return (ut32)(header >> 1);
+	case DART_TAG_STYLE_CID_INT32:
+	default:
+		return (ut32)((header >> 12) & 0xFFFFF);
+	}
+}
+
+static bool read_object_pointer(DartCtx *ctx, const ut8 *buf, ut32 off, bool use_compressed, ut64 data_base, ut64 data_end, bool restrict_range, ut64 *out_addr) {
+	(void)ctx;
+	if (use_compressed) {
+		ut32 rel = *(const ut32 *)(buf + off);
+		ut64 addr = data_base + ((ut64)rel & ~3ULL);
+		if (addr < data_base || addr >= data_end) {
+			if (restrict_range) {
+				return false;
+			}
+		}
+		*out_addr = addr;
+		return true;
+	}
+	ut64 addr = *(const ut64 *)(buf + off);
+	if (!addr) {
+		return false;
+	}
+	if (restrict_range && (addr < data_base || addr >= data_end)) {
+		return false;
+	}
+	*out_addr = addr;
+	return true;
+}
+
+static bool read_string_safe(DartCtx *ctx, ut64 addr, char *out, int outsz) {
+	if (!addr) {
+		return false;
+	}
+	if (!try_read_dart_string (ctx, addr, out, outsz)) {
+		return false;
+	}
+	for (char *p = out; *p; p++) {
+		if ((ut8)*p < 32) {
+			*p = ' ';
+		}
+	}
+	return true;
+}
+
+static const char *method_kind_name(uint32_t kind_tag) {
+	static const char *kNames[] = {
+		"RegularFunction",
+		"ClosureFunction",
+		"ImplicitClosureFunction",
+		"GetterFunction",
+		"SetterFunction",
+		"Constructor",
+		"ImplicitGetter",
+		"ImplicitSetter",
+		"ImplicitStaticGetter",
+		"FieldInitializer",
+		"MethodExtractor",
+		"NoSuchMethodDispatcher",
+		"InvokeFieldDispatcher",
+		"IrregexpFunction",
+		"DynamicInvocationForwarder",
+		"FfiTrampoline",
+		"RecordFieldGetter"
+	};
+	const size_t count = sizeof (kNames) / sizeof (kNames[0]);
+	uint32_t kind = kind_tag & 0x1f;
+	return (kind < count)? kNames[kind]: "Unknown";
+}
+
+static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end) {
+	if (!ctx || !ctx->core || !class_list || data_start >= data_end) {
+		return;
+	}
+	if (!ctx->layout) {
+		return;
+	}
+	bool use_compressed = (ctx->compressed_word_size == 4);
+	DartFunctionLayout fl;
+	init_function_layout (ctx, &fl);
+	HtPP *class_by_name = ht_pp_new0 ();
+	if (!class_by_name) {
+		return;
+	}
+	RListIter *it;
+	DartClassInfo *ci;
+	r_list_foreach (class_list, it, ci) {
+		if (!ci || !ci->name) {
+			continue;
+		}
+		if (!ci->methods) {
+			ci->methods = r_list_newf ((RListFree)dart_method_info_free);
+		}
+		ht_pp_insert (class_by_name, ci->name, ci);
+	}
+	HtUP *seen_ep = ht_up_new0 ();
+	if (!seen_ep) {
+		ht_pp_free (class_by_name);
+		return;
+	}
+	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 8;
+	if (!align) {
+		align = 8;
+	}
+	int cid_function = ctx->layout->cid_function? ctx->layout->cid_function: kFunctionCid;
+	ut64 methods_found = 0;
+	const ut64 max_methods = 30000;
+	char method_name[128];
+	char owner_name[128];
+	for (ut64 pos = data_start; pos + fl.kind_tag_off + 8 < data_end; pos += align) {
+		ut8 buf[128];
+		if (!read_mem (ctx, pos, buf, sizeof (buf))) {
+			continue;
+		}
+		ut64 header = *(ut64 *)buf;
+		ut32 cid = extract_cid_from_header (ctx, header);
+		if ((int)cid != cid_function) {
+			continue;
+		}
+		ut64 entry = *(ut64 *)(buf + fl.entry_off);
+		if (!entry || entry == UT64_MAX) {
+			continue;
+		}
+		if (entry < ctx->iso_instr || entry > (ctx->iso_instr + (1ULL << 28))) {
+			continue;
+		}
+		if (ht_up_find (seen_ep, entry, NULL)) {
+			continue;
+		}
+		ut64 name_addr = 0;
+		if (!read_object_pointer (ctx, buf, fl.name_off, use_compressed, data_start, data_end, true, &name_addr)) {
+			continue;
+		}
+		if (!read_string_safe (ctx, name_addr, method_name, sizeof (method_name))) {
+			continue;
+		}
+		ut64 owner_addr = 0;
+		if (!read_object_pointer (ctx, buf, fl.owner_off, use_compressed, data_start, data_end, false, &owner_addr)) {
+			continue;
+		}
+		owner_name[0] = '\0';
+		if (owner_addr) {
+			ut8 owner_buf[32];
+			if (read_mem (ctx, owner_addr, owner_buf, sizeof (owner_buf))) {
+				ut64 owner_name_ptr = 0;
+				if (read_object_pointer (ctx, owner_buf, fl.class_name_off, use_compressed, data_start, data_end, true, &owner_name_ptr)) {
+					read_string_safe (ctx, owner_name_ptr, owner_name, sizeof (owner_name));
+				}
+			}
+		}
+		if (!*owner_name) {
+			continue;
+		}
+		if (ctx->verbose > 1 && methods_found < 64) {
+			fprintf (stderr, "[r2flutter] method candidate %s.%s\n", owner_name, method_name);
+		}
+		DartClassInfo *owner_ci = ht_pp_find (class_by_name, owner_name, NULL);
+		if (!owner_ci || !owner_ci->methods) {
+			continue;
+		}
+		DartMethodInfo *mi = R_NEW0 (DartMethodInfo);
+		if (!mi) {
+			continue;
+		}
+		mi->entry_point = entry;
+		mi->name = strdup (method_name);
+		mi->owner_name = strdup (owner_name);
+		mi->kind_tag = *(uint32_t *)(buf + fl.kind_tag_off);
+		ht_up_insert (seen_ep, entry, mi);
+		r_list_append (owner_ci->methods, mi);
+		if (ctx->verbose > 1) {
+			fprintf (stderr, "[r2flutter] method %s.%s @0x%" PFMT64x "\n",
+				owner_name,
+				method_name,
+				(ut64)entry);
+		}
+		methods_found++;
+		if (methods_found >= max_methods) {
+			break;
+		}
+	}
+	if (ctx->verbose > 0) {
+		fprintf (stderr, "[r2flutter] Scanned %" PRIu64 " methods from data image\n", methods_found);
+	}
+	ht_up_free (seen_ep);
+	ht_pp_free (class_by_name);
 }
 
 RList *dart_pool_extract_fields(DartCtx *ctx, ut64 class_ref) {
@@ -2389,15 +2638,37 @@ char *dart_pool_dump_classes_json(DartCtx *ctx) {
 		if (ci->name) {
 			pj_ks (pj, "name", ci->name);
 		}
-		if (ci->library_name) {
-			pj_ks (pj, "library", ci->library_name);
+		if (ci->library_name || ci->library_ref) {
+			pj_k (pj, "library");
+			pj_o (pj);
+			pj_kn (pj, "ref", ci->library_ref);
+			if (ci->library_name) {
+				pj_ks (pj, "name", ci->library_name);
+			}
+			pj_end (pj);
 		}
-		if (ci->super_class_name) {
-			pj_ks (pj, "super", ci->super_class_name);
+		if (ci->super_class_name || ci->super_class_ref) {
+			pj_k (pj, "super");
+			pj_o (pj);
+			pj_kn (pj, "ref", ci->super_class_ref);
+			if (ci->super_class_name) {
+				pj_ks (pj, "name", ci->super_class_name);
+			}
+			pj_end (pj);
 		}
-		pj_ki (pj, "size", ci->instance_size);
+		pj_k (pj, "layout");
+		pj_o (pj);
+		pj_ki (pj, "instance_size", ci->instance_size);
 		pj_ki (pj, "type_params", ci->num_type_parameters);
-		pj_ki (pj, "flags", ci->flags);
+		pj_ki (pj, "type_arg_offset", ci->type_argument_offset);
+		pj_end (pj);
+		pj_k (pj, "flags");
+		pj_o (pj);
+		pj_kb (pj, "abstract", (ci->flags & DART_CLASS_ABSTRACT) != 0);
+		pj_kb (pj, "enum", (ci->flags & DART_CLASS_ENUM) != 0);
+		pj_kb (pj, "mixin", (ci->flags & DART_CLASS_MIXIN) != 0);
+		pj_kb (pj, "toplevel", (ci->flags & DART_CLASS_TOPLEVEL) != 0);
+		pj_end (pj);
 		if (ci->fields && r_list_length (ci->fields) > 0) {
 			pj_ka (pj, "fields");
 			RListIter *fit;
@@ -2414,7 +2685,35 @@ char *dart_pool_dump_classes_json(DartCtx *ctx) {
 					pj_ks (pj, "type", fi->type_name);
 				}
 				pj_ki (pj, "offset", fi->offset);
-				pj_ki (pj, "flags", fi->flags);
+				pj_k (pj, "flags");
+				pj_o (pj);
+				pj_kb (pj, "static", (fi->flags & DART_FIELD_STATIC) != 0);
+				pj_kb (pj, "final", (fi->flags & DART_FIELD_FINAL) != 0);
+				pj_kb (pj, "const", (fi->flags & DART_FIELD_CONST) != 0);
+				pj_kb (pj, "late", (fi->flags & DART_FIELD_LATE) != 0);
+				pj_end (pj);
+				pj_end (pj);
+			}
+			pj_end (pj);
+		}
+		if (ci->methods && r_list_length (ci->methods) > 0) {
+			pj_ka (pj, "methods");
+			RListIter *mit;
+			DartMethodInfo *mi;
+			r_list_foreach (ci->methods, mit, mi) {
+				if (!mi) {
+					continue;
+				}
+				pj_o (pj);
+				if (mi->name) {
+					pj_ks (pj, "name", mi->name);
+				}
+				pj_kn (pj, "entry", mi->entry_point);
+				if (mi->owner_name) {
+					pj_ks (pj, "owner", mi->owner_name);
+				}
+				pj_kn (pj, "kind_tag", mi->kind_tag);
+				pj_ks (pj, "kind", method_kind_name (mi->kind_tag));
 				pj_end (pj);
 			}
 			pj_end (pj);
@@ -2476,6 +2775,19 @@ char *dart_pool_dump_classes_r2(DartCtx *ctx) {
 			}
 		}
 		r_strbuf_append (sb, " };\"\n");
+		if (ci->methods && r_list_length (ci->methods) > 0) {
+			RListIter *mit;
+			DartMethodInfo *mi;
+			r_list_foreach (ci->methods, mit, mi) {
+				if (!mi || !mi->name) {
+					continue;
+				}
+				r_strbuf_appendf (sb, "#   method 0x%08" PFMT64x " %s (%s)\n",
+					(ut64)mi->entry_point,
+					mi->name,
+					method_kind_name (mi->kind_tag));
+			}
+		}
 	}
 	dart_class_list_free (classes);
 	return r_strbuf_drain (sb);

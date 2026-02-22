@@ -76,6 +76,7 @@ typedef struct DartClassInfo {
 	ut32 flags;
 	RList *fields;
 	RList *interfaces;
+	RList *methods;
 	ut64 name_ref;
 } DartClassInfo;
 
@@ -91,6 +92,17 @@ typedef struct DartTypeInfo {
 	ut64 type_class_ref;
 	RList *type_args;
 } DartTypeInfo;
+
+typedef struct DartMethodInfo {
+	ut64 ref_id;
+	char *name;
+	char *owner_name;
+	ut64 owner_ref;
+	ut64 entry_point;
+	ut64 code_ref;
+	ut32 kind_tag;
+	ut32 flags;
+} DartMethodInfo;
 
 // ============================================================================
 // Main API - all functions take DartCtx*
@@ -113,6 +125,7 @@ char *dart_pool_dump_classes_r2(DartCtx *ctx);
 void dart_field_info_free(DartFieldInfo *fi);
 void dart_class_info_free(DartClassInfo *ci);
 void dart_type_info_free(DartTypeInfo *ti);
+void dart_method_info_free(DartMethodInfo *mi);
 void dart_class_list_free(RList *list);
 void dart_string_info_free(DartStringInfo *si);
 void dart_string_ref_free(DartStringRef *sr);

@@ -89,7 +89,6 @@ static void print_usage(const char *argv0) {
 	printf ("  --no-stubs            Do not emit ELF/r2 stub functions\n");
 	printf ("  --limit <N>           Limit output to N items (applies to dump-funcs, etc.)\n");
 	printf ("  --use-name-pool       Assign names from data image strings when unknown\n");
-	printf ("  --dump-fields         Include field details in class output\n");
 }
 
 int main(int argc, char **argv) {
@@ -145,8 +144,6 @@ int main(int argc, char **argv) {
 				dctx.no_stubs = 1;
 			} else if (!strcmp (a, "--use-name-pool")) {
 				dctx.use_name_pool = 1;
-			} else if (!strcmp (a, "--dump-fields")) {
-				dctx.dump_fields = 1;
 			}
 		} else {
 			libapp_path_in = a;
@@ -236,6 +233,7 @@ int main(int argc, char **argv) {
 		break;
 	case ACTION_DUMP_CLASSES:
 		dctx.dump_classes = 1;
+		dctx.dump_fields = 1;
 		if (opt_json) {
 			output = dart_pool_dump_classes_json (&dctx);
 		} else {

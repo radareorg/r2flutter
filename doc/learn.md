@@ -45,6 +45,17 @@ CamelCase names matching the pattern `[A-Z][a-z]+[A-Za-z0-9]*` that contain at l
 
 This serves as a reliable fallback when cluster parsing yields no class definitions.
 
+## Recovering Methods Without Class Clusters
+
+Production snapshots omit the `Class` cluster, but `Function` objects are still serialized in the ROData image. r2flutter now scans the data image for objects whose CID equals `cid_function` and extracts:
+
+- Entry point (validated against the isolate instructions region)
+- Symbolic name strings
+- Owning class pointers to recover class names
+- `kind_tag` values to classify constructors/getters/stubs
+
+Functions whose owner names resolve to discovered classes are attached to the matching class in both JSON and r2 outputs. We deduplicate functions by entry point and cap the scan at 30k methods to keep processing bounded.
+
 ## Memory Layout Observations
 
 For iOS test binaries (`App.framework/App`), the physical address (paddr) equals the virtual address (vaddr), both at 0x1b0900. This simplifies address translation.
