@@ -143,6 +143,7 @@ void dart_string_ref_free(DartStringRef *sr);
 // ============================================================================
 
 RList *dart_pool_extract_strings(DartCtx *ctx);
+char *dart_pool_dump_strings(DartCtx *ctx);
 char *dart_pool_dump_strings_json(DartCtx *ctx);
 char *dart_pool_dump_strings_r2(DartCtx *ctx);
 void dart_string_list_free(RList *list);

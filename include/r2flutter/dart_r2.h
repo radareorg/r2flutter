@@ -38,13 +38,13 @@ typedef struct {
 	ut64 num_objects;
 	ut64 num_clusters;
 	int verbose;
-	int no_stubs;
+	bool no_stubs;
 	int dump_snapshot_json;
-	int dump_it;
+	bool dump_it;
 	int quiet;
 	int dump_fns;
 	int dump_fns_limit;
-	int use_name_pool;
+	bool use_name_pool;
 	int dump_classes;
 	int dump_fields;
 	int dump_strings;

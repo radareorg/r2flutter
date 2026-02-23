@@ -17,39 +17,40 @@ typedef enum {
 	ACTION_DUMP_R2SCRIPT,
 } DumpAction;
 
+static const char usage_text[] =
+	"Usage: %s [options] <libapp_path_or_dir>\n"
+	"Modifiers:\n"
+	"  -h, --help            Show help\n"
+	"  -j                    Output in JSON format\n"
+	"  -r                    Format output for r2 commands\n"
+	"  -V, --version         Show version\n"
+	"  -v                    Verbose (stderr debug info)\n"
+	"  -vv                   More verbose (dump headers)\n"
+	"Actions:\n"
+	"  --dump-classes        Print extracted class information\n"
+	"  --dump-funcs          Print all extracted functions (addr name)\n"
+	"  --dump-header         Print Dart AOT snapshot header info\n"
+	"  --dump-it             Print instruction table entry addresses to stderr\n"
+	"  --dump-r2script       Print radare2 script for snapshot analysis\n"
+	"  --dump-strings        Print all extracted strings\n"
+	"  --dump-types          Print string-based type names\n"
+	"Options:\n"
+	"  --no-stubs            Do not emit ELF/r2 stub functions\n"
+	"  --limit <N>           Limit output to N items (applies to dump-funcs, etc.)\n"
+	"  --use-name-pool       Assign names from data image strings when unknown\n";
+
 static void print_usage(const char *argv0) {
-	const char *usage_text = "Usage: %s [options] <libapp_path_or_dir>\n"
-				"Modifiers:\n"
-				"  -h, --help            Show help\n"
-				"  -V, --version         Show version\n"
-				"  -v                    Verbose (stderr debug info)\n"
-				"  -vv                   More verbose (dump headers)\n"
-				"  -j                    Output in JSON format\n"
-				"Actions:\n"
-				"  --dump-strings        Print all extracted strings\n"
-				"  --dump-classes        Print extracted class information\n"
-				"  --dump-types          Print string-based type names\n"
-				"  --dump-header         Print Dart AOT snapshot header info\n"
-				"  --dump-funcs          Print all extracted functions (addr name)\n"
-				"  --dump-it             Print instruction table entry addresses to stderr\n"
-				"  --dump-r2script       Print radare2 script for snapshot analysis\n"
-				"Options:\n"
-				"  --no-stubs            Do not emit ELF/r2 stub functions\n"
-				"  --limit <N>           Limit output to N items (applies to dump-funcs, etc.)\n"
-				"  --use-name-pool       Assign names from data image strings when unknown\n";
 	printf (usage_text, argv0);
 }
 
 static char *find_libapp(const char *s) {
 	if (r_file_is_directory (s)) {
-		// Android
-		char *candidate = r_str_newf ("%s/%s", s, "libapp.so");
+		char *candidate = r_str_newf ("%s/libapp.so", s); // Android
 		if (r_file_exists (candidate)) {
 			return candidate;
 		}
-		// iOS
 		free (candidate);
-		candidate = r_str_newf ("%s/Frameworks/App.framework/App", s);
+		candidate = r_str_newf ("%s/Frameworks/App.framework/App", s); // iOS
 		if (r_file_exists (candidate)) {
 			return candidate;
 		}
@@ -67,6 +68,7 @@ int main(int argc, char **argv) {
 
 	const char *libapp_path_in = NULL;
 	bool opt_json = false;
+	bool opt_r2 = false;
 	DumpAction action = ACTION_NONE;
 	DartCtx dctx = { 0 };
 
@@ -90,6 +92,8 @@ int main(int argc, char **argv) {
 				dctx.verbose = 2;
 			} else if (!strcmp (a, "-j")) {
 				opt_json = true;
+			} else if (!strcmp (a, "-r")) {
+				opt_r2 = true;
 			} else if (!strcmp (a, "--dump-strings")) {
 				action = ACTION_DUMP_STRINGS;
 			} else if (!strcmp (a, "--dump-classes")) {
@@ -107,13 +111,13 @@ int main(int argc, char **argv) {
 				}
 			} else if (!strcmp (a, "--dump-it")) {
 				action = ACTION_DUMP_IT;
-				dctx.dump_it = 1; // AITODO: use bool
+				dctx.dump_it = true;
 			} else if (!strcmp (a, "--dump-r2script")) {
 				action = ACTION_DUMP_R2SCRIPT;
 			} else if (!strcmp (a, "--no-stubs")) {
-				dctx.no_stubs = 1; // AITODO: use bool
+				dctx.no_stubs = true;
 			} else if (!strcmp (a, "--use-name-pool")) {
-				dctx.use_name_pool = 1; // AITODO: use bool
+				dctx.use_name_pool = true;
 			}
 		} else {
 			libapp_path_in = a;
@@ -176,8 +180,10 @@ int main(int argc, char **argv) {
 	case ACTION_DUMP_STRINGS:
 		if (opt_json) {
 			output = dart_pool_dump_strings_json (&dctx);
-		} else {
+		} else if (opt_r2) {
 			output = dart_pool_dump_strings_r2 (&dctx);
+		} else {
+			output = dart_pool_dump_strings (&dctx);
 		}
 		break;
 	case ACTION_DUMP_CLASSES:

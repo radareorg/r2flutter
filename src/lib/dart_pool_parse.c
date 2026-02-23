@@ -2842,8 +2842,8 @@ static DartStringCategory classify_string_value(const char *s) {
 static const char *string_category_name(DartStringCategory cat) {
 	switch (cat) {
 	case DART_STRING_CAT_APP: return "app";
-	case DART_STRING_CAT_LIBRARY: return "library";
-	case DART_STRING_CAT_RUNTIME: return "runtime";
+	case DART_STRING_CAT_LIBRARY: return "lib";
+	case DART_STRING_CAT_RUNTIME: return "rnt";
 	default: return "unknown";
 	}
 }
@@ -3103,12 +3103,37 @@ char *dart_pool_dump_strings_json(DartCtx *ctx) {
 	return pj_drain (pj);
 }
 
+char *dart_pool_dump_strings(DartCtx *ctx) {
+	RList *strings = dart_pool_extract_strings (ctx);
+	if (!strings) {
+		return strdup ("# No strings found\n");
+	}
+	RStrBuf *sb = r_strbuf_new ("");
+	RListIter *it;
+	DartStringInfo *si;
+	r_list_foreach (strings, it, si) {
+		if (!si || !si->value) {
+			continue;
+		}
+		char *str = r_str_escape_utf8 (si->value, false, true);
+		const char *cat = string_category_name (si->category);
+		r_strbuf_appendf (sb, "0x%08" PRIx64 " %4d :%s \"%s\"\n",
+				si->address, si->length, cat, str);
+		free (str);
+		if (si->references && r_list_length (si->references) > 0) {
+			r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
+		}
+	}
+	dart_string_list_free (strings);
+	return r_strbuf_drain (sb);
+}
+
 char *dart_pool_dump_strings_r2(DartCtx *ctx) {
 	RList *strings = dart_pool_extract_strings (ctx);
 	if (!strings) {
 		return strdup ("# No strings found\n");
 	}
-	RStrBuf *sb = r_strbuf_new ("# Dart strings extracted from snapshot\n");
+	RStrBuf *sb = r_strbuf_new ("# Dart Strings\n");
 	RListIter *it;
 	DartStringInfo *si;
 	int idx = 0;
@@ -3116,24 +3141,14 @@ char *dart_pool_dump_strings_r2(DartCtx *ctx) {
 		if (!si || !si->value) {
 			continue;
 		}
-		char safe_val[64];
-		int max_len = 60;
-		int len = strlen (si->value);
-		if (len > max_len) {
-			snprintf (safe_val, sizeof (safe_val), "%.57s...", si->value);
-		} else {
-			snprintf (safe_val, sizeof (safe_val), "%s", si->value);
-		}
-		for (char *p = safe_val; *p; p++) {
-			if (*p == '\n' || *p == '\r' || *p == '"') {
-				*p = ' ';
-			}
-		}
+		char *str = r_str_escape_utf8 (si->value, false, true);
 		const char *cat = string_category_name (si->category);
-		r_strbuf_appendf (sb, "# str[%d] ref=%" PRIu64 " len=%u%s cat=%s: \"%s\"\n", idx++, si->ref_id, si->length, (si->flags & DART_STRING_TWO_BYTE)? " (utf16)": "", cat, safe_val);
+		// | iz+ ([addr]) ([len]) ([type])  add string manually (addr=current seek if not specified, len=auto, type=auto-detect)
+		r_strbuf_appendf (sb, "iz+ 0x%08"PFMT64x" %d\n", si->address, si->length);
 		if (si->references && r_list_length (si->references) > 0) {
 			r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
 		}
+		free (str);
 	}
 	r_strbuf_appendf (sb, "# Total: %d strings\n", r_list_length (strings));
 	dart_string_list_free (strings);
