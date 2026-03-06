@@ -1,0 +1,12 @@
+NAME=text-strings-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q --dump-strings bins/ios/Runner.app | head -5
+EOF
+EXPECT_RE=<<EOF
+0x[0-9a-f]+\s+\d+\s+:\w+\s+".+"
+0x[0-9a-f]+\s+\d+\s+:\w+\s+".+"
+0x[0-9a-f]+\s+\d+\s+:\w+\s+".+"
+0x[0-9a-f]+\s+\d+\s+:\w+\s+".+"
+0x[0-9a-f]+\s+\d+\s+:\w+\s+".+"
+EOF

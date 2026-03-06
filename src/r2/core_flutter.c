@@ -19,7 +19,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -j       dump snapshot header as JSON\n"
 		"| r2flutter -n       use name pool for unknown function names\n"
 		"| r2flutter -q       analyze quietly (no extra output)\n"
-		"| r2flutter -r       format output for r2 commands\n"
+		"| r2flutter -r       output r2 script (like rabin2 -r)\n"
 		"| r2flutter -S       dump all strings as JSON\n"
 		"| r2flutter -s       include ELF/r2 stub symbols\n"
 		"| r2flutter -t       dump strings as r2 comments\n");
@@ -65,15 +65,15 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		return false;
 	}
 	const char *args = r_str_trim_head_ro (input + strlen ("r2flutter"));
-	if (!*args) {
-		r2flutter_analyze (core, &dctx, 0);
-		return true;
-	}
-	bool opt_r2 = false;
 	DartCtx dctx = {
 		.core = core,
 		.no_stubs = true
 	};
+
+	if (!*args) {
+		r2flutter_analyze (core, &dctx, 0);
+		return true;
+	}
 
 	if (*args == '?') {
 		r2flutter_help (core);
@@ -81,7 +81,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	}
 
 	if (*args != '-') {
-		r2flutter_help (core);
+		r2flutter_analyze (core, &dctx, 0);
 		return true;
 	}
 	char flag = args[1];
@@ -110,9 +110,34 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		r2flutter_analyze (core, &dctx, 1);
 		return true;
 	case 'r':
-		opt_r2 = true;
-		r2flutter_analyze (core, &dctx, 0);
-		return true;
+		// -r flag: output r2 script (like rabin2 -r)
+		{
+			const char *filepath = R_UNWRAP4 (core, bin, cur, file);
+			if (!filepath) {
+				R_LOG_ERROR ("r2flutter: no file loaded");
+				return true;
+			}
+			DartApp *app = dart_app_new (filepath);
+			if (!app) {
+				return true;
+			}
+			app->core = core;
+			app->base_addr = r_bin_get_baddr (core->bin);
+			if (app->base_addr == UT64_MAX) {
+				app->base_addr = 0;
+			}
+			app->heap_base = 0;
+			memcpy (&app->dctx, &dctx, sizeof (DartCtx));
+			app->dctx.core = core;
+			dart_app_load_info (app);
+			char *script = dart_dumper_dump4radare2 (app);
+			if (script) {
+				r_cons_printf (core->cons, "%s", script);
+				free (script);
+			}
+			dart_app_free (app);
+			return true;
+		}
 	case 'f':
 		{
 			int n = 20;

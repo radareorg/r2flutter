@@ -118,6 +118,8 @@ typedef struct DartMethodInfo {
 
 int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
 char *dart_pool_dump_header(DartCtx *ctx);
+char *dart_pool_dump_header_json(DartCtx *ctx);
+char *dart_pool_dump_header_r2(DartCtx *ctx);
 
 // ============================================================================
 // Class Extraction API
@@ -126,6 +128,7 @@ char *dart_pool_dump_header(DartCtx *ctx);
 RList *dart_pool_extract_classes(DartCtx *ctx);
 RList *dart_pool_extract_fields(DartCtx *ctx, ut64 class_ref);
 RList *dart_pool_get_class_hierarchy(DartCtx *ctx, ut64 class_ref);
+char *dart_pool_dump_classes(DartCtx *ctx);
 char *dart_pool_dump_classes_json(DartCtx *ctx);
 char *dart_pool_dump_classes_r2(DartCtx *ctx);
 
