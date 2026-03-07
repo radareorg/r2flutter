@@ -20,6 +20,32 @@
 #include "../../include/r2flutter/dart_version.h"
 #include "../../include/r2flutter/dart_r2.h"
 
+static const char *dart_tag_style_names[] = {
+	"CID_INT32",        // DART_TAG_STYLE_CID_INT32 = 0
+	"CID_SHIFT1",       // DART_TAG_STYLE_CID_SHIFT1 = 1
+	"OBJECT_HEADER",    // DART_TAG_STYLE_OBJECT_HEADER = 2
+};
+
+static inline const char *dart_tag_style_to_string(DartTagStyle style) {
+	if (style >= 0 && style < (sizeof (dart_tag_style_names) / sizeof (dart_tag_style_names[0]))) {
+		return dart_tag_style_names[style];
+	}
+	return "unknown";
+}
+
+static inline const char *dart_tag_style_to_string_verbose(DartTagStyle style) {
+	switch (style) {
+	case DART_TAG_STYLE_CID_INT32:
+		return "CID_INT32 (v2.10-2.13)";
+	case DART_TAG_STYLE_CID_SHIFT1:
+		return "CID_SHIFT1 (v2.14-3.3)";
+	case DART_TAG_STYLE_OBJECT_HEADER:
+		return "OBJECT_HEADER (v3.4+)";
+	default:
+		return "unknown";
+	}
+}
+
 typedef enum {
 	kIllegalCid = 0,
 	kClassCid = 5,
@@ -2674,9 +2700,6 @@ char *dart_pool_dump_classes_json(DartCtx *ctx) {
 			RListIter *fit;
 			DartFieldInfo *fi;
 			r_list_foreach (ci->fields, fit, fi) {
-				if (!fi) {
-					continue;
-				}
 				pj_o (pj);
 				if (fi->name) {
 					pj_ks (pj, "name", fi->name);
@@ -2701,9 +2724,6 @@ char *dart_pool_dump_classes_json(DartCtx *ctx) {
 			RListIter *mit;
 			DartMethodInfo *mi;
 			r_list_foreach (ci->methods, mit, mi) {
-				if (!mi) {
-					continue;
-				}
 				pj_o (pj);
 				if (mi->name) {
 					pj_ks (pj, "name", mi->name);
@@ -2760,11 +2780,8 @@ char *dart_pool_dump_classes(DartCtx *ctx) {
 			RListIter *fit;
 			DartFieldInfo *fi;
 			r_list_foreach (ci->fields, fit, fi) {
-				if (!fi) {
-					continue;
-				}
-				const char *tname = fi->type_name? fi->type_name: "void*";
-				const char *fname = fi->name? fi->name: "field";
+				const char *tname = r_str_get (fi->type_name);
+				const char *fname = r_str_get (fi->name);
 				r_strbuf_appendf (sb, "    +0x%x %s %s", fi->offset, tname, fname);
 				if (fi->flags & DART_FIELD_STATIC) {
 					r_strbuf_append (sb, " static");
@@ -2783,10 +2800,7 @@ char *dart_pool_dump_classes(DartCtx *ctx) {
 			RListIter *mit;
 			DartMethodInfo *mi;
 			r_list_foreach (ci->methods, mit, mi) {
-				if (!mi || !mi->name) {
-					continue;
-				}
-				r_strbuf_appendf (sb, "    0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, mi->name, method_kind_name (mi->kind_tag));
+				r_strbuf_appendf (sb, "    0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, r_str_get (mi->name), method_kind_name (mi->kind_tag));
 			}
 		}
 	}
@@ -2835,11 +2849,8 @@ char *dart_pool_dump_classes_r2(DartCtx *ctx) {
 			RListIter *fit;
 			DartFieldInfo *fi;
 			r_list_foreach (ci->fields, fit, fi) {
-				if (!fi) {
-					continue;
-				}
-				const char *tname = fi->type_name? fi->type_name: "void*";
-				const char *fname = fi->name? fi->name: "field";
+				const char *tname = r_str_get (fi->type_name);
+				const char *fname = r_str_get (fi->name);
 				r_strbuf_appendf (sb, " %s %s @ 0x%x;", tname, fname, fi->offset);
 			}
 		}
@@ -2848,10 +2859,7 @@ char *dart_pool_dump_classes_r2(DartCtx *ctx) {
 			RListIter *mit;
 			DartMethodInfo *mi;
 			r_list_foreach (ci->methods, mit, mi) {
-				if (!mi || !mi->name) {
-					continue;
-				}
-				r_strbuf_appendf (sb, "#   method 0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, mi->name, method_kind_name (mi->kind_tag));
+				r_strbuf_appendf (sb, "#   method 0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, r_str_get (mi->name), method_kind_name (mi->kind_tag));
 			}
 		}
 	}
@@ -3316,38 +3324,50 @@ char *dart_pool_dump_header_json(DartCtx *ctx) {
 	ut64 header_addr = ctx->iso_data? ctx->iso_data: ctx->vm_data;
 	SnapshotHeader sh = read_snapshot_hdr (ctx, header_addr);
 
-	RStrBuf *sb = r_strbuf_new ("");
-	r_strbuf_appendf (sb, "{\"kind\":%" PRIu64, (uint64_t)sh.kind);
-	r_strbuf_appendf (sb, ",\"hash\":\"%s\"", ctx->snapshot_hash[0]? ctx->snapshot_hash: "");
-	r_strbuf_appendf (sb, ",\"vm_data\":%" PFMT64u, (ut64)ctx->vm_data);
-	r_strbuf_appendf (sb, ",\"vm_instr\":%" PFMT64u, (ut64)ctx->vm_instr);
-	r_strbuf_appendf (sb, ",\"iso_data\":%" PFMT64u, (ut64)ctx->iso_data);
-	r_strbuf_appendf (sb, ",\"iso_instr\":%" PFMT64u, (ut64)ctx->iso_instr);
-	r_strbuf_appendf (sb, ",\"cluster\":{\"base\":%" PRIu64 ",\"objs\":%" PRIu64 ",\"clusters\":%" PRIu64 ",\"it_len\":%" PRIu64 ",\"it_off\":%" PRIu64 ",\"total\":%" PRIu64 "}", (uint64_t)sh.nb, (uint64_t)sh.no, (uint64_t)sh.nc, (uint64_t)sh.itlen, (uint64_t)sh.itdata, (uint64_t)sh.total_len);
-	r_strbuf_appendf (sb, ",\"cws\":%d", ctx->compressed_word_size);
-	r_strbuf_appendf (sb, ",\"dart_version\":\"%s\"", version? version: "unknown");
+	PJ *pj = pj_new ();
+	if (!pj) {
+		return strdup ("{\"error\":\"Failed to create JSON\"}");
+	}
+	pj_o (pj);
+	pj_kn (pj, "kind", sh.kind);
+	pj_ks (pj, "hash", r_str_get (ctx->snapshot_hash));
+	pj_kn (pj, "vm_data", ctx->vm_data);
+	pj_kn (pj, "vm_instr", ctx->vm_instr);
+	pj_kn (pj, "iso_data", ctx->iso_data);
+	pj_kn (pj, "iso_instr", ctx->iso_instr);
+	pj_k (pj, "cluster");
+	pj_o (pj);
+	pj_kn (pj, "base", sh.nb);
+	pj_kn (pj, "objs", sh.no);
+	pj_kn (pj, "clusters", sh.nc);
+	pj_kn (pj, "it_len", sh.itlen);
+	pj_kn (pj, "it_off", sh.itdata);
+	pj_kn (pj, "total", sh.total_len);
+	pj_end (pj);
+	pj_ki (pj, "cws", ctx->compressed_word_size);
+	pj_ks (pj, "dart_version", version? version: "unknown");
 	if (ctx->layout) {
 		const DartVerLayout *l = ctx->layout;
-		const char *tag_name = "unknown";
-		switch (l->tag_style) {
-		case DART_TAG_STYLE_CID_INT32:
-			tag_name = "CID_INT32";
-			break;
-		case DART_TAG_STYLE_CID_SHIFT1:
-			tag_name = "CID_SHIFT1";
-			break;
-		case DART_TAG_STYLE_OBJECT_HEADER:
-			tag_name = "OBJECT_HEADER";
-			break;
-		}
-		r_strbuf_appendf (sb, ",\"tag_style\":\"%s\"", tag_name);
-		r_strbuf_appendf (sb, ",\"alignment\":%d", l->max_alignment);
-		r_strbuf_appendf (sb, ",\"header_fields\":%d", l->header_fields);
-		r_strbuf_appendf (sb, ",\"it_capacity\":%" PRIu64, (uint64_t)l->it_cap);
-		r_strbuf_appendf (sb, ",\"cid_table\":{\"cid_class\":%d,\"cid_function\":%d,\"cid_code\":%d,\"cid_string\":%d,\"cid_one_byte_string\":%d,\"cid_two_byte_string\":%d,\"cid_array\":%d,\"cid_mint\":%d,\"cid_object_pool\":%d,\"num_predefined\":%d}", l->cid_class, l->cid_function, l->cid_code, l->cid_string, l->cid_one_byte_string, l->cid_two_byte_string, l->cid_array, l->cid_mint, l->cid_object_pool, l->num_predefined_cids);
+		pj_ks (pj, "tag_style", dart_tag_style_to_string (l->tag_style));
+		pj_ki (pj, "alignment", l->max_alignment);
+		pj_ki (pj, "header_fields", l->header_fields);
+		pj_kn (pj, "it_capacity", l->it_cap);
+		pj_k (pj, "cid_table");
+		pj_o (pj);
+		pj_ki (pj, "cid_class", l->cid_class);
+		pj_ki (pj, "cid_function", l->cid_function);
+		pj_ki (pj, "cid_code", l->cid_code);
+		pj_ki (pj, "cid_string", l->cid_string);
+		pj_ki (pj, "cid_one_byte_string", l->cid_one_byte_string);
+		pj_ki (pj, "cid_two_byte_string", l->cid_two_byte_string);
+		pj_ki (pj, "cid_array", l->cid_array);
+		pj_ki (pj, "cid_mint", l->cid_mint);
+		pj_ki (pj, "cid_object_pool", l->cid_object_pool);
+		pj_ki (pj, "num_predefined", l->num_predefined_cids);
+		pj_end (pj);
 	}
-	r_strbuf_append (sb, "}");
-	return r_strbuf_drain (sb);
+	pj_end (pj);
+	return pj_drain (pj);
 }
 
 char *dart_pool_dump_header_r2(DartCtx *ctx) {
@@ -3356,14 +3376,14 @@ char *dart_pool_dump_header_r2(DartCtx *ctx) {
 	}
 	const char *version = dart_version_from_hash (ctx->snapshot_hash);
 
-	RStrBuf *sb = r_strbuf_new ("# Dart AOT Snapshot Info\n");
+	RStrBuf *sb = r_strbuf_new ("'# Dart AOT Snapshot Info\n");
 
 	// Create flags for snapshot addresses
 	r_strbuf_appendf (sb, "'fs dart\n");
-	r_strbuf_appendf (sb, "f dart.vm_data = 0x%" PFMT64x "\n", (ut64)ctx->vm_data);
-	r_strbuf_appendf (sb, "f dart.vm_instr = 0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
-	r_strbuf_appendf (sb, "f dart.iso_data = 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
-	r_strbuf_appendf (sb, "f dart.iso_instr = 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+	r_strbuf_appendf (sb, "'f dart.vm_data = 0x%" PFMT64x "\n", (ut64)ctx->vm_data);
+	r_strbuf_appendf (sb, "'f dart.vm_instr = 0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
+	r_strbuf_appendf (sb, "'f dart.iso_data = 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
+	r_strbuf_appendf (sb, "'f dart.iso_instr = 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
 
 	// Add comments with metadata
 	r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart snapshot hash: %s\n",
@@ -3373,19 +3393,7 @@ char *dart_pool_dump_header_r2(DartCtx *ctx) {
 
 	if (ctx->layout) {
 		const DartVerLayout *l = ctx->layout;
-		const char *tag_name = "unknown";
-		switch (l->tag_style) {
-		case DART_TAG_STYLE_CID_INT32:
-			tag_name = "CID_INT32";
-			break;
-		case DART_TAG_STYLE_CID_SHIFT1:
-			tag_name = "CID_SHIFT1";
-			break;
-		case DART_TAG_STYLE_OBJECT_HEADER:
-			tag_name = "OBJECT_HEADER";
-			break;
-		}
-		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", (ut64)ctx->vm_data, tag_name);
+		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", (ut64)ctx->vm_data, dart_tag_style_to_string (l->tag_style));
 		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Alignment: %d, CWS: %d\n",
 			(ut64)ctx->vm_data, l->max_alignment, l->compressed_word_size);
 	}
@@ -3408,19 +3416,7 @@ char *dart_pool_dump_header(DartCtx *ctx) {
 
 	if (ctx->layout) {
 		const DartVerLayout *l = ctx->layout;
-		const char *tag_name = "unknown";
-		switch (l->tag_style) {
-		case DART_TAG_STYLE_CID_INT32:
-			tag_name = "CID_INT32 (v2.10-2.13)";
-			break;
-		case DART_TAG_STYLE_CID_SHIFT1:
-			tag_name = "CID_SHIFT1 (v2.14-3.3)";
-			break;
-		case DART_TAG_STYLE_OBJECT_HEADER:
-			tag_name = "OBJECT_HEADER (v3.4+)";
-			break;
-		}
-		r_strbuf_appendf (sb, "tag_style:     %s\n", tag_name);
+		r_strbuf_appendf (sb, "tag_style:     %s\n", dart_tag_style_to_string_verbose (l->tag_style));
 		r_strbuf_appendf (sb, "cws:           %d\n", l->compressed_word_size);
 		r_strbuf_appendf (sb, "alignment:     %d\n", l->max_alignment);
 		r_strbuf_appendf (sb, "header_fields: %d\n", l->header_fields);

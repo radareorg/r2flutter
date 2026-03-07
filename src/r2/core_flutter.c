@@ -58,6 +58,34 @@ static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
 	return true;
 }
 
+static bool r2flutter_dump_r2script(RCore *core, DartCtx *dctx) {
+	const char *filepath = R_UNWRAP4 (core, bin, cur, file);
+	if (!filepath) {
+		R_LOG_ERROR ("r2flutter: no file loaded");
+		return false;
+	}
+	DartApp *app = dart_app_new (filepath);
+	if (!app) {
+		return false;
+	}
+	app->core = core;
+	app->base_addr = r_bin_get_baddr (core->bin);
+	if (app->base_addr == UT64_MAX) {
+		app->base_addr = 0;
+	}
+	app->heap_base = 0;
+	memcpy (&app->dctx, dctx, sizeof (DartCtx));
+	app->dctx.core = core;
+	dart_app_load_info (app);
+	char *script = dart_dumper_dump4radare2 (app);
+	if (script) {
+		r_cons_printf (core->cons, "%s", script);
+		free (script);
+	}
+	dart_app_free (app);
+	return true;
+}
+
 static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	R_RETURN_VAL_IF_FAIL (cps && cps->core, false);
 	RCore *core = cps->core;
@@ -110,34 +138,8 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		r2flutter_analyze (core, &dctx, 1);
 		return true;
 	case 'r':
-		// -r flag: output r2 script (like rabin2 -r)
-		{
-			const char *filepath = R_UNWRAP4 (core, bin, cur, file);
-			if (!filepath) {
-				R_LOG_ERROR ("r2flutter: no file loaded");
-				return true;
-			}
-			DartApp *app = dart_app_new (filepath);
-			if (!app) {
-				return true;
-			}
-			app->core = core;
-			app->base_addr = r_bin_get_baddr (core->bin);
-			if (app->base_addr == UT64_MAX) {
-				app->base_addr = 0;
-			}
-			app->heap_base = 0;
-			memcpy (&app->dctx, &dctx, sizeof (DartCtx));
-			app->dctx.core = core;
-			dart_app_load_info (app);
-			char *script = dart_dumper_dump4radare2 (app);
-			if (script) {
-				r_cons_printf (core->cons, "%s", script);
-				free (script);
-			}
-			dart_app_free (app);
-			return true;
-		}
+		r2flutter_dump_r2script (core, &dctx);
+		return true;
 	case 'f':
 		{
 			int n = 20;
