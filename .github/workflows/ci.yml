@@ -21,9 +21,11 @@ jobs:
         sudo dpkg -i radare2-dev_${{env.R2V}}_amd64.deb
     - name: Building fluor2
       run: make
+    - name: Install plugin
+      run: make user-install
     - name: Basic Testing
       run: make test
     - name: Radare Testing
-      run: r2r -j1 -t 30 test/db/cmd
+      run: rarun2 timeout=30 system="r2r -j1 -t 30 test/db/cmd"
     - name: Radare Extras Testing
-      run: r2r -j1 -t 30 test/db/extras
+      run: rarun2 timeout=30 system="r2r -j1 -t 30 test/db/extras"
