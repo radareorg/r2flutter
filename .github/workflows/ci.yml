@@ -24,4 +24,4 @@ jobs:
     - name: Basic Testing
       run: make test
     - name: Radare Testing
-      run: r2r -i test/db
+      run: r2r test/db
