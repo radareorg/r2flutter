@@ -10,3 +10,4 @@ EXPECT_RE=<<EOF
 0x[0-9a-f]+ .+
 0x[0-9a-f]+ .+
 EOF
+RUN

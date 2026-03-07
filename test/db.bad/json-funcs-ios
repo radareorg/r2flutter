@@ -6,3 +6,4 @@ EOF
 EXPECT_RE=<<EOF
 \[{"addr":\d+,"name":".+"},{"addr":\d+,"name":".+"}\]
 EOF
+RUN

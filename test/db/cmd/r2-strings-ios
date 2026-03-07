@@ -4,9 +4,10 @@ CMDS=<<EOF
 !!../bin/r2flutter -q -r --dump-strings bins/ios/Runner.app | head -5
 EOF
 EXPECT=<<EOF
-iz+ 0x001b0d1c 1
-iz+ 0x001b0d1e 1
-iz+ 0x001b0d20 1
-iz+ 0x001b0d22 1
-iz+ 0x001b0d24 1
+# Dart Strings
+iz+ 0x00000028 6
+iz+ 0x00000068 6
+iz+ 0x00000078 6
+iz+ 0x000000b8 7
 EOF
+RUN

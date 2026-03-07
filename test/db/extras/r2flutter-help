@@ -1,0 +1,46 @@
+NAME=help
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -h
+?e ===
+r2flutter -h
+EOF
+EXPECT=<<EOF
+Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
+Modifiers:
+  -h, --help            Show help
+  -j                    Output in JSON format
+  -r                    Format output for r2 commands
+  -V, --version         Show version
+  -v                    Verbose (stderr debug info)
+  -vv                   More verbose (dump headers)
+Actions:
+  --dump-classes        Print extracted class information
+  --dump-funcs          Print all extracted functions (addr name)
+  --dump-header         Print Dart AOT snapshot header info
+  --dump-it             Print instruction table entry addresses to stderr
+  --dump-r2script       Print radare2 script for snapshot analysis
+  --dump-strings        Print all extracted strings
+  --dump-types          Print string-based type names
+Options:
+  --no-stubs            Do not emit ELF/r2 stub functions
+  --limit <N>           Limit output to N items (applies to dump-funcs, etc.)
+  --use-name-pool       Assign names from data image strings when unknown
+===
+Usage: r2flutter [-jirfqsncFStH] [args]
+| r2flutter          analyze dart snapshot and apply flags/comments
+| r2flutter -c       dump classes as JSON
+| r2flutter -C       dump classes as r2 type definitions
+| r2flutter -F       include field info in class output
+| r2flutter -f [n]   list first N discovered functions (default 20)
+| r2flutter -H       dump Dart AOT snapshot header info
+| r2flutter -i       dump instruction table entries to output
+| r2flutter -j       dump snapshot header as JSON
+| r2flutter -n       use name pool for unknown function names
+| r2flutter -q       analyze quietly (no extra output)
+| r2flutter -r       output r2 script (like rabin2 -r)
+| r2flutter -S       dump all strings as JSON
+| r2flutter -s       include ELF/r2 stub symbols
+| r2flutter -t       dump strings as r2 comments
+EOF
+RUN
