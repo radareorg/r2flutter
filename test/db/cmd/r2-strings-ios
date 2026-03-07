@@ -1,0 +1,12 @@
+NAME=r2-strings-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -r --dump-strings bins/ios/Runner.app | head -5
+EOF
+EXPECT=<<EOF
+iz+ 0x001b0d1c 1
+iz+ 0x001b0d1e 1
+iz+ 0x001b0d20 1
+iz+ 0x001b0d22 1
+iz+ 0x001b0d24 1
+EOF

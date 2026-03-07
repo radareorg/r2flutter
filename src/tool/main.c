@@ -191,27 +191,38 @@ int main(int argc, char **argv) {
 		dctx.dump_fields = 1;
 		if (opt_json) {
 			output = dart_pool_dump_classes_json (&dctx);
-		} else {
+		} else if (opt_r2) {
 			output = dart_pool_dump_classes_r2 (&dctx);
+		} else {
+			output = dart_pool_dump_classes (&dctx);
 		}
 		break;
 	case ACTION_DUMP_TYPES:
 		dctx.dump_classes = 3;
 		if (opt_json) {
 			output = dart_pool_dump_classes_json (&dctx);
-		} else {
+		} else if (opt_r2) {
 			output = dart_pool_dump_classes_r2 (&dctx);
+		} else {
+			output = dart_pool_dump_classes (&dctx);
 		}
 		break;
 	case ACTION_DUMP_HEADER:
 		app->dctx.dump_header = 1;
-		app->dctx.dump_header_json = opt_json;
-		output = dart_pool_dump_header (&app->dctx);
+		if (opt_json) {
+			output = dart_pool_dump_header_json (&app->dctx);
+		} else if (opt_r2) {
+			output = dart_pool_dump_header_r2 (&app->dctx);
+		} else {
+			output = dart_pool_dump_header (&app->dctx);
+		}
 		break;
 	case ACTION_DUMP_FUNCS:
 		dart_app_load_info (app);
 		if (opt_json) {
 			output = dart_dumper_dump_funcs_json (app);
+		} else if (opt_r2) {
+			output = dart_dumper_dump_funcs_r2 (app);
 		} else {
 			if (app->functions) {
 				RListIter *it;

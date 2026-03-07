@@ -1,0 +1,12 @@
+NAME=text-funcs-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q --dump-funcs --limit 5 bins/ios/Runner.app
+EOF
+EXPECT_RE=<<EOF
+0x[0-9a-f]+ .+
+0x[0-9a-f]+ .+
+0x[0-9a-f]+ .+
+0x[0-9a-f]+ .+
+0x[0-9a-f]+ .+
+EOF
