@@ -121,7 +121,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	switch (flag) {
 	case 'H':
 		{
-			char *hdr = dart_pool_dump_header (&dctx);
+			char *hdr = dart_pool_dump_header (&dctx, 0);
 			if (hdr) {
 				r_cons_printf (core->cons, "%s", hdr);
 				free (hdr);
@@ -155,7 +155,6 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 				}
 			}
 			dctx.quiet = 1;
-			dctx.dump_fns = n;
 			const char *filepath = R_UNWRAP4 (core, bin, cur, file);
 			if (!filepath) {
 				R_LOG_ERROR ("r2flutter: no file loaded");
@@ -205,7 +204,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		return true;
 	case 'c':
 		{
-			char *json = dart_pool_dump_classes_json (&dctx);
+			char *json = dart_pool_dump_classes (&dctx, 'j');
 			if (json) {
 				r_cons_printf (core->cons, "%s\n", json);
 				free (json);
@@ -214,7 +213,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		return true;
 	case 'C':
 		{
-			char *r2out = dart_pool_dump_classes_r2 (&dctx);
+			char *r2out = dart_pool_dump_classes (&dctx, 'r');
 			if (r2out) {
 				r_cons_printf (core->cons, "%s", r2out);
 				free (r2out);
@@ -227,7 +226,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		return true;
 	case 'S':
 		{
-			char *json = dart_pool_dump_strings_json (&dctx);
+			char *json = dart_pool_dump_strings (&dctx, 'j');
 			if (json) {
 				r_cons_printf (core->cons, "%s\n", json);
 				free (json);
@@ -236,7 +235,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		return true;
 	case 't':
 		{
-			char *r2out = dart_pool_dump_strings_r2 (&dctx);
+			char *r2out = dart_pool_dump_strings (&dctx, 'r');
 			if (r2out) {
 				r_cons_printf (core->cons, "%s", r2out);
 				free (r2out);

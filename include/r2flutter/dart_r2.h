@@ -45,14 +45,11 @@ typedef struct {
 	int dump_snapshot_json;
 	bool dump_it;
 	int quiet;
-	int dump_fns;
 	int dump_fns_limit;
 	bool use_name_pool;
 	int dump_classes;
 	int dump_fields;
 	int dump_strings;
-	int dump_header;
-	int dump_header_json;
 } DartCtx;
 
 int dart_r2_find_snapshots(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso_data, ut64 *iso_instr);

@@ -333,3 +333,14 @@ The r2flutter ROData scanner tries both the layout-specified CID and CID-1 to ha
 - Dart SDK class table: `runtime/vm/class_table.h` (ClassTable, UnboxedFieldBitmap)
 - Vyacheslav Egorov's Dart VM internals: https://mrale.ph/dartvm/
 - Third-party tools: blutter, unflutter, reFlutter
+
+## Dumper API Cleanup
+
+The pool and function dumpers are easier to maintain when the public entrypoints take a single `int fmt` mode, matching `dart_pool_dump_it ()`, instead of growing parallel `_json` and `_r2` exports. The extraction pass stays shared, while the format-specific rendering lives in small helpers behind one API per dumper:
+
+- `dart_pool_dump_header (ctx, fmt)`
+- `dart_pool_dump_classes (ctx, fmt)`
+- `dart_pool_dump_strings (ctx, fmt)`
+- `dart_dumper_dump_funcs (app, fmt)`
+
+This keeps the CLI and plugin call sites on the same mode switch (`0`, `'j'`, `'r'`) and avoids triplicating traversal logic every time a dumper gains a new field.

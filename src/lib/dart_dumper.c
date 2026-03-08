@@ -152,50 +152,73 @@ char *dart_dumper_dump4radare2(DartApp *app) {
 	return r_strbuf_drain (sb);
 }
 
-char *dart_dumper_dump_funcs_json(DartApp *app) {
-	if (!app || !app->functions || r_list_length (app->functions) == 0) {
-		return strdup ("[]");
-	}
+static int dump_funcs_limit(const DartApp *app) {
+	return app->dctx.dump_fns_limit? app->dctx.dump_fns_limit: -1;
+}
 
-	PJ *pj = pj_new ();
-	pj_a (pj);
+static char *drain_trimmed_strbuf(RStrBuf *sb) {
+	char *out = r_strbuf_drain (sb);
+	size_t len = strlen (out);
+	if (len > 0 && out[len - 1] == '\n') {
+		out[len - 1] = '\0';
+	}
+	return out;
+}
+
+static void dump_func_json(PJ *pj, const DartFunction *fn) {
+	pj_o (pj);
+	pj_kn (pj, "addr", fn->addr);
+	pj_ks (pj, "name", fn->name);
+	if (fn->size) {
+		pj_kn (pj, "size", fn->size);
+	}
+	pj_end (pj);
+}
+
+static void dump_func_text(RStrBuf *sb, const DartFunction *fn) {
+	r_strbuf_appendf (sb, "0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
+}
+
+static void dump_func_r2(RStrBuf *sb, const DartFunction *fn) {
+	r_strf_var (safe, 1024, "%s", fn->name);
+	r_name_filter (safe, 0);
+	// Avoid double 'method.' prefix if the name already includes it
+	if (r_str_startswith (safe, "method.")) {
+		r_strbuf_appendf (sb, "f %s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
+	} else {
+		r_strbuf_appendf (sb, "f method.%s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
+	}
+	r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC %s\n", (uint64_t)fn->addr, fn->name);
+}
+
+char *dart_dumper_dump_funcs(DartApp *app, int fmt) {
+	if (!app || !app->functions || r_list_length (app->functions) == 0) {
+		return fmt == 'j'? strdup ("[]"): strdup ("");
+	}
 
 	RListIter *it;
 	DartFunction *fn;
 	int count = 0;
-	int limit = app->dctx.dump_fns_limit? app->dctx.dump_fns_limit: -1;
-	r_list_foreach (app->functions, it, fn) {
-		if (!fn || !fn->name) {
-			continue;
-		}
-		if (limit > 0 && count >= limit) {
-			break;
-		}
-		pj_o (pj);
-		pj_kn (pj, "addr", fn->addr);
-		pj_ks (pj, "name", fn->name);
-		if (fn->size) {
-			pj_kn (pj, "size", fn->size);
+	int limit = dump_funcs_limit (app);
+
+	if (fmt == 'j') {
+		PJ *pj = pj_new ();
+		pj_a (pj);
+		r_list_foreach (app->functions, it, fn) {
+			if (!fn || !fn->name) {
+				continue;
+			}
+			if (limit > 0 && count >= limit) {
+				break;
+			}
+			dump_func_json (pj, fn);
+			count++;
 		}
 		pj_end (pj);
-		count++;
-	}
-	pj_end (pj);
-
-	return pj_drain (pj);
-}
-
-char *dart_dumper_dump_funcs_r2(DartApp *app) {
-	if (!app || !app->functions || r_list_length (app->functions) == 0) {
-		return strdup ("");
+		return pj_drain (pj);
 	}
 
 	RStrBuf *sb = r_strbuf_new ("");
-	RListIter *it;
-	DartFunction *fn;
-	int count = 0;
-	int limit = app->dctx.dump_fns_limit? app->dctx.dump_fns_limit: -1;
-
 	r_list_foreach (app->functions, it, fn) {
 		if (!fn || !fn->name) {
 			continue;
@@ -203,19 +226,14 @@ char *dart_dumper_dump_funcs_r2(DartApp *app) {
 		if (limit > 0 && count >= limit) {
 			break;
 		}
-		r_strf_var (safe, 1024, "%s", fn->name);
-		r_name_filter (safe, 0);
-		// Avoid double 'method.' prefix if the name already includes it
-		if (r_str_startswith (safe, "method.")) {
-			r_strbuf_appendf (sb, "f %s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
+		if (fmt == 'r') {
+			dump_func_r2 (sb, fn);
 		} else {
-			r_strbuf_appendf (sb, "f method.%s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
+			dump_func_text (sb, fn);
 		}
-		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC %s\n", (uint64_t)fn->addr, fn->name);
 		count++;
 	}
-
-	return r_strbuf_drain (sb);
+	return drain_trimmed_strbuf (sb);
 }
 
 void dart_dumper_apply_to_core(DartApp *app) {

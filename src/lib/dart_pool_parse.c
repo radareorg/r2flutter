@@ -2762,183 +2762,95 @@ RList *dart_pool_extract_fields(DartCtx *ctx, ut64 class_ref) {
 	return r_list_newf ((RListFree)dart_field_info_free);
 }
 
-char *dart_pool_dump_classes_json(DartCtx *ctx) {
-	RList *classes = dart_pool_extract_classes (ctx);
-	if (!classes || r_list_length (classes) == 0) {
-		if (classes) {
-			dart_class_list_free (classes);
-		}
-		return strdup ("[]");
+static void dump_class_json(PJ *pj, const DartClassInfo *ci) {
+	pj_o (pj);
+	pj_kn (pj, "ref", ci->ref_id);
+	if (ci->name) {
+		pj_ks (pj, "name", ci->name);
 	}
-	PJ *pj = pj_new ();
-	pj_a (pj);
-	RListIter *it;
-	DartClassInfo *ci;
-	r_list_foreach (classes, it, ci) {
-		if (!ci) {
-			continue;
-		}
+	if (ci->library_name || ci->library_ref) {
+		pj_k (pj, "library");
 		pj_o (pj);
-		pj_kn (pj, "ref", ci->ref_id);
-		if (ci->name) {
-			pj_ks (pj, "name", ci->name);
+		pj_kn (pj, "ref", ci->library_ref);
+		if (ci->library_name) {
+			pj_ks (pj, "name", ci->library_name);
 		}
-		if (ci->library_name || ci->library_ref) {
-			pj_k (pj, "library");
-			pj_o (pj);
-			pj_kn (pj, "ref", ci->library_ref);
-			if (ci->library_name) {
-				pj_ks (pj, "name", ci->library_name);
-			}
-			pj_end (pj);
-		}
-		if (ci->super_class_name || ci->super_class_ref) {
-			pj_k (pj, "super");
-			pj_o (pj);
-			pj_kn (pj, "ref", ci->super_class_ref);
-			if (ci->super_class_name) {
-				pj_ks (pj, "name", ci->super_class_name);
-			}
-			pj_end (pj);
-		}
-		pj_k (pj, "layout");
-		pj_o (pj);
-		pj_ki (pj, "instance_size", ci->instance_size);
-		pj_ki (pj, "type_params", ci->num_type_parameters);
-		pj_ki (pj, "type_arg_offset", ci->type_argument_offset);
 		pj_end (pj);
-		pj_k (pj, "flags");
+	}
+	if (ci->super_class_name || ci->super_class_ref) {
+		pj_k (pj, "super");
 		pj_o (pj);
-		pj_kb (pj, "abstract", (ci->flags & DART_CLASS_ABSTRACT) != 0);
-		pj_kb (pj, "enum", (ci->flags & DART_CLASS_ENUM) != 0);
-		pj_kb (pj, "mixin", (ci->flags & DART_CLASS_MIXIN) != 0);
-		pj_kb (pj, "toplevel", (ci->flags & DART_CLASS_TOPLEVEL) != 0);
+		pj_kn (pj, "ref", ci->super_class_ref);
+		if (ci->super_class_name) {
+			pj_ks (pj, "name", ci->super_class_name);
+		}
 		pj_end (pj);
-		if (ci->fields && r_list_length (ci->fields) > 0) {
-			pj_ka (pj, "fields");
-			RListIter *fit;
-			DartFieldInfo *fi;
-			r_list_foreach (ci->fields, fit, fi) {
-				pj_o (pj);
-				if (fi->name) {
-					pj_ks (pj, "name", fi->name);
-				}
-				if (fi->type_name) {
-					pj_ks (pj, "type", fi->type_name);
-				}
-				pj_ki (pj, "offset", fi->offset);
-				pj_k (pj, "flags");
-				pj_o (pj);
-				pj_kb (pj, "static", (fi->flags & DART_FIELD_STATIC) != 0);
-				pj_kb (pj, "final", (fi->flags & DART_FIELD_FINAL) != 0);
-				pj_kb (pj, "const", (fi->flags & DART_FIELD_CONST) != 0);
-				pj_kb (pj, "late", (fi->flags & DART_FIELD_LATE) != 0);
-				pj_end (pj);
-				pj_end (pj);
+	}
+	pj_k (pj, "layout");
+	pj_o (pj);
+	pj_ki (pj, "instance_size", ci->instance_size);
+	pj_ki (pj, "type_params", ci->num_type_parameters);
+	pj_ki (pj, "type_arg_offset", ci->type_argument_offset);
+	pj_end (pj);
+	pj_k (pj, "flags");
+	pj_o (pj);
+	pj_kb (pj, "abstract", (ci->flags & DART_CLASS_ABSTRACT) != 0);
+	pj_kb (pj, "enum", (ci->flags & DART_CLASS_ENUM) != 0);
+	pj_kb (pj, "mixin", (ci->flags & DART_CLASS_MIXIN) != 0);
+	pj_kb (pj, "toplevel", (ci->flags & DART_CLASS_TOPLEVEL) != 0);
+	pj_end (pj);
+	if (ci->fields && r_list_length (ci->fields) > 0) {
+		pj_ka (pj, "fields");
+		RListIter *fit;
+		DartFieldInfo *fi;
+		r_list_foreach (ci->fields, fit, fi) {
+			pj_o (pj);
+			if (fi->name) {
+				pj_ks (pj, "name", fi->name);
 			}
+			if (fi->type_name) {
+				pj_ks (pj, "type", fi->type_name);
+			}
+			pj_ki (pj, "offset", fi->offset);
+			pj_k (pj, "flags");
+			pj_o (pj);
+			pj_kb (pj, "static", (fi->flags & DART_FIELD_STATIC) != 0);
+			pj_kb (pj, "final", (fi->flags & DART_FIELD_FINAL) != 0);
+			pj_kb (pj, "const", (fi->flags & DART_FIELD_CONST) != 0);
+			pj_kb (pj, "late", (fi->flags & DART_FIELD_LATE) != 0);
+			pj_end (pj);
 			pj_end (pj);
 		}
-		if (ci->methods && r_list_length (ci->methods) > 0) {
-			pj_ka (pj, "methods");
-			RListIter *mit;
-			DartMethodInfo *mi;
-			r_list_foreach (ci->methods, mit, mi) {
-				pj_o (pj);
-				if (mi->name) {
-					pj_ks (pj, "name", mi->name);
-				}
-				pj_kn (pj, "entry", mi->entry_point);
-				if (mi->owner_name) {
-					pj_ks (pj, "owner", mi->owner_name);
-				}
-				pj_kn (pj, "kind_tag", mi->kind_tag);
-				pj_ks (pj, "kind", method_kind_name (mi->kind_tag));
-				pj_end (pj);
+		pj_end (pj);
+	}
+	if (ci->methods && r_list_length (ci->methods) > 0) {
+		pj_ka (pj, "methods");
+		RListIter *mit;
+		DartMethodInfo *mi;
+		r_list_foreach (ci->methods, mit, mi) {
+			pj_o (pj);
+			if (mi->name) {
+				pj_ks (pj, "name", mi->name);
 			}
+			pj_kn (pj, "entry", mi->entry_point);
+			if (mi->owner_name) {
+				pj_ks (pj, "owner", mi->owner_name);
+			}
+			pj_kn (pj, "kind_tag", mi->kind_tag);
+			pj_ks (pj, "kind", method_kind_name (mi->kind_tag));
 			pj_end (pj);
 		}
 		pj_end (pj);
 	}
 	pj_end (pj);
-	dart_class_list_free (classes);
-	return pj_drain (pj);
 }
 
-char *dart_pool_dump_classes(DartCtx *ctx) {
-	RList *classes = dart_pool_extract_classes (ctx);
-	if (!classes) {
-		return strdup ("# No classes found\n");
+static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt) {
+	const bool emit_r2 = fmt == 'r';
+	if (!ci || !ci->name) {
+		return;
 	}
-	RStrBuf *sb = r_strbuf_new ("");
-	RListIter *it;
-	DartClassInfo *ci;
-	r_list_foreach (classes, it, ci) {
-		if (!ci || !ci->name) {
-			continue;
-		}
-		r_strbuf_appendf (sb, "class %s", ci->name);
-		if (ci->super_class_name) {
-			r_strbuf_appendf (sb, " extends %s", ci->super_class_name);
-		}
-		r_strbuf_appendf (sb, " (size=%u", ci->instance_size);
-		if (ci->flags & DART_CLASS_ABSTRACT) {
-			r_strbuf_append (sb, " abstract");
-		}
-		if (ci->flags & DART_CLASS_ENUM) {
-			r_strbuf_append (sb, " enum");
-		}
-		if (ci->flags & DART_CLASS_MIXIN) {
-			r_strbuf_append (sb, " mixin");
-		}
-		r_strbuf_append (sb, ")\n");
-		if (ci->library_name) {
-			r_strbuf_appendf (sb, "  library: %s\n", ci->library_name);
-		}
-		if (ci->fields && r_list_length (ci->fields) > 0) {
-			r_strbuf_append (sb, "  fields:\n");
-			RListIter *fit;
-			DartFieldInfo *fi;
-			r_list_foreach (ci->fields, fit, fi) {
-				const char *tname = r_str_get (fi->type_name);
-				const char *fname = r_str_get (fi->name);
-				r_strbuf_appendf (sb, "    +0x%x %s %s", fi->offset, tname, fname);
-				if (fi->flags & DART_FIELD_STATIC) {
-					r_strbuf_append (sb, " static");
-				}
-				if (fi->flags & DART_FIELD_FINAL) {
-					r_strbuf_append (sb, " final");
-				}
-				if (fi->flags & DART_FIELD_CONST) {
-					r_strbuf_append (sb, " const");
-				}
-				r_strbuf_append (sb, "\n");
-			}
-		}
-		if (ci->methods && r_list_length (ci->methods) > 0) {
-			r_strbuf_append (sb, "  methods:\n");
-			RListIter *mit;
-			DartMethodInfo *mi;
-			r_list_foreach (ci->methods, mit, mi) {
-				r_strbuf_appendf (sb, "    0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, r_str_get (mi->name), method_kind_name (mi->kind_tag));
-			}
-		}
-	}
-	dart_class_list_free (classes);
-	return r_strbuf_drain (sb);
-}
-
-char *dart_pool_dump_classes_r2(DartCtx *ctx) {
-	RList *classes = dart_pool_extract_classes (ctx);
-	if (!classes) {
-		return strdup ("# No classes found\n");
-	}
-	RStrBuf *sb = r_strbuf_new ("# Dart classes extracted from snapshot\n");
-	RListIter *it;
-	DartClassInfo *ci;
-	r_list_foreach (classes, it, ci) {
-		if (!ci || !ci->name) {
-			continue;
-		}
+	if (emit_r2) {
 		char safe_name[256];
 		snprintf (safe_name, sizeof (safe_name), "%s", ci->name);
 		r_name_filter (safe_name, 0);
@@ -2968,9 +2880,7 @@ char *dart_pool_dump_classes_r2(DartCtx *ctx) {
 			RListIter *fit;
 			DartFieldInfo *fi;
 			r_list_foreach (ci->fields, fit, fi) {
-				const char *tname = r_str_get (fi->type_name);
-				const char *fname = r_str_get (fi->name);
-				r_strbuf_appendf (sb, " %s %s @ 0x%x;", tname, fname, fi->offset);
+				r_strbuf_appendf (sb, " %s %s @ 0x%x;", r_str_get (fi->type_name), r_str_get (fi->name), fi->offset);
 			}
 		}
 		r_strbuf_append (sb, " };\"\n");
@@ -2981,6 +2891,84 @@ char *dart_pool_dump_classes_r2(DartCtx *ctx) {
 				r_strbuf_appendf (sb, "#   method 0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, r_str_get (mi->name), method_kind_name (mi->kind_tag));
 			}
 		}
+		return;
+	}
+	r_strbuf_appendf (sb, "class %s", ci->name);
+	if (ci->super_class_name) {
+		r_strbuf_appendf (sb, " extends %s", ci->super_class_name);
+	}
+	r_strbuf_appendf (sb, " (size=%u", ci->instance_size);
+	if (ci->flags & DART_CLASS_ABSTRACT) {
+		r_strbuf_append (sb, " abstract");
+	}
+	if (ci->flags & DART_CLASS_ENUM) {
+		r_strbuf_append (sb, " enum");
+	}
+	if (ci->flags & DART_CLASS_MIXIN) {
+		r_strbuf_append (sb, " mixin");
+	}
+	r_strbuf_append (sb, ")\n");
+	if (ci->library_name) {
+		r_strbuf_appendf (sb, "  library: %s\n", ci->library_name);
+	}
+	if (ci->fields && r_list_length (ci->fields) > 0) {
+		r_strbuf_append (sb, "  fields:\n");
+		RListIter *fit;
+		DartFieldInfo *fi;
+		r_list_foreach (ci->fields, fit, fi) {
+			r_strbuf_appendf (sb, "    +0x%x %s %s", fi->offset, r_str_get (fi->type_name), r_str_get (fi->name));
+			if (fi->flags & DART_FIELD_STATIC) {
+				r_strbuf_append (sb, " static");
+			}
+			if (fi->flags & DART_FIELD_FINAL) {
+				r_strbuf_append (sb, " final");
+			}
+			if (fi->flags & DART_FIELD_CONST) {
+				r_strbuf_append (sb, " const");
+			}
+			r_strbuf_append (sb, "\n");
+		}
+	}
+	if (ci->methods && r_list_length (ci->methods) > 0) {
+		r_strbuf_append (sb, "  methods:\n");
+		RListIter *mit;
+		DartMethodInfo *mi;
+		r_list_foreach (ci->methods, mit, mi) {
+			r_strbuf_appendf (sb, "    0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, r_str_get (mi->name), method_kind_name (mi->kind_tag));
+		}
+	}
+}
+
+char *dart_pool_dump_classes(DartCtx *ctx, int fmt) {
+	RList *classes = dart_pool_extract_classes (ctx);
+	if (fmt == 'j') {
+		if (!classes || r_list_length (classes) == 0) {
+			if (classes) {
+				dart_class_list_free (classes);
+			}
+			return strdup ("[]");
+		}
+		PJ *pj = pj_new ();
+		pj_a (pj);
+		RListIter *it;
+		DartClassInfo *ci;
+		r_list_foreach (classes, it, ci) {
+			if (ci) {
+				dump_class_json (pj, ci);
+			}
+		}
+		pj_end (pj);
+		dart_class_list_free (classes);
+		return pj_drain (pj);
+	}
+	if (!classes) {
+		return strdup ("# No classes found\n");
+	}
+	RStrBuf *sb = r_strbuf_new (fmt == 'r'? "# Dart classes extracted from snapshot\n": "");
+	RListIter *it;
+	DartClassInfo *ci;
+	r_list_foreach (classes, it, ci) {
+		dump_class_text (sb, ci, fmt);
 	}
 	dart_class_list_free (classes);
 	return r_strbuf_drain (sb);
@@ -3241,107 +3229,99 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 	return string_list;
 }
 
-char *dart_pool_dump_strings_json(DartCtx *ctx) {
-	RList *strings = dart_pool_extract_strings (ctx);
-	if (!strings || r_list_length (strings) == 0) {
-		if (strings) {
-			dart_string_list_free (strings);
-		}
-		return strdup ("[]");
+static const char *string_ref_type_name(ut32 object_type) {
+	switch (object_type) {
+	case DART_REF_FUNCTION: return "function";
+	case DART_REF_CLASS: return "class";
+	case DART_REF_FIELD: return "field";
+	case DART_REF_LIBRARY: return "library";
+	case DART_REF_CODE: return "code";
+	default: return "other";
 	}
-	PJ *pj = pj_new ();
-	pj_a (pj);
-	RListIter *it;
-	DartStringInfo *si;
-	r_list_foreach (strings, it, si) {
-		if (!si) {
-			continue;
-		}
-		pj_o (pj);
-		pj_kn (pj, "ref", si->ref_id);
-		pj_ki (pj, "len", si->length);
-		if (si->value) {
-			pj_ks (pj, "value", si->value);
-		}
-		pj_ks (pj, "category", string_category_name (si->category));
-		pj_kb (pj, "two_byte", (si->flags & DART_STRING_TWO_BYTE) != 0);
-		pj_kb (pj, "canonical", (si->flags & DART_STRING_CANONICAL) != 0);
-		if (si->address) {
-			pj_kn (pj, "addr", si->address);
-		}
-		if (si->references && r_list_length (si->references) > 0) {
-			pj_ka (pj, "refs");
-			RListIter *rit;
-			DartStringRef *sr;
-			r_list_foreach (si->references, rit, sr) {
-				if (!sr) {
-					continue;
-				}
-				pj_o (pj);
-				pj_kn (pj, "obj", sr->object_ref);
-				const char *type_str = "other";
-				switch (sr->object_type) {
-				case DART_REF_FUNCTION: type_str = "function"; break;
-				case DART_REF_CLASS: type_str = "class"; break;
-				case DART_REF_FIELD: type_str = "field"; break;
-				case DART_REF_LIBRARY: type_str = "library"; break;
-				case DART_REF_CODE: type_str = "code"; break;
-				}
-				pj_ks (pj, "type", type_str);
-				pj_end (pj);
+}
+
+static void dump_string_json(PJ *pj, const DartStringInfo *si) {
+	pj_o (pj);
+	pj_kn (pj, "ref", si->ref_id);
+	pj_ki (pj, "len", si->length);
+	if (si->value) {
+		pj_ks (pj, "value", si->value);
+	}
+	pj_ks (pj, "category", string_category_name (si->category));
+	pj_kb (pj, "two_byte", (si->flags & DART_STRING_TWO_BYTE) != 0);
+	pj_kb (pj, "canonical", (si->flags & DART_STRING_CANONICAL) != 0);
+	if (si->address) {
+		pj_kn (pj, "addr", si->address);
+	}
+	if (si->references && r_list_length (si->references) > 0) {
+		pj_ka (pj, "refs");
+		RListIter *rit;
+		DartStringRef *sr;
+		r_list_foreach (si->references, rit, sr) {
+			if (!sr) {
+				continue;
 			}
+			pj_o (pj);
+			pj_kn (pj, "obj", sr->object_ref);
+			pj_ks (pj, "type", string_ref_type_name (sr->object_type));
 			pj_end (pj);
 		}
 		pj_end (pj);
 	}
 	pj_end (pj);
-	dart_string_list_free (strings);
-	return pj_drain (pj);
 }
 
-char *dart_pool_dump_strings(DartCtx *ctx) {
-	RList *strings = dart_pool_extract_strings (ctx);
-	if (!strings) {
-		return strdup ("# No strings found\n");
+static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt) {
+	if (!si || !si->value) {
+		return;
 	}
-	RStrBuf *sb = r_strbuf_new ("");
-	RListIter *it;
-	DartStringInfo *si;
-	r_list_foreach (strings, it, si) {
-		if (!si || !si->value) {
-			continue;
-		}
-		char *str = r_str_escape_utf8 (si->value, false, true);
-		const char *cat = string_category_name (si->category);
-		r_strbuf_appendf (sb, "0x%08" PRIx64 " %4d :%s \"%s\"\n", si->address, si->length, cat, str);
-		free (str);
-		if (si->references && r_list_length (si->references) > 0) {
-			r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
-		}
-	}
-	dart_string_list_free (strings);
-	return r_strbuf_drain (sb);
-}
-
-char *dart_pool_dump_strings_r2(DartCtx *ctx) {
-	RList *strings = dart_pool_extract_strings (ctx);
-	if (!strings) {
-		return strdup ("# No strings found\n");
-	}
-	RStrBuf *sb = r_strbuf_new ("# Dart Strings\n");
-	RListIter *it;
-	DartStringInfo *si;
-	r_list_foreach (strings, it, si) {
-		if (!si || !si->value) {
-			continue;
-		}
+	if (fmt == 'r') {
 		// | iz+ ([addr]) ([len]) ([type])  add string manually (addr=current seek if not specified, len=auto, type=auto-detect)
 		r_strbuf_appendf (sb, "iz+ 0x%08" PFMT64x " %d\n", si->address, si->length);
-		if (si->references && r_list_length (si->references) > 0) {
-			r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
-		}
+	} else {
+		char *str = r_str_escape_utf8 (si->value, false, true);
+		r_strbuf_appendf (sb, "0x%08" PRIx64 " %4d :%s \"%s\"\n", si->address, si->length, string_category_name (si->category), str);
+		free (str);
 	}
-	r_strbuf_appendf (sb, "# Total: %d strings\n", r_list_length (strings));
+	if (si->references && r_list_length (si->references) > 0) {
+		r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
+	}
+}
+
+char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
+	RList *strings = dart_pool_extract_strings (ctx);
+	if (fmt == 'j') {
+		if (!strings || r_list_length (strings) == 0) {
+			if (strings) {
+				dart_string_list_free (strings);
+			}
+			return strdup ("[]");
+		}
+		PJ *pj = pj_new ();
+		pj_a (pj);
+		RListIter *it;
+		DartStringInfo *si;
+		r_list_foreach (strings, it, si) {
+			if (si) {
+				dump_string_json (pj, si);
+			}
+		}
+		pj_end (pj);
+		dart_string_list_free (strings);
+		return pj_drain (pj);
+	}
+	if (!strings) {
+		return strdup ("# No strings found\n");
+	}
+	RStrBuf *sb = r_strbuf_new (fmt == 'r'? "# Dart Strings\n": "");
+	RListIter *it;
+	DartStringInfo *si;
+	r_list_foreach (strings, it, si) {
+		dump_string_text (sb, si, fmt);
+	}
+	if (fmt == 'r') {
+		r_strbuf_appendf (sb, "# Total: %d strings\n", r_list_length (strings));
+	}
 	dart_string_list_free (strings);
 	return r_strbuf_drain (sb);
 }
@@ -3434,101 +3414,86 @@ static int prepare_header_data(DartCtx *ctx) {
 	return 0;
 }
 
-char *dart_pool_dump_header_json(DartCtx *ctx) {
+char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	if (prepare_header_data (ctx) != 0) {
-		return strdup ("{\"error\":\"Dart snapshots not found\"}");
+		if (fmt == 'j') {
+			return strdup ("{\"error\":\"Dart snapshots not found\"}");
+		}
+		return fmt == 'r'? strdup ("# Error: Dart snapshots not found\n"): strdup ("Error: Dart snapshots not found\n");
 	}
 	const char *version = dart_version_from_hash (ctx->snapshot_hash);
-	ut64 header_addr = ctx->iso_data? ctx->iso_data: ctx->vm_data;
-	SnapshotHeader sh = read_snapshot_hdr (ctx, header_addr);
-
-	PJ *pj = pj_new ();
-	if (!pj) {
-		return strdup ("{\"error\":\"Failed to create JSON\"}");
-	}
-	pj_o (pj);
-	pj_kn (pj, "kind", sh.kind);
-	pj_ks (pj, "hash", r_str_get (ctx->snapshot_hash));
-	pj_kn (pj, "vm_data", ctx->vm_data);
-	pj_kn (pj, "vm_instr", ctx->vm_instr);
-	pj_kn (pj, "iso_data", ctx->iso_data);
-	pj_kn (pj, "iso_instr", ctx->iso_instr);
-	pj_k (pj, "cluster");
-	pj_o (pj);
-	pj_kn (pj, "base", sh.nb);
-	pj_kn (pj, "objs", sh.no);
-	pj_kn (pj, "clusters", sh.nc);
-	pj_kn (pj, "it_len", sh.itlen);
-	pj_kn (pj, "it_off", sh.itdata);
-	pj_kn (pj, "total", sh.total_len);
-	pj_end (pj);
-	pj_ki (pj, "cws", ctx->compressed_word_size);
-	pj_ks (pj, "dart_version", version? version: "unknown");
-	if (ctx->layout) {
-		const DartVerLayout *l = ctx->layout;
-		pj_ks (pj, "tag_style", dart_tag_style_to_string (l->tag_style));
-		pj_ki (pj, "alignment", l->max_alignment);
-		pj_ki (pj, "header_fields", l->header_fields);
-		pj_kn (pj, "it_capacity", l->it_cap);
-		pj_k (pj, "cid_table");
+	if (fmt == 'j') {
+		ut64 header_addr = ctx->iso_data? ctx->iso_data: ctx->vm_data;
+		SnapshotHeader sh = read_snapshot_hdr (ctx, header_addr);
+		PJ *pj = pj_new ();
+		if (!pj) {
+			return strdup ("{\"error\":\"Failed to create JSON\"}");
+		}
 		pj_o (pj);
-		pj_ki (pj, "cid_class", l->cid_class);
-		pj_ki (pj, "cid_function", l->cid_function);
-		pj_ki (pj, "cid_code", l->cid_code);
-		pj_ki (pj, "cid_string", l->cid_string);
-		pj_ki (pj, "cid_one_byte_string", l->cid_one_byte_string);
-		pj_ki (pj, "cid_two_byte_string", l->cid_two_byte_string);
-		pj_ki (pj, "cid_array", l->cid_array);
-		pj_ki (pj, "cid_mint", l->cid_mint);
-		pj_ki (pj, "cid_object_pool", l->cid_object_pool);
-		pj_ki (pj, "num_predefined", l->num_predefined_cids);
+		pj_kn (pj, "kind", sh.kind);
+		pj_ks (pj, "hash", r_str_get (ctx->snapshot_hash));
+		pj_kn (pj, "vm_data", ctx->vm_data);
+		pj_kn (pj, "vm_instr", ctx->vm_instr);
+		pj_kn (pj, "iso_data", ctx->iso_data);
+		pj_kn (pj, "iso_instr", ctx->iso_instr);
+		pj_k (pj, "cluster");
+		pj_o (pj);
+		pj_kn (pj, "base", sh.nb);
+		pj_kn (pj, "objs", sh.no);
+		pj_kn (pj, "clusters", sh.nc);
+		pj_kn (pj, "it_len", sh.itlen);
+		pj_kn (pj, "it_off", sh.itdata);
+		pj_kn (pj, "total", sh.total_len);
 		pj_end (pj);
+		pj_ki (pj, "cws", ctx->compressed_word_size);
+		pj_ks (pj, "dart_version", version? version: "unknown");
+		if (ctx->layout) {
+			const DartVerLayout *l = ctx->layout;
+			pj_ks (pj, "tag_style", dart_tag_style_to_string (l->tag_style));
+			pj_ki (pj, "alignment", l->max_alignment);
+			pj_ki (pj, "header_fields", l->header_fields);
+			pj_kn (pj, "it_capacity", l->it_cap);
+			pj_k (pj, "cid_table");
+			pj_o (pj);
+			pj_ki (pj, "cid_class", l->cid_class);
+			pj_ki (pj, "cid_function", l->cid_function);
+			pj_ki (pj, "cid_code", l->cid_code);
+			pj_ki (pj, "cid_string", l->cid_string);
+			pj_ki (pj, "cid_one_byte_string", l->cid_one_byte_string);
+			pj_ki (pj, "cid_two_byte_string", l->cid_two_byte_string);
+			pj_ki (pj, "cid_array", l->cid_array);
+			pj_ki (pj, "cid_mint", l->cid_mint);
+			pj_ki (pj, "cid_object_pool", l->cid_object_pool);
+			pj_ki (pj, "num_predefined", l->num_predefined_cids);
+			pj_end (pj);
+		}
+		pj_end (pj);
+		return pj_drain (pj);
 	}
-	pj_end (pj);
-	return pj_drain (pj);
-}
-
-char *dart_pool_dump_header_r2(DartCtx *ctx) {
-	if (prepare_header_data (ctx) != 0) {
-		return strdup ("# Error: Dart snapshots not found\n");
+	if (fmt == 'r') {
+		RStrBuf *sb = r_strbuf_new ("'# Dart AOT Snapshot Info\n");
+		// Create flags for snapshot addresses
+		r_strbuf_appendf (sb, "'fs dart\n");
+		r_strbuf_appendf (sb, "'f dart.vm_data = 0x%" PFMT64x "\n", (ut64)ctx->vm_data);
+		r_strbuf_appendf (sb, "'f dart.vm_instr = 0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
+		r_strbuf_appendf (sb, "'f dart.iso_data = 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
+		r_strbuf_appendf (sb, "'f dart.iso_instr = 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+		// Add comments with metadata
+		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart snapshot hash: %s\n", (ut64)ctx->vm_data, ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
+		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart version: %s\n", (ut64)ctx->vm_data, version? version: "unknown");
+		if (ctx->layout) {
+			const DartVerLayout *l = ctx->layout;
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", (ut64)ctx->vm_data, dart_tag_style_to_string (l->tag_style));
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Alignment: %d, CWS: %d\n", (ut64)ctx->vm_data, l->max_alignment, l->compressed_word_size);
+		}
+		return r_strbuf_drain (sb);
 	}
-	const char *version = dart_version_from_hash (ctx->snapshot_hash);
-
-	RStrBuf *sb = r_strbuf_new ("'# Dart AOT Snapshot Info\n");
-
-	// Create flags for snapshot addresses
-	r_strbuf_appendf (sb, "'fs dart\n");
-	r_strbuf_appendf (sb, "'f dart.vm_data = 0x%" PFMT64x "\n", (ut64)ctx->vm_data);
-	r_strbuf_appendf (sb, "'f dart.vm_instr = 0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
-	r_strbuf_appendf (sb, "'f dart.iso_data = 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
-	r_strbuf_appendf (sb, "'f dart.iso_instr = 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
-
-	// Add comments with metadata
-	r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart snapshot hash: %s\n", (ut64)ctx->vm_data, ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
-	r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart version: %s\n", (ut64)ctx->vm_data, version? version: "unknown");
-
-	if (ctx->layout) {
-		const DartVerLayout *l = ctx->layout;
-		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", (ut64)ctx->vm_data, dart_tag_style_to_string (l->tag_style));
-		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Alignment: %d, CWS: %d\n", (ut64)ctx->vm_data, l->max_alignment, l->compressed_word_size);
-	}
-
-	return r_strbuf_drain (sb);
-}
-
-char *dart_pool_dump_header(DartCtx *ctx) {
-	if (prepare_header_data (ctx) != 0) {
-		return strdup ("Error: Dart snapshots not found\n");
-	}
-	const char *version = dart_version_from_hash (ctx->snapshot_hash);
 
 	RStrBuf *sb = r_strbuf_new ("");
-
 	r_strbuf_appendf (sb, "Dart AOT Snapshot Header\n");
 	r_strbuf_appendf (sb, "========================\n\n");
 	r_strbuf_appendf (sb, "snapshot_hash: %s\n", ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
 	r_strbuf_appendf (sb, "dart_version:  %s\n", version? version: "unknown");
-
 	if (ctx->layout) {
 		const DartVerLayout *l = ctx->layout;
 		r_strbuf_appendf (sb, "tag_style:     %s\n", dart_tag_style_to_string_verbose (l->tag_style));

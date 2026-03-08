@@ -175,76 +175,31 @@ int main(int argc, char **argv) {
 
 	int ret = 0;
 	char *output = NULL;
+	int fmt = opt_json? 'j': opt_r2? 'r'
+					: 0;
 
 	switch (action) {
 	case ACTION_DUMP_STRINGS:
-		if (opt_json) {
-			output = dart_pool_dump_strings_json (&dctx);
-		} else if (opt_r2) {
-			output = dart_pool_dump_strings_r2 (&dctx);
-		} else {
-			output = dart_pool_dump_strings (&dctx);
-		}
+		output = dart_pool_dump_strings (&dctx, fmt);
 		break;
 	case ACTION_DUMP_CLASSES:
 		dctx.dump_classes = 1;
 		dctx.dump_fields = 1;
-		if (opt_json) {
-			output = dart_pool_dump_classes_json (&dctx);
-		} else if (opt_r2) {
-			output = dart_pool_dump_classes_r2 (&dctx);
-		} else {
-			output = dart_pool_dump_classes (&dctx);
-		}
+		output = dart_pool_dump_classes (&dctx, fmt);
 		break;
 	case ACTION_DUMP_TYPES:
 		dctx.dump_classes = 3;
-		if (opt_json) {
-			output = dart_pool_dump_classes_json (&dctx);
-		} else if (opt_r2) {
-			output = dart_pool_dump_classes_r2 (&dctx);
-		} else {
-			output = dart_pool_dump_classes (&dctx);
-		}
+		output = dart_pool_dump_classes (&dctx, fmt);
 		break;
 	case ACTION_DUMP_HEADER:
-		app->dctx.dump_header = 1;
-		if (opt_json) {
-			output = dart_pool_dump_header_json (&app->dctx);
-		} else if (opt_r2) {
-			output = dart_pool_dump_header_r2 (&app->dctx);
-		} else {
-			output = dart_pool_dump_header (&app->dctx);
-		}
+		output = dart_pool_dump_header (&app->dctx, fmt);
 		break;
 	case ACTION_DUMP_FUNCS:
 		dart_app_load_info (app);
-		if (opt_json) {
-			output = dart_dumper_dump_funcs_json (app);
-		} else if (opt_r2) {
-			output = dart_dumper_dump_funcs_r2 (app);
-		} else {
-			if (app->functions) {
-				RListIter *it;
-				DartFunction *fn;
-				int count = 0;
-				int limit = dctx.dump_fns_limit? dctx.dump_fns_limit: -1;
-				r_list_foreach (app->functions, it, fn) {
-					if (!fn || !fn->name) {
-						continue;
-					}
-					if (limit > 0 && count >= limit) {
-						break;
-					}
-					printf ("0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
-					count++;
-				}
-			}
-		}
+		output = dart_dumper_dump_funcs (app, fmt);
 		break;
 	case ACTION_DUMP_IT:
-		output = dart_pool_dump_it (&app->dctx, opt_json? 'j': opt_r2? 'r'
-									: 0);
+		output = dart_pool_dump_it (&app->dctx, fmt);
 		break;
 	case ACTION_DUMP_R2SCRIPT:
 		dart_app_load_info (app);
