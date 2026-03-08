@@ -6,6 +6,37 @@
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 
+#define R2FLUTTER_CFG_MAPFILE "r2flutter.mapfile"
+#define R2FLUTTER_CFG_NAMEPOOL "r2flutter.namepool"
+
+static bool r2flutter_core_init(RCorePluginSession *cps) {
+	R_RETURN_VAL_IF_FAIL (cps && cps->core && cps->core->config, false);
+	RConfig *cfg = cps->core->config;
+	r_config_lock (cfg, false);
+	RConfigNode *node = r_config_set (cfg, R2FLUTTER_CFG_MAPFILE, "");
+	r_config_node_desc (node, "Flutter obfuscation map JSON path");
+	node = r_config_set_b (cfg, R2FLUTTER_CFG_NAMEPOOL, false);
+	r_config_node_desc (node, "Enable heuristic name-pool fallback resolution");
+	r_config_lock (cfg, true);
+	return true;
+}
+
+static bool r2flutter_core_fini(RCorePluginSession *cps) {
+	R_RETURN_VAL_IF_FAIL (cps && cps->core && cps->core->config, false);
+	RConfig *cfg = cps->core->config;
+	r_config_lock (cfg, false);
+	r_config_rm (cfg, R2FLUTTER_CFG_MAPFILE);
+	r_config_rm (cfg, R2FLUTTER_CFG_NAMEPOOL);
+	r_config_lock (cfg, true);
+	return true;
+}
+
+static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
+	R_RETURN_IF_FAIL (core && core->config && dctx);
+	dctx->obf_map_path = r_config_get (core->config, R2FLUTTER_CFG_MAPFILE);
+	dctx->use_name_pool = r_config_get_b (core->config, R2FLUTTER_CFG_NAMEPOOL);
+}
+
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
 		"Usage: r2flutter [-jirfqncFstxH] [args]\n"
@@ -97,6 +128,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		.core = core,
 		.no_stubs = true
 	};
+	r2flutter_apply_config (core, &dctx);
 
 	if (!*args) {
 		r2flutter_analyze (core, &dctx, 0);
@@ -262,6 +294,8 @@ RCorePlugin r_core_plugin_flutter = {
 		.license = "LGPL-3.0",
 		.version = R2FLUTTER_VERSION,
 	},
+	.init = r2flutter_core_init,
+	.fini = r2flutter_core_fini,
 	.call = r_cmd_r2flutter_call,
 };
 
