@@ -1,0 +1,13 @@
+{
+  "name": "r2 plugin strings short flag",
+  "cwd": "test",
+  "cmd": [
+    "sh",
+    "-lc",
+    "r2 -NN -q -escr.color=0 -c 'L ../src/r2/core_flutter.dylib;r2flutter -s|head -c 200;q' bins/ios/Runner.app/Frameworks/App.framework/App"
+  ],
+  "timeout": 20,
+  "expect": {
+    "equals": "[{\"ref\":0,\"len\":6,\"value\":\"__TEXT\",\"category\":\"lib\",\"two_byte\":false,\"canonical\":true,\"addr\":40},{\"ref\":1,\"len\":6,\"value\":\"__text\",\"category\":\"lib\",\"two_byte\":false,\"canonical\":true,\"addr\":104},{\"ref\""
+  }
+}

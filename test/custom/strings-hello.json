@@ -1,0 +1,11 @@
+{
+  "name": "strings-hello",
+  "cmd": ["../bin/r2flutter", "-j", "--dump-strings", "../dart-hello-world/hello.aot"],
+  "expect": {
+    "contains": [
+      "\"value\":\"Hello, Dart!\"",
+      "\"category\":\"app\"",
+      "\"two_byte\":false"
+    ]
+  }
+}
