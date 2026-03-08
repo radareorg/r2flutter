@@ -1,0 +1,37 @@
+NAME=dump-it-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --limit 3 --dump-it bins/ios/Runner.app
+EOF
+EXPECT=<<EOF
+# length=7670 first_entry_with_code=0 canonical_stack_map_entries_offset=160751
+0 0xe768 code func.0000e768
+1 0xe770 code func.0000e770
+2 0xe7a0 code func.0000e7a0
+EOF
+RUN
+
+NAME=json-it-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j --limit 2 --dump-it bins/ios/Runner.app
+EOF
+EXPECT=<<EOF
+{"length":7670,"first_entry_with_code":0,"canonical_stack_map_entries_offset":160751,"entries":[{"index":0,"code_index":0,"address":59240,"pc_offset":104,"stack_map_offset":61376,"kind":"code","name":"func.0000e768"},{"index":1,"code_index":1,"address":59248,"pc_offset":112,"stack_map_offset":61376,"kind":"code","name":"func.0000e770"}]}
+EOF
+RUN
+
+NAME=r2-it-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -r --limit 2 --dump-it bins/ios/Runner.app
+EOF
+EXPECT=<<EOF
+# Dart InstructionTable entries
+# length=7670 first_entry_with_code=0 canonical_stack_map_entries_offset=160751
+# it[0] func.0000e768
+f it.code_0 = 0xe768
+# it[1] func.0000e770
+f it.code_1 = 0xe770
+EOF
+RUN
