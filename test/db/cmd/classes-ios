@@ -1,0 +1,14 @@
+NAME=text-classes-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --dump-classes bins/ios/Runner.app 2>/dev/null | sed -n '1,6p'
+EOF
+EXPECT=<<EOF
+class _Uint16List (size=0)
+class _ExternalInt64Array (size=0)
+class FutureOr (size=0)
+class _Set (size=0)
+class Int32List. (size=0)
+class Float32List (size=0)
+EOF
+RUN

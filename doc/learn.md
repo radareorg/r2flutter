@@ -21,6 +21,14 @@ The command now:
 
 The parser also needs a wider scan than the raw `it_off` hint on some iOS samples, because the offset can land inside the table payload rather than exactly on the `InstructionsTable::Data` header.
 
+## r2r Coverage Needs Short Cross-Platform Windows
+
+**Finding**: The `test/db/cmd` suite is more maintainable when every dump mode is exercised on both Android and iOS using short deterministic windows instead of full dumps.
+
+The current matrix covers `--dump-header`, `--dump-funcs`, `--dump-it`, `--dump-strings`, `--dump-classes`, and `--dump-types` against `test/bins/android/first` and `test/bins/ios/Runner.app`, using `--limit` or `sed -n` to keep expectations stable and fast.
+
+This avoids brittle megabyte-scale expectations while still checking platform-specific snapshot addresses, instruction table metadata, and representative function/class/type/string prefixes.
+
 ## Production AOT Snapshots Lack Class Metadata
 
 **Finding**: Class definitions (kClassCid=5) are not serialized in production Flutter builds.

@@ -1,0 +1,11 @@
+NAME=text-funcs-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --no-stubs --dump-funcs --limit 3 bins/android/first 2>/dev/null
+EOF
+EXPECT=<<EOF
+0x66700 method.fn_0
+0x66704 method.fn_1
+0x66708 method.fn_2
+EOF
+RUN

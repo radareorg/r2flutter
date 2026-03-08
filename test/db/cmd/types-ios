@@ -1,7 +1,7 @@
-NAME=r2-classes-android
+NAME=r2-types-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r --dump-classes bins/android/first 2>/dev/null | sed -n '1,7p'
+!!../bin/r2flutter -r --dump-types bins/ios/Runner.app 2>/dev/null | sed -n '1,7p'
 EOF
 EXPECT=<<EOF
 # Dart classes extracted from snapshot

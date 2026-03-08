@@ -1,0 +1,37 @@
+NAME=dump-it-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --limit 3 --dump-it bins/android/first 2>/dev/null
+EOF
+EXPECT=<<EOF
+# length=1089546 first_entry_with_code=0 canonical_stack_map_entries_offset=0
+0 0x66700 code method.fn_0
+1 0x66704 code method.fn_1
+2 0x66708 code method.fn_2
+EOF
+RUN
+
+NAME=json-it-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j --limit 2 --dump-it bins/android/first 2>/dev/null
+EOF
+EXPECT=<<EOF
+{"length":1089546,"first_entry_with_code":0,"canonical_stack_map_entries_offset":0,"entries":[{"index":0,"code_index":0,"address":419584,"pc_offset":0,"stack_map_offset":0,"kind":"code","name":"method.fn_0"},{"index":1,"code_index":1,"address":419588,"pc_offset":4,"stack_map_offset":0,"kind":"code","name":"method.fn_1"}]}
+EOF
+RUN
+
+NAME=r2-it-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -r --limit 2 --dump-it bins/android/first 2>/dev/null
+EOF
+EXPECT=<<EOF
+# Dart InstructionTable entries
+# length=1089546 first_entry_with_code=0 canonical_stack_map_entries_offset=0
+# it[0] method.fn_0
+f it.code_0 = 0x66700
+# it[1] method.fn_1
+f it.code_1 = 0x66704
+EOF
+RUN

@@ -1,0 +1,14 @@
+NAME=text-strings-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --dump-strings bins/android/first 2>/dev/null | sed -n '1,6p'
+EOF
+EXPECT=<<EOF
+0x00000214  165 :app "f91b8b03bf7f30a5e983fd19b23d978dproduct no-code_comments no-dwarf_stack_traces_mode no-lazy_dispatchers dedup_instructions no-tsan arm64 linux no-compressed-pointers"
+0x00001660   11 :lib "_Uint16List"
+0x00001680   19 :lib "_ExternalInt64Array"
+0x000016b0   17 :lib "_handleException2"
+0x000016d0    8 :lib "FutureOr"
+0x000016f0   18 :app "boolean expression"
+EOF
+RUN
