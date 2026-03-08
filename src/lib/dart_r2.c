@@ -128,7 +128,7 @@ int dart_r2_find_snapshots(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso
 		"DartIsolateSnapshotData",
 		"_kDartIsolateSnapshotInstructions",
 		"DartIsolateSnapshotInstructions",
-	};
+};
 	ut64 *outs[4] = { vm_data, vm_instr, iso_data, iso_instr };
 	if (core->bin) {
 		RVecRBinSymbol *v = r_bin_get_symbols_vec (core->bin);

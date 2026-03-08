@@ -8,6 +8,19 @@ This document summarizes key technical findings discovered during the implementa
 
 This makes the legacy dump-snapshot flag redundant and keeps scripts relying on `cluster` and snapshot addresses intact.
 
+## InstructionTable Dumping Is A Real Output Mode Now
+
+**Finding**: `--dump-it` should be treated like the other dump commands, not as a stderr-only debug side effect.
+
+The command now:
+
+- writes to stdout
+- honors `-j` for JSON
+- honors `-r` for radare2 flags
+- honors `--limit` for manageable output on large apps
+
+The parser also needs a wider scan than the raw `it_off` hint on some iOS samples, because the offset can land inside the table payload rather than exactly on the `InstructionsTable::Data` header.
+
 ## Production AOT Snapshots Lack Class Metadata
 
 **Finding**: Class definitions (kClassCid=5) are not serialized in production Flutter builds.

@@ -112,6 +112,16 @@ typedef struct DartMethodInfo {
 	ut32 flags;
 } DartMethodInfo;
 
+typedef struct DartInstructionTableEntry {
+	ut64 index;
+	ut64 code_index;
+	ut64 address;
+	ut32 pc_offset;
+	ut32 stack_map_offset;
+	bool has_code;
+	char *name;
+} DartInstructionTableEntry;
+
 // ============================================================================
 // Main API - all functions take DartCtx*
 // ============================================================================
@@ -150,6 +160,15 @@ char *dart_pool_dump_strings(DartCtx *ctx);
 char *dart_pool_dump_strings_json(DartCtx *ctx);
 char *dart_pool_dump_strings_r2(DartCtx *ctx);
 void dart_string_list_free(RList *list);
+
+// ============================================================================
+// InstructionTable extraction API
+// ============================================================================
+
+RList *dart_pool_extract_instruction_table(DartCtx *ctx);
+char *dart_pool_dump_it(DartCtx *ctx, int fmt);
+void dart_instruction_table_entry_free(DartInstructionTableEntry *ie);
+void dart_instruction_table_list_free(RList *list);
 
 #ifdef __cplusplus
 }

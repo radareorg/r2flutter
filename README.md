@@ -80,12 +80,21 @@ Actions:
   --dump-types     Print string-based type names
   --dump-header    Print Dart AOT snapshot header info
   --dump-fns N     Print first N functions (addr name)
-  --dump-it        Print instruction table entry addresses to stderr
+  --dump-it        Print instruction table entries to stdout
 Options:
   --no-stubs       Do not emit ELF/r2 stub functions
+  --limit <N>      Limit output items for dump-style commands
   --use-name-pool  Assign names from data image strings when unknown
   --dump-fields    Include field details in class output
 $
+```
+
+`--dump-it` honors the global format modifiers:
+
+```bash
+bin/r2flutter --dump-it test/bins/ios/Runner.app
+bin/r2flutter -j --limit 16 --dump-it test/bins/ios/Runner.app
+bin/r2flutter -r --limit 16 --dump-it test/bins/ios/Runner.app
 ```
 
 ## Dependencies

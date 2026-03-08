@@ -18,13 +18,13 @@ Actions:
   --dump-classes        Print extracted class information
   --dump-funcs          Print all extracted functions (addr name)
   --dump-header         Print Dart AOT snapshot header info
-  --dump-it             Print instruction table entry addresses to stderr
+  --dump-it             Print instruction table entries to stdout
   --dump-r2script       Print radare2 script for snapshot analysis
   --dump-strings        Print all extracted strings
   --dump-types          Print string-based type names
 Options:
   --no-stubs            Do not emit ELF/r2 stub functions
-  --limit <N>           Limit output to N items (applies to dump-funcs, etc.)
+  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
   --use-name-pool       Assign names from data image strings when unknown
 ===
 Usage: r2flutter [-jirfqsncFStH] [args]

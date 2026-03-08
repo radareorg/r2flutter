@@ -134,8 +134,13 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		r2flutter_analyze (core, &dctx, 1);
 		return true;
 	case 'i':
-		dctx.dump_it = true;
-		r2flutter_analyze (core, &dctx, 1);
+		{
+			char *out = dart_pool_dump_it (&dctx, 0);
+			if (out) {
+				r_cons_printf (core->cons, "%s", out);
+				free (out);
+			}
+		}
 		return true;
 	case 'r':
 		r2flutter_dump_r2script (core, &dctx);
@@ -174,7 +179,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 				RListIter *it;
 				DartFunction *fn;
 				r_list_foreach (app->functions, it, fn) {
-				if (!fn || !fn->name) {
+					if (!fn || !fn->name) {
 						continue;
 					}
 					r_cons_printf (core->cons, "0x%08" PFMT64x " %s\n", fn->addr, fn->name);

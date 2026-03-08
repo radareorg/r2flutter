@@ -37,6 +37,9 @@ typedef struct {
 	ut64 num_base_objects;
 	ut64 num_objects;
 	ut64 num_clusters;
+	ut64 it_length;
+	ut64 it_first_with_code;
+	ut64 it_canonical_stack_map_offset;
 	int verbose;
 	bool no_stubs;
 	int dump_snapshot_json;

@@ -30,13 +30,13 @@ static const char usage_text[] =
 	"  --dump-classes        Print extracted class information\n"
 	"  --dump-funcs          Print all extracted functions (addr name)\n"
 	"  --dump-header         Print Dart AOT snapshot header info\n"
-	"  --dump-it             Print instruction table entry addresses to stderr\n"
+	"  --dump-it             Print instruction table entries to stdout\n"
 	"  --dump-r2script       Print radare2 script for snapshot analysis\n"
 	"  --dump-strings        Print all extracted strings\n"
 	"  --dump-types          Print string-based type names\n"
 	"Options:\n"
 	"  --no-stubs            Do not emit ELF/r2 stub functions\n"
-	"  --limit <N>           Limit output to N items (applies to dump-funcs, etc.)\n"
+	"  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)\n"
 	"  --use-name-pool       Assign names from data image strings when unknown\n";
 
 static void print_usage(const char *argv0) {
@@ -243,7 +243,8 @@ int main(int argc, char **argv) {
 		}
 		break;
 	case ACTION_DUMP_IT:
-		dart_app_load_info (app);
+		output = dart_pool_dump_it (&app->dctx, opt_json? 'j': opt_r2? 'r'
+									: 0);
 		break;
 	case ACTION_DUMP_R2SCRIPT:
 		dart_app_load_info (app);

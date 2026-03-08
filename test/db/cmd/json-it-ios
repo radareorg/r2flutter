@@ -1,0 +1,9 @@
+NAME=json-it-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j --limit 2 --dump-it bins/ios/Runner.app
+EOF
+EXPECT=<<EOF
+{"length":7670,"first_entry_with_code":0,"canonical_stack_map_entries_offset":160751,"entries":[{"index":0,"code_index":0,"address":59240,"pc_offset":104,"stack_map_offset":61376,"kind":"code","name":"func.0000e768"},{"index":1,"code_index":1,"address":59248,"pc_offset":112,"stack_map_offset":61376,"kind":"code","name":"func.0000e770"}]}
+EOF
+RUN
