@@ -23,11 +23,10 @@ Actions:
   --dump-strings        Print all extracted strings
   --dump-types          Print string-based type names
 Options:
-  --no-stubs            Do not emit ELF/r2 stub functions
   --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
   --use-name-pool       Assign names from data image strings when unknown
 ===
-Usage: r2flutter [-jirfqsncFStH] [args]
+Usage: r2flutter [-jirfqncFStH] [args]
 | r2flutter          analyze dart snapshot and apply flags/comments
 | r2flutter -c       dump classes as JSON
 | r2flutter -C       dump classes as r2 type definitions
@@ -40,7 +39,6 @@ Usage: r2flutter [-jirfqsncFStH] [args]
 | r2flutter -q       analyze quietly (no extra output)
 | r2flutter -r       output r2 script (like rabin2 -r)
 | r2flutter -S       dump all strings as JSON
-| r2flutter -s       include ELF/r2 stub symbols
 | r2flutter -t       dump strings as r2 comments
 EOF
 RUN

@@ -29,6 +29,11 @@ def run_one(spec_path):
         if s not in out:
             print(f"[FAIL] {name}: missing substring: {s!r}", file=sys.stderr)
             ok = False
+    not_contains = expect.get('not_contains') or []
+    for s in not_contains:
+        if s in out:
+            print(f"[FAIL] {name}: unexpected substring: {s!r}", file=sys.stderr)
+            ok = False
     # exact match
     eq = expect.get('equals')
     if eq is not None:
@@ -76,4 +81,3 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
-

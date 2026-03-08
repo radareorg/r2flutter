@@ -35,7 +35,6 @@ static const char usage_text[] =
 	"  --dump-strings        Print all extracted strings\n"
 	"  --dump-types          Print string-based type names\n"
 	"Options:\n"
-	"  --no-stubs            Do not emit ELF/r2 stub functions\n"
 	"  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)\n"
 	"  --use-name-pool       Assign names from data image strings when unknown\n";
 
@@ -70,7 +69,9 @@ int main(int argc, char **argv) {
 	bool opt_json = false;
 	bool opt_r2 = false;
 	DumpAction action = ACTION_NONE;
-	DartCtx dctx = { 0 };
+	DartCtx dctx = {
+		.no_stubs = true
+	};
 
 	for (int i = 1; i < argc; i++) {
 		const char *a = argv[i];
@@ -114,8 +115,6 @@ int main(int argc, char **argv) {
 				dctx.dump_it = true;
 			} else if (!strcmp (a, "--dump-r2script")) {
 				action = ACTION_DUMP_R2SCRIPT;
-			} else if (!strcmp (a, "--no-stubs")) {
-				dctx.no_stubs = true;
 			} else if (!strcmp (a, "--use-name-pool")) {
 				dctx.use_name_pool = true;
 			}

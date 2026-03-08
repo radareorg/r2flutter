@@ -1,13 +1,12 @@
 {
   "name": "dump-funcs-it-mafia",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-n", "--no-stubs", "--dump-funcs", "--limit", "5", "bins/android/mafia/"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-funcs", "--limit", "5", "bins/android/mafia/"],
   "timeout": 30,
   "expect": {
     "contains": [
       "method.fn_0",
-      "0x5ff5c4"
+      "0x5b6940"
     ]
   }
 }
-

@@ -7,7 +7,9 @@
     "contains": [
       "Usage:",
       "--dump-it",
-      "--dump-header",
+      "--dump-header"
+    ],
+    "not_contains": [
       "--no-stubs"
     ]
   }

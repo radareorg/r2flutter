@@ -8,7 +8,7 @@
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [-jirfqsncFStH] [args]\n"
+		"Usage: r2flutter [-jirfqncFStH] [args]\n"
 		"| r2flutter          analyze dart snapshot and apply flags/comments\n"
 		"| r2flutter -c       dump classes as JSON\n"
 		"| r2flutter -C       dump classes as r2 type definitions\n"
@@ -21,7 +21,6 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -q       analyze quietly (no extra output)\n"
 		"| r2flutter -r       output r2 script (like rabin2 -r)\n"
 		"| r2flutter -S       dump all strings as JSON\n"
-		"| r2flutter -s       include ELF/r2 stub symbols\n"
 		"| r2flutter -t       dump strings as r2 comments\n");
 }
 
@@ -193,10 +192,6 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	case 'q':
 		dctx.quiet = 1;
 		r2flutter_analyze (core, &dctx, 1);
-		return true;
-	case 's':
-		dctx.no_stubs = false;
-		r2flutter_analyze (core, &dctx, 0);
 		return true;
 	case 'n':
 		dctx.use_name_pool = true;

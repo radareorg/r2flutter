@@ -1,13 +1,12 @@
 {
   "name": "dump-funcs-ios-authpass",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-n", "--no-stubs", "--dump-funcs", "--limit", "10", "bins/ios/AuthPass.app"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-funcs", "--limit", "10", "bins/ios/AuthPass.app"],
   "timeout": 30,
   "expect": {
     "contains": [
       "method.fn_0",
-      "0xfdc0"
+      "0x16dc70"
     ]
   }
 }
-

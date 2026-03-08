@@ -29,6 +29,12 @@ The current matrix covers `--dump-header`, `--dump-funcs`, `--dump-it`, `--dump-
 
 This avoids brittle megabyte-scale expectations while still checking platform-specific snapshot addresses, instruction table metadata, and representative function/class/type/string prefixes.
 
+## Stub Symbols Should Stay With RBin
+
+**Finding**: Loader-provided ELF/Mach-O stub symbols do not add useful Flutter-specific signal, because radare2 already exposes them through `RBin`.
+
+`r2flutter` now skips those stubs by default in `--dump-funcs` and analysis output, which keeps the plugin focused on Dart-derived names and makes function-dump tests line up with the augmented data we actually recover.
+
 ## Production AOT Snapshots Lack Class Metadata
 
 **Finding**: Class definitions (kClassCid=5) are not serialized in production Flutter builds.

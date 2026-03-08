@@ -38,11 +38,12 @@ Tests
 
 CLI Flags (debugging)
 - `-v` / `-vv`: increase stderr verbosity for snapshot discovery.
-- `--no-stubs`: skip emitting ELF/r2 stub functions.
 - `-j --dump-header`: emit one JSON line with snapshot + cluster info.
 - `--dump-it`: print InstructionTable entries to stdout. Supports plain text, `-j`, and `-r`.
 - `--quiet`: suppress non-essential stdout (handy for JSON-only tests).
 - `--no-dump`: suppress printing radare2 flags/script.
+
+Function dumps skip loader-provided ELF/Mach-O stub symbols by default; rely on plain `r2`/`RBin` for those and keep `r2flutter` focused on Dart-derived names.
 
 Iteration Loop
 1) Implement a focused change (parser or flags), build with `make`.

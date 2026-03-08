@@ -60,10 +60,11 @@ Actions:
   --dump-strings        Print all extracted strings
   --dump-types          Print string-based type names
 Options:
-  --no-stubs            Do not emit ELF/r2 stub functions
   --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
   --use-name-pool       Assign names from data image strings when unknown
 ```
+
+`--dump-funcs` and the default analysis flow skip loader-provided ELF/Mach-O stub symbols; radare2 already gets those from `RBin`, so `r2flutter` stays focused on Dart-derived metadata.
 
 `--dump-it` honors the global format modifiers:
 
