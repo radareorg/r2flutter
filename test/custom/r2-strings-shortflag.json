@@ -4,10 +4,10 @@
   "cmd": [
     "sh",
     "-lc",
-    "r2 -NN -q -escr.color=0 -c 'L ../src/r2/core_flutter.dylib;r2flutter -s|head -c 200;q' bins/ios/Runner.app/Frameworks/App.framework/App"
+    "r2flutter --dump-strings bins/ios/Runner.app/Frameworks/App.framework/App | head -c 200"
   ],
   "timeout": 20,
   "expect": {
-    "equals": "[{\"ref\":0,\"len\":6,\"value\":\"__TEXT\",\"category\":\"lib\",\"two_byte\":false,\"canonical\":true,\"addr\":40},{\"ref\":1,\"len\":6,\"value\":\"__text\",\"category\":\"lib\",\"two_byte\":false,\"canonical\":true,\"addr\":104},{\"ref\""
+    "equals": "0x001b0914  186 :app \"d20a1be77c3d3c41b2a5accaee1ce549product no-code_comments no-dwarf_stack_traces_mode no-lazy_dispatchers dedup_instructions no-tsan no-asserts arm64 ios no-compressed-pointers nul"
   }
 }

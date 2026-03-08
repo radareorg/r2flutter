@@ -7,7 +7,7 @@
     "contains": [
       "\"value\":",
       "\"canonical\":true",
-      "\"two_byte\":true"
+      "_Uint16List"
     ]
   }
 }

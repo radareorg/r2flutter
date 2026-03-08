@@ -5,10 +5,10 @@ CMDS=<<EOF
 EOF
 EXPECT=<<EOF
 # Dart Strings
-iz+ 0x00000028 6
-iz+ 0x00000068 6
-iz+ 0x00000078 6
-iz+ 0x000000b8 7
-iz+ 0x000000c8 6
+iz+ 0x001b0914 186
+iz+ 0x001b1db0 11
+iz+ 0x001b1dd0 19
+iz+ 0x001b1e00 17
+iz+ 0x001b1e20 8
 EOF
 RUN

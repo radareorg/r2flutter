@@ -4,6 +4,6 @@ CMDS=<<EOF
 !!r2 -NN -q -escr.color=0 -c 'L ../src/r2/core_flutter.dylib;r2flutter -s|head -c 200;q' bins/ios/Runner.app/Frameworks/App.framework/App; printf '\n'
 EOF
 EXPECT=<<EOF
-[{"ref":0,"len":6,"value":"__TEXT","category":"lib","two_byte":false,"canonical":true,"addr":40},{"ref":1,"len":6,"value":"__text","category":"lib","two_byte":false,"canonical":true,"addr":104},{"ref"
+[{"ref":0,"len":11,"value":"_Uint16List","category":"lib","two_byte":false,"canonical":true,"addr":1777072},{"ref":1,"len":19,"value":"_ExternalInt64Array","category":"lib","two_byte":false,"canonical
 EOF
 RUN

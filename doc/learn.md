@@ -189,6 +189,18 @@ Implementation details:
 
 This produces clean `--dump-strings` output even when the clustered snapshot contains compressed or stripped string objects, while also giving analysts a quick way to filter out VM noise and focus on app-facing literals like `"Hello, Dart!"`.
 
+## `--dump-strings` Must Stay Inside Dart Snapshot Windows
+
+**Finding**: Letting the string dumper scan every readable section regresses badly on iOS once Mach-O `__text`, code stubs, cert blobs, and loader metadata are included in the candidate set.
+
+The practical fix is:
+
+- prefer snapshot-bounded windows (`vm_data` up to the next snapshot, and similarly for `iso_data` when applicable)
+- keep the broad fallback limited to read-only constant sections such as Mach-O `__const` / `__cstring` and ELF `.rodata` / `.data.rel.ro`
+- keep short-string heuristics strict enough to drop opcode-shaped junk like `_X;,` while preserving real Dart identifiers like `_Set`
+
+This removes the worst false positives from `--dump-strings` without sacrificing the real Dart names stored in the const area of the shipped iOS and Android fixtures.
+
 ## Cross References Split Into Metadata, Data-Image, And Code Layers
 
 **Finding**: Not all useful Dart snapshot xrefs come from the same place.

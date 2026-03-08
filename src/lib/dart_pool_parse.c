@@ -3413,20 +3413,73 @@ static const char *string_category_name(DartStringCategory cat) {
 	}
 }
 
+static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter);
+static int parse_snapshot_header(DartCtx *ctx, ut64 snapshot_base, ut64 *out_nb, ut64 *out_no, ut64 *out_nc, ut64 *out_itlen, ut64 *out_itdata, ut64 *out_total_len, ut64 *out_cluster_start);
+static bool should_scan_section(const RBinSection *sec);
+
+static bool is_common_text_punct(ut8 ch) {
+	return strchr ("_.$:/-'\"!?(),[]+*=#%&", ch) != NULL;
+}
+
+static bool is_short_text_punct(ut8 ch) {
+	return strchr ("_.$:/-'", ch) != NULL;
+}
+
 static bool looks_like_text(const char *s) {
 	if (!s) {
 		return false;
 	}
+	size_t len = strlen (s);
+	if (len < 4 || len > 512) {
+		return false;
+	}
 	int alpha = 0;
+	int digit = 0;
+	int spaces = 0;
+	int short_punct = 0;
+	int common_punct = 0;
+	int weird = 0;
 	for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
 		if (*p < 0x20 && *p != '\t' && *p != '\n' && *p != '\r') {
 			return false;
 		}
 		if (isalpha (*p)) {
 			alpha++;
+			continue;
 		}
+		if (isdigit (*p)) {
+			digit++;
+			continue;
+		}
+		if (isspace (*p)) {
+			spaces++;
+			continue;
+		}
+		if (is_short_text_punct (*p)) {
+			short_punct++;
+		}
+		if (is_common_text_punct (*p)) {
+			common_punct++;
+			continue;
+		}
+		weird++;
 	}
-	return alpha >= 1;
+	if (alpha < 1) {
+		return false;
+	}
+	if (len <= 4) {
+		return weird == 0 && spaces == 0 &&
+			(alpha + digit + short_punct) == (int)len &&
+			short_punct <= 1;
+	}
+	if (len <= 6) {
+		return weird == 0 && alpha >= 2 && spaces <= 1 &&
+			(alpha + digit + common_punct + spaces) == (int)len;
+	}
+	if (weird > 0 && (len < 12 || weird * 4 > (int)len)) {
+		return false;
+	}
+	return (alpha + digit + common_punct) >= R_MAX (2, (int)len / 2);
 }
 
 #define DART_PACKED_STRING_MAX_LEN 512
@@ -3826,6 +3879,94 @@ static void scan_packed_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, 
 	free (buf);
 }
 
+#define DART_SNAPSHOT_SCAN_MAX (64ULL << 20)
+#define DART_DATA_IMAGE_SCAN_MAX (8ULL << 20)
+
+static void scan_string_buffer(const ut8 *buf, ut64 base, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
+	if (!buf || !size || !list) {
+		return;
+	}
+	scan_ascii_strings (buf, base, size, list, seen_addrs, ref_counter);
+	scan_utf16_strings (buf, base, size, list, seen_addrs, ref_counter);
+}
+
+static void scan_snapshot_region(DartCtx *ctx, ut64 start, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
+	if (!ctx || !ctx->core || !ctx->core->bin || !start || !size || !list || size > DART_SNAPSHOT_SCAN_MAX) {
+		return;
+	}
+	ut64 end = start + size;
+	if (end <= start) {
+		return;
+	}
+	RBinObject *bobj = r_bin_cur_object (ctx->core->bin);
+	if (!bobj || !bobj->sections) {
+		return;
+	}
+	RListIter *iter;
+	RBinSection *sec;
+	r_list_foreach (bobj->sections, iter, sec) {
+		if (!should_scan_section (sec)) {
+			continue;
+		}
+		ut64 sec_start = sec->vaddr;
+		ut64 sec_end = sec->vaddr + sec->vsize;
+		if (sec_end <= sec_start || sec_end <= start || sec_start >= end) {
+			continue;
+		}
+		ut64 chunk_start = sec_start > start? sec_start: start;
+		ut64 chunk_end = sec_end < end? sec_end: end;
+		ut64 chunk_size = chunk_end - chunk_start;
+		if (chunk_size == 0 || chunk_size > DART_SNAPSHOT_SCAN_MAX) {
+			continue;
+		}
+		ut8 *buf = (ut8 *)malloc ((size_t)chunk_size);
+		if (!buf) {
+			continue;
+		}
+		if (!read_mem (ctx, chunk_start, buf, (int)chunk_size)) {
+			free (buf);
+			continue;
+		}
+		scan_string_buffer (buf, chunk_start, chunk_size, list, seen_addrs, ref_counter);
+		free (buf);
+	}
+}
+
+static void scan_strings_from_snapshot_window(DartCtx *ctx, ut64 snapshot_base, ut64 upper_bound, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
+	if (!ctx || !snapshot_base || !list) {
+		return;
+	}
+	ut64 before_count = r_list_length (list);
+	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, total_len = 0, cluster_start = 0;
+	if (parse_snapshot_header (ctx, snapshot_base, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) != 0) {
+		goto fallback;
+	}
+	if (total_len == 0 || total_len > DART_SNAPSHOT_SCAN_MAX || cluster_start >= total_len) {
+		goto fallback;
+	}
+	if (ctx->compressed_word_size == 4) {
+		scan_packed_strings_from_snapshot (ctx, snapshot_base, list, seen_addrs, ref_counter);
+		return;
+	}
+	scan_snapshot_region (ctx, snapshot_base + cluster_start, total_len - cluster_start, list, seen_addrs, ref_counter);
+	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
+	if (align == 0) {
+		align = 16;
+	}
+	ut64 data_start = snapshot_base + ((total_len + (align - 1)) & ~ (align - 1));
+	ut64 data_end = upper_bound;
+	if (data_end > data_start && (data_end - data_start) <= DART_DATA_IMAGE_SCAN_MAX) {
+		scan_snapshot_region (ctx, data_start, data_end - data_start, list, seen_addrs, ref_counter);
+	}
+	if ((ut64)r_list_length (list) > before_count) {
+		return;
+	}
+fallback:
+	if (upper_bound > snapshot_base + 0x100 && (upper_bound - (snapshot_base + 0x100)) <= DART_DATA_IMAGE_SCAN_MAX) {
+		scan_snapshot_region (ctx, snapshot_base + 0x100, upper_bound - (snapshot_base + 0x100), list, seen_addrs, ref_counter);
+	}
+}
+
 static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
 	if (!buf || size < 8) {
 		return;
@@ -3868,7 +4009,11 @@ static bool should_scan_section(const RBinSection *sec) {
 	if (! (sec->perm & R_PERM_R)) {
 		return false;
 	}
-	return true;
+	const char *name = sec->name? sec->name: "";
+	return r_str_endswith (name, ".__const") ||
+		r_str_endswith (name, ".__cstring") ||
+		r_str_endswith (name, ".rodata") ||
+		r_str_endswith (name, ".data.rel.ro");
 }
 
 static int string_info_addr_cmp(const void *a, const void *b) {
@@ -3912,11 +4057,40 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 	ut64 ref_counter = 0;
 	if (find_snapshots (ctx) == 0 && ctx->vm_data) {
 		extract_snapshot_hash_flags (ctx, ctx->vm_data);
-		derive_layout_from_flags (ctx);
-		if (ctx->compressed_word_size == 4) {
-			scan_packed_strings_from_snapshot (ctx, ctx->vm_data, string_list, seen_addrs, &ref_counter);
-			scan_packed_strings_from_snapshot (ctx, ctx->iso_data, string_list, seen_addrs, &ref_counter);
+		DartVerLayout layout_tmp;
+		bool layout_is_dynamic = false;
+		ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
+		if (!ctx->layout) {
+			ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
+			layout_is_dynamic = true;
 		}
+		derive_layout_from_flags (ctx);
+		ut64 vm_upper = 0;
+		if (ctx->iso_data > ctx->vm_data) {
+			vm_upper = ctx->iso_data;
+		} else if (ctx->vm_instr > ctx->vm_data) {
+			vm_upper = ctx->vm_instr;
+		}
+		ut64 iso_upper = 0;
+		if (ctx->vm_data > ctx->iso_data) {
+			iso_upper = ctx->vm_data;
+		} else if (ctx->iso_instr > ctx->iso_data) {
+			iso_upper = ctx->iso_instr;
+		}
+		scan_strings_from_snapshot_window (ctx, ctx->vm_data, vm_upper, string_list, seen_addrs, &ref_counter);
+		scan_strings_from_snapshot_window (ctx, ctx->iso_data, iso_upper, string_list, seen_addrs, &ref_counter);
+		if (r_list_length (string_list) == 0) {
+			if (vm_upper > ctx->vm_data + 0x100) {
+				scan_snapshot_region (ctx, ctx->vm_data + 0x100, vm_upper - (ctx->vm_data + 0x100), string_list, seen_addrs, &ref_counter);
+			}
+			if (iso_upper > ctx->iso_data + 0x100) {
+				scan_snapshot_region (ctx, ctx->iso_data + 0x100, iso_upper - (ctx->iso_data + 0x100), string_list, seen_addrs, &ref_counter);
+			}
+		}
+		if (layout_is_dynamic) {
+			dart_ver_layout_free ((DartVerLayout *)ctx->layout);
+		}
+		ctx->layout = NULL;
 	}
 	RListIter *iter;
 	RBinSection *sec;
@@ -3936,8 +4110,7 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 			free (buf);
 			continue;
 		}
-		scan_ascii_strings (buf, sec->vaddr, size, string_list, seen_addrs, &ref_counter);
-		scan_utf16_strings (buf, sec->vaddr, size, string_list, seen_addrs, &ref_counter);
+		scan_string_buffer (buf, sec->vaddr, size, string_list, seen_addrs, &ref_counter);
 		free (buf);
 		if (r_list_length (string_list) >= DART_STRING_SCAN_LIMIT) {
 			break;
