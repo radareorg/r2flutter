@@ -11,6 +11,7 @@
 #include <r_list.h>
 #include <r_util/r_name.h>
 #include "../../include/r2flutter/dart_app.h"
+#include "../../include/r2flutter/dart_obf.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 
 extern int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
@@ -44,6 +45,7 @@ void dart_app_free(DartApp *app) {
 	if (!app) {
 		return;
 	}
+	dart_obf_fini (&app->dctx);
 	r_list_free (app->functions);
 	if (app->file_path) {
 		free (app->file_path);
@@ -71,7 +73,7 @@ static void add_fn_cb(const char *name, unsigned long long addr, unsigned long l
 	fn->addr = (ut64)addr;
 	fn->size = (ut64)size;
 	if (name && *name) {
-		char *tmp = strdup (name);
+		char *tmp = dart_obf_resolve (&app->dctx, name);
 		r_name_filter (tmp, 0);
 		fn->name = tmp;
 	} else {

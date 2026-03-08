@@ -1,0 +1,9 @@
+{
+  "name": "obf-it-android",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "--dump-it", "--limit", "2", "--omfile", "custom/obf-map.txt", "bins/android/first"],
+  "timeout": 30,
+  "expect": {
+    "equals": "# length=1089546 first_entry_with_code=0 canonical_stack_map_entries_offset=0\n0 0x66700 code method.initState\n1 0x66704 code method.build"
+  }
+}

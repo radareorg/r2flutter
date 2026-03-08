@@ -488,3 +488,7 @@ The pool and function dumpers are easier to maintain when the public entrypoints
 - `dart_dumper_dump_funcs (app, fmt)`
 
 This keeps the CLI and plugin call sites on the same mode switch (`0`, `'j'`, `'r'`) and avoids triplicating traversal logic every time a dumper gains a new field.
+
+## Obfuscation Maps
+
+Flutter obfuscation maps use the VM `--save-obfuscation-map` format: one JSON array with alternating `original, obfuscated` strings. r2flutter has to reverse that relation during analysis because the snapshot only carries the obfuscated side. Applying the rename map at identifier materialization points keeps `--dump-strings` faithful to the raw binary while still deobfuscating function, class, field, and method outputs.

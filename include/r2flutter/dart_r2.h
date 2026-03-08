@@ -7,6 +7,7 @@
 
 typedef struct r_core_t RCore;
 typedef struct r_list_t RList;
+typedef struct ht_pp_t HtPP;
 typedef struct ht_up_t HtUP;
 typedef uint64_t ut64;
 
@@ -50,6 +51,9 @@ typedef struct {
 	int dump_classes;
 	int dump_fields;
 	int dump_strings;
+	const char *obf_map_path;
+	HtPP *obf_by_obfuscated;
+	bool obf_map_tried;
 } DartCtx;
 
 int dart_r2_find_snapshots(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso_data, ut64 *iso_instr);

@@ -1,0 +1,9 @@
+{
+  "name": "obf-funcs-ios",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-j", "--dump-funcs", "--limit", "3", "--omfile", "custom/obf-map.txt", "bins/ios/Runner.app"],
+  "timeout": 30,
+  "expect": {
+    "equals": "[{\"addr\":73509,\"name\":\"method.initState\"},{\"addr\":81385,\"name\":\"method.build\"},{\"addr\":81391,\"name\":\"method.teardown\"}]"
+  }
+}

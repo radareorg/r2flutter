@@ -16,6 +16,7 @@
 #include <r_util/r_strbuf.h>
 #include <sdb/ht_pp.h>
 #include <r_list.h>
+#include "../../include/r2flutter/dart_obf.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "../../include/r2flutter/dart_version.h"
 #include "../../include/r2flutter/dart_r2.h"
@@ -631,6 +632,7 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 	if (!*out) {
 		snprintf (out, outsz, "method.fn_%" PRIu64, (uint64_t)entry->code_index);
 	}
+	dart_obf_apply_buf (ctx, out, outsz);
 }
 
 static void emit_it_entry_record(const DartInstructionTableEntry *entry, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
@@ -777,6 +779,7 @@ static int emit_it_linear(DartCtx *ctx, ut64 itlen, ut64 max_entries, void(*on_f
 			.name = name,
 };
 		snprintf (name, sizeof (name), "method.fn_%" PRIu64, (uint64_t)i);
+		dart_obf_apply_buf (ctx, name, sizeof (name));
 		emit_it_entry_record (&entry, on_fn, fn_user, on_it, it_user);
 	}
 	return 0;
@@ -1385,6 +1388,7 @@ static void resolve_names(DartCtx *ctx) {
 				DartString *ds = (DartString *)ctx->refs[dc->name_ref];
 				if (ds && ds->value) {
 					dc->name = strdup (ds->value);
+					dart_obf_apply (ctx, &dc->name);
 				}
 			}
 		}
@@ -1400,6 +1404,7 @@ static void resolve_names(DartCtx *ctx) {
 				DartString *ds = (DartString *)ctx->refs[df->name_ref];
 				if (ds && ds->value) {
 					df->name = strdup (ds->value);
+					dart_obf_apply (ctx, &df->name);
 				}
 			}
 		}
@@ -2481,6 +2486,7 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 				DartString *ds = (DartString *)ref;
 				if (ds->value) {
 					ci->name = strdup (ds->value);
+					dart_obf_apply (ctx, &ci->name);
 				}
 			}
 		}
@@ -2490,6 +2496,7 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 				DartClassInfo *parent = (DartClassInfo *)ref;
 				if (parent->name) {
 					ci->super_class_name = strdup (parent->name);
+					dart_obf_apply (ctx, &ci->super_class_name);
 				}
 			}
 		}
@@ -2499,6 +2506,7 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 				LibraryInfo *lib = (LibraryInfo *)ref;
 				if (lib->uri) {
 					ci->library_name = strdup (lib->uri);
+					dart_obf_apply (ctx, &ci->library_name);
 				}
 			}
 		}
@@ -2517,6 +2525,7 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 				DartString *ds = (DartString *)ref;
 				if (ds->value) {
 					fi->name = strdup (ds->value);
+					dart_obf_apply (ctx, &fi->name);
 				}
 			}
 		}
@@ -2705,6 +2714,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 					if (is_type_name_candidate (s)) {
 						DartClassInfo *ci = R_NEW0 (DartClassInfo);
 						ci->name = strdup (s);
+						dart_obf_apply (ctx, &ci->name);
 						ci->ref_id = 0;
 						ci->instance_size = 0;
 						ci->flags = 0;
@@ -2807,6 +2817,7 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 				snprintf (field_name, sizeof (field_name), "field_%d", field_count);
 			}
 		}
+		dart_obf_apply_buf (ctx, field_name, sizeof (field_name));
 		char owner_name[128] = { 0 };
 		ut64 owner_addr = use_compressed? (data_start + (owner_ptr & ~3ULL)): owner_ptr;
 		if (owner_addr >= data_start && owner_addr < data_end) {
@@ -2819,6 +2830,7 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 				}
 			}
 		}
+		dart_obf_apply_buf (ctx, owner_name, sizeof (owner_name));
 		if (owner_name[0] && field_name[0]) {
 			field_count++;
 			DartClassInfo *owner_ci = (DartClassInfo *)ht_pp_find (class_by_name, owner_name, NULL);
@@ -3027,6 +3039,7 @@ static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 d
 		if (!read_string_safe (ctx, name_addr, method_name, sizeof (method_name))) {
 			continue;
 		}
+		dart_obf_apply_buf (ctx, method_name, sizeof (method_name));
 		ut64 owner_addr = 0;
 		if (!read_object_pointer (ctx, buf, fl.owner_off, use_compressed, data_start, data_end, false, &owner_addr)) {
 			continue;
@@ -3041,6 +3054,7 @@ static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 d
 				}
 			}
 		}
+		dart_obf_apply_buf (ctx, owner_name, sizeof (owner_name));
 		if (!*owner_name) {
 			continue;
 		}

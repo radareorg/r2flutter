@@ -3,6 +3,7 @@
 #include <r_core.h>
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
+#include "../../include/r2flutter/dart_obf.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "../../include/r2flutter/version.h"
 
@@ -38,6 +39,7 @@ static const char usage_text[] =
 	"  --dump-types          Print string-based type names\n"
 	"Options:\n"
 	"  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)\n"
+	"  --omfile <file>       Load Flutter obfuscation map JSON (from --save-obfuscation-map)\n"
 	"  --use-name-pool       Heuristic fallback for unknown functions; may assign wrong names\n";
 
 static void print_usage(const char *argv0) {
@@ -111,6 +113,17 @@ int main(int argc, char **argv) {
 				if (i + 1 < argc) {
 					dctx.dump_fns_limit = atoi (argv[i + 1]);
 					i++;
+				} else {
+					R_LOG_ERROR ("Missing argument for %s", a);
+					return 1;
+				}
+			} else if (!strcmp (a, "--omfile")) {
+				if (i + 1 < argc) {
+					dctx.obf_map_path = argv[i + 1];
+					i++;
+				} else {
+					R_LOG_ERROR ("Missing argument for %s", a);
+					return 1;
 				}
 			} else if (!strcmp (a, "--dump-it")) {
 				action = ACTION_DUMP_IT;
@@ -130,6 +143,11 @@ int main(int argc, char **argv) {
 		print_usage (argv[0]);
 		return 1;
 	}
+	if (dctx.obf_map_path && !dart_obf_load (&dctx)) {
+		dart_obf_fini (&dctx);
+		return 1;
+	}
+	dart_obf_fini (&dctx);
 
 	char *libapp_path = find_libapp (libapp_path_in);
 	if (!libapp_path) {
@@ -229,6 +247,7 @@ int main(int argc, char **argv) {
 	}
 
 	dart_app_free (app);
+	dart_obf_fini (&dctx);
 	r_core_free (core);
 	free (libapp_path);
 
