@@ -15,36 +15,16 @@ snapshots/constant pool directly to derive names and addresses.
 
 - Support iOS and Android Flutter apps
 - Derives names/addresses from Dart constant pool (no afl parsing)
-- Uses radare2 to locate AOT snapshot symbols within ELF64
+- Uses radare2 to locate AOT snapshot symbols within ELF64 and Mach-O binaries
 - Emits `addNames.r2` and `r2_dart_struct.h`
 
 ## Supported Dart/Flutter Versions
 
-r2flutter supports Dart AOT snapshots from **Dart 2.10.0 to 3.10.7** (Flutter 1.22.x to 3.38.x):
+r2flutter supports Dart AOT snapshots from **Dart 2.10.0 to 3.10.7** (Flutter 1.22.x to 3.38.x).
 
-| Dart Version | Flutter Version | Tag Style | Notes |
-|--------------|-----------------|-----------|-------|
-| 2.10.0 | 1.22.x | Int32 CID | Pre-FunctionType split |
-| 2.13.0 | 2.2.x - 2.3.x | Int32 CID | Split canonical clusters |
-| 2.14.0 | 2.4.x - 2.5.x | CID Shift1 | TypeParameters added |
-| 2.15.0 | 2.6.x - 2.7.x | CID Shift1 | NativePointer inserted |
-| 2.16.0 | 2.8.x - 2.16.x | CID Shift1 | ConstMap/ConstSet added |
-| 2.17.6 | 2.17.x | CID Shift1 | WeakReference added |
-| 2.18.0 | 3.3.x | CID Shift1 | SuspendState added |
-| 2.19.0 | 3.7.x | CID Shift1 | RecordType/Record added |
-| 3.0.5 | 3.10.x - 3.12.x | CID Shift1 | WeakArray added |
-| 3.1.0 | 3.13.x | CID Shift1 | TypeRef removed |
-| 3.2.5 | 3.16.x | CID Shift1 | PoolType swapped |
-| 3.3.0 | 3.19.x | CID Shift1 | Last Shift1 format |
-| 3.4.3 | 3.22.x | ObjectHeader | New tag encoding |
-| 3.5.0 | 3.24.x | ObjectHeader | |
-| 3.6.2 | 3.27.x | ObjectHeader | |
-| 3.7.0 | 3.29.x | ObjectHeader | |
-| 3.8.1 | 3.32.x | ObjectHeader | |
-| 3.9.2 | 3.35.x | ObjectHeader | |
-| 3.10.7 | 3.38.x | ObjectHeader | Current latest |
+The detailed support matrix, including tag-style changes and Android/iOS-specific notes, lives in [doc/support.md](doc/support.md).
 
-Unknown snapshot hashes default to v3.9.2 profile with ObjectHeader tag encoding.
+Unknown snapshot hashes default to the v3.9.2 profile with ObjectHeader tag encoding.
 
 ## Building
 
@@ -63,30 +43,26 @@ make user-install
 ## Usage
 
 ```bash
-$ bin/r2flutter
 Usage: bin/r2flutter [options] <libapp_path_or_dir>
 Modifiers:
-  -h, --help       Show help
-  -V, --version    Show version
-  -v               Verbose (stderr info)
-  -vv              More verbose (dump headers)
-  -j               Output in JSON format
-  -r               Output in radare2 format
-  -q               Quiet mode (suppress non-essential output)
-  -n               Do not emit radare2 flags/script to stdout
+  -h, --help            Show help
+  -j                    Output in JSON format
+  -r                    Output in radare2 format
+  -V, --version         Show version
+  -v                    Verbose (stderr debug info)
+  -vv                   More verbose (dump headers)
 Actions:
-  --dump-strings   Print all extracted strings
-  --dump-classes   Print extracted class information
-  --dump-types     Print string-based type names
-  --dump-header    Print Dart AOT snapshot header info
-  --dump-fns N     Print first N functions (addr name)
-  --dump-it        Print instruction table entries to stdout
+  --dump-classes        Print extracted class information
+  --dump-funcs          Print all extracted functions (addr name)
+  --dump-header         Print Dart AOT snapshot header info
+  --dump-it             Print instruction table entries to stdout
+  --dump-r2script       Print radare2 script for snapshot analysis
+  --dump-strings        Print all extracted strings
+  --dump-types          Print string-based type names
 Options:
-  --no-stubs       Do not emit ELF/r2 stub functions
-  --limit <N>      Limit output items for dump-style commands
-  --use-name-pool  Assign names from data image strings when unknown
-  --dump-fields    Include field details in class output
-$
+  --no-stubs            Do not emit ELF/r2 stub functions
+  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
+  --use-name-pool       Assign names from data image strings when unknown
 ```
 
 `--dump-it` honors the global format modifiers:
