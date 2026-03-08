@@ -21,13 +21,16 @@ Actions:
   --dump-it             Print instruction table entries to stdout
   --dump-r2script       Print radare2 script for snapshot analysis
   --dump-strings        Print all extracted strings
+  --dump-xrefs          Print metadata/data-image xrefs
   --dump-types          Print string-based type names
 Options:
   --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
+  --omfile <file>       Load Flutter obfuscation map JSON (from --save-obfuscation-map)
   --use-name-pool       Heuristic fallback for unknown functions; may assign wrong names
 ===
-Usage: r2flutter [-jirfqncFstH] [args]
+Usage: r2flutter [-ajirfqncFstxH] [args]
 | r2flutter          analyze dart snapshot and apply flags/comments
+| r2flutter -a       run Dart-aware code analysis and recover code refs
 | r2flutter -c       dump classes as JSON
 | r2flutter -C       dump classes as r2 type definitions
 | r2flutter -F       include field info in class output
@@ -40,5 +43,6 @@ Usage: r2flutter [-jirfqncFstH] [args]
 | r2flutter -r       output r2 script (like rabin2 -r)
 | r2flutter -s       dump all strings as JSON
 | r2flutter -t       dump strings as r2 comments
+| r2flutter -x       dump metadata/data-image xrefs
 EOF
 RUN

@@ -16,8 +16,8 @@ else
 endif
 
 # Source and objects
-CORE_SRC = core_flutter.c
-CORE_OBJ = core_flutter.o
+CORE_SRC = core_flutter.c flutter_analysis.c
+CORE_OBJ = core_flutter.o flutter_analysis.o
 CORE_PLUGIN = core_flutter.$(EXT_SO)
 
 # Library
@@ -29,7 +29,10 @@ all: $(CORE_PLUGIN)
 $(CORE_PLUGIN): $(CORE_OBJ) $(R2FLUTTER_LIB)
 	$(CC) $(LDFLAGS) -o $@ $(CORE_OBJ) $(R2FLUTTER_LIB)
 
-$(CORE_OBJ): $(CORE_SRC)
+core_flutter.o: core_flutter.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+flutter_analysis.o: flutter_analysis.c flutter_analysis.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(R2FLUTTER_LIB):

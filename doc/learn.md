@@ -229,6 +229,21 @@ The repo now exposes the currently recoverable subset through:
 
 The new dumper intentionally stops at metadata/data-image edges. Disassembly-derived object-pool xrefs and call/use edges are still future work.
 
+## `r2flutter -a` Uses Live `RCore` Metadata But Keeps PP Resolution Conservative
+
+**Finding**: The new plugin-side analysis pass now runs inside the already loaded `RCore` session, reuses the current function/flag state, normalizes tagged Dart entrypoints to executable addresses, and scans analyzed ARM64 ops to recover:
+
+- direct call xrefs
+- string/class/field/type refs when the target can be tied back to known metadata or live flags
+- PP (`x27`) slot-use comments such as `dart: PP slot +0x530`
+
+This closes part of the old "metadata only" gap for code xrefs without pretending we can fully decode every object-pool entry yet.
+
+Important current limitation:
+
+- the shipped samples do not populate `anal.gp`, and the repo still does not decode object-pool entries end-to-end
+- so `-a` can reliably annotate PP-relative slot usage and indirect-call breadcrumbs, but not yet resolve every `PP+imm` load into a final string/class/method object
+
 ## Recovering Methods Without Class Clusters
 
 Production snapshots omit the `Class` cluster, but `Function` objects are still serialized in the ROData image. r2flutter now scans the data image for objects whose CID equals `cid_function` and extracts:

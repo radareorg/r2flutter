@@ -5,6 +5,7 @@
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
+#include "flutter_analysis.h"
 
 #define R2FLUTTER_CFG_MAPFILE "r2flutter.mapfile"
 #define R2FLUTTER_CFG_NAMEPOOL "r2flutter.namepool"
@@ -39,8 +40,9 @@ static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [-jirfqncFstxH] [args]\n"
+		"Usage: r2flutter [-ajirfqncFstxH] [args]\n"
 		"| r2flutter          analyze dart snapshot and apply flags/comments\n"
+		"| r2flutter -a       run Dart-aware code analysis and recover code refs\n"
 		"| r2flutter -c       dump classes as JSON\n"
 		"| r2flutter -C       dump classes as r2 type definitions\n"
 		"| r2flutter -F       include field info in class output\n"
@@ -151,6 +153,9 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	}
 
 	switch (flag) {
+	case 'a':
+		r2flutter_analysis_run (core, &dctx, dctx.quiet);
+		return true;
 	case 'H':
 		{
 			char *hdr = dart_pool_dump_header (&dctx, 0);

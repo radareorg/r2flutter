@@ -58,6 +58,7 @@ test-r2r:
 	r2r -t 30 test/db
 
 test: $(BIN_FILE)
+	@$(MAKE) -C src/r2
 	@echo "Running custom testsuite"
 	@python3 scripts/run_tests.py
 
