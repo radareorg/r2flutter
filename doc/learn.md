@@ -2,6 +2,24 @@
 
 This document summarizes key technical findings discovered during the implementation of class extraction features in r2flutter.
 
+## `--use-name-pool` Must Stay Opt-In
+
+**Finding**: The name-pool fallback is useful for exploratory reversing, but it is too weak to enable by default because it can silently mislabel functions.
+
+Current behavior:
+
+- `collect_data_names ()` scans the data image for `package:` and `dart:` strings and stores them in discovery order
+- `resolve_it_entry_name ()` only consults that pool after exact symbol, entrypoint, and stack-map-based naming fails
+- when enabled, unresolved code entries consume names sequentially via `name_pool_idx++`
+
+Why this is risky:
+
+- there is no proof that pool index `N` belongs to instruction-table entry `N`
+- one early mismatch shifts all later fallback names
+- the resulting names look plausible enough to be mistaken for confirmed metadata
+
+Use `--use-name-pool` for manual triage only. The default synthetic `method.fn_*` names are intentionally less informative, but more honest.
+
 ## Enum Recovery In `--dump-types` Is Heuristic But Useful
 
 **Finding**: Production AOT samples still do not expose enough `Class` metadata to recover enum declarations directly, but enum names and variants often survive as qualified strings such as `AppLifecycleState.resumed` plus a matching `AppLifecycleState.` marker.

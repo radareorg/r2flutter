@@ -17,7 +17,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -H       dump Dart AOT snapshot header info\n"
 		"| r2flutter -i       dump instruction table entries to output\n"
 		"| r2flutter -j       dump snapshot header as JSON\n"
-		"| r2flutter -n       use name pool for unknown function names\n"
+		"| r2flutter -n       use heuristic name-pool fallback; names may be wrong\n"
 		"| r2flutter -q       analyze quietly (no extra output)\n"
 		"| r2flutter -r       output r2 script (like rabin2 -r)\n"
 		"| r2flutter -s       dump all strings as JSON\n"

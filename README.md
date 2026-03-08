@@ -61,10 +61,12 @@ Actions:
   --dump-types          Print string-based type names
 Options:
   --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
-  --use-name-pool       Assign names from data image strings when unknown
+  --use-name-pool       Heuristic fallback for unknown functions; may assign wrong names
 ```
 
 `--dump-funcs` and the default analysis flow skip loader-provided ELF/Mach-O stub symbols; radare2 already gets those from `RBin`, so `r2flutter` stays focused on Dart-derived metadata.
+
+`--use-name-pool` is intentionally opt-in. It consumes `package:` and `dart:` strings from the data image as a sequential fallback for otherwise unnamed functions, so it can produce plausible but incorrect names when the string order does not match the instruction table.
 
 `--dump-it` honors the global format modifiers:
 

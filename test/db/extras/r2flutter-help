@@ -24,7 +24,7 @@ Actions:
   --dump-types          Print string-based type names
 Options:
   --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
-  --use-name-pool       Assign names from data image strings when unknown
+  --use-name-pool       Heuristic fallback for unknown functions; may assign wrong names
 ===
 Usage: r2flutter [-jirfqncFstH] [args]
 | r2flutter          analyze dart snapshot and apply flags/comments
@@ -35,7 +35,7 @@ Usage: r2flutter [-jirfqncFstH] [args]
 | r2flutter -H       dump Dart AOT snapshot header info
 | r2flutter -i       dump instruction table entries to output
 | r2flutter -j       dump snapshot header as JSON
-| r2flutter -n       use name pool for unknown function names
+| r2flutter -n       use heuristic name-pool fallback; names may be wrong
 | r2flutter -q       analyze quietly (no extra output)
 | r2flutter -r       output r2 script (like rabin2 -r)
 | r2flutter -s       dump all strings as JSON

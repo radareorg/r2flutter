@@ -36,7 +36,7 @@ static const char usage_text[] =
 	"  --dump-types          Print string-based type names\n"
 	"Options:\n"
 	"  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)\n"
-	"  --use-name-pool       Assign names from data image strings when unknown\n";
+	"  --use-name-pool       Heuristic fallback for unknown functions; may assign wrong names\n";
 
 static void print_usage(const char *argv0) {
 	printf (usage_text, argv0);
