@@ -1,7 +1,7 @@
 NAME=text-types-enum-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-types bins/android/mafia 2>/dev/null | rg '^enum AppLifecycleState \{'
+!!../bin/r2flutter --dump-types bins/android/mafia 2>/dev/null | grep '^enum AppLifecycleState {'
 EOF
 EXPECT=<<EOF
 enum AppLifecycleState { detached, hidden, inactive, paused, resumed }
