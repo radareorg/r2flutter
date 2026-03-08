@@ -189,6 +189,27 @@ Implementation details:
 
 This produces clean `--dump-strings` output even when the clustered snapshot contains compressed or stripped string objects, while also giving analysts a quick way to filter out VM noise and focus on app-facing literals like `"Hello, Dart!"`.
 
+## Cross References Split Into Metadata, Data-Image, And Code Layers
+
+**Finding**: Not all useful Dart snapshot xrefs come from the same place.
+
+There are three distinct layers:
+
+- **snapshot metadata xrefs**: serialized ref-id links such as `Class.name_ref`, `Class.library_ref`, `Class.super_class_ref`, `Field.owner_ref`, `Field.name_ref`, and `Field.type_ref`
+- **data-image object xrefs**: raw `Function` and `Field` objects that can still be scanned in release builds even when full class metadata is missing
+- **code xrefs**: object-pool loads, field-offset accesses, and call edges that only appear in disassembly
+
+Practical implication:
+
+- `object -> name/owner/super` style links are often dumpable from the binary without disassembly
+- `function uses string/class/field/method` style links generally require code analysis
+
+Current gaps:
+
+- `DartStringInfo.references` exists but is not populated yet, so reverse `string -> metadata users` xrefs are still missing
+- object-pool offsets can be collected from code, but pool entries are not decoded yet, so `code -> string/class/field/method` xrefs are not end-to-end
+- library URI resolution and `Field.type_ref` name resolution are still incomplete
+
 ## Recovering Methods Without Class Clusters
 
 Production snapshots omit the `Class` cluster, but `Function` objects are still serialized in the ROData image. r2flutter now scans the data image for objects whose CID equals `cid_function` and extracts:
