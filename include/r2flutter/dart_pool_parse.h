@@ -82,6 +82,7 @@ typedef struct DartClassInfo {
 	ut32 type_argument_offset;
 	ut32 num_type_parameters;
 	ut32 flags;
+	RList *enums;
 	RList *fields;
 	RList *interfaces;
 	RList *methods;

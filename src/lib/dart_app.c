@@ -44,9 +44,7 @@ void dart_app_free(DartApp *app) {
 	if (!app) {
 		return;
 	}
-	if (app->functions) {
-		r_list_free (app->functions);
-	}
+	r_list_free (app->functions);
 	if (app->file_path) {
 		free (app->file_path);
 	}

@@ -43,10 +43,10 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 			break;
 		}
 		const char *opstr = r_json_get_str (item, "opstr");
-		if (!opstr || !*opstr) {
+		if (R_STR_ISEMPTY (opstr)) {
 			opstr = r_json_get_str (item, "opcode");
 		}
-		if (!opstr || !*opstr) {
+		if (R_STR_ISEMPTY (opstr)) {
 			continue;
 		}
 		// search for pattern like: ldr x0, [x27, 0x123]; also match wX, qX

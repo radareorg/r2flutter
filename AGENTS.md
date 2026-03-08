@@ -17,7 +17,14 @@ Usage
 Coding Rules
 - `R_NEW`/`R_NEW0` macros never return NULL
 - Do not check for null before calling free methods
+- `r_list_new` / `r_list_newf` do not return NULL here; do not add defensive null checks after creating lists
+- `r_list_free` accepts NULL; call it directly instead of wrapping it in `if (x) { ... }`
+- `r_list_contains` is pointer-based; for string-content lookups use `r_list_find (..., (RListComparator)strcmp)` instead
 - The `r_json_parse` does not own the string passed, we must free it after freeing the parser
+- Prefer `R_STR_ISEMPTY` / `R_STR_ISNOTEMPTY` over hand-written `!s || !*s` checks
+- Prefer `r_str_startswith` / `r_str_endswith` over `strncmp` prefix checks or local `endswith` helpers
+- Prefer `isupper`, `islower`, `isdigit`, and `isalpha` over manual ASCII range checks
+- When rendering string lists, prefer helpers like `r_str_list_join` instead of open-coded separator loops
 - Function calls require a space before the parenthesis. (p.ex: Use `foo ()` instead of `foo()`)
 - Use tabs instead of spaces to indent the code
 - Follow the `radare2` coding style

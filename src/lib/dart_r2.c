@@ -139,7 +139,7 @@ int dart_r2_find_snapshots(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso
 					continue;
 				}
 				const char *nm = r_bin_name_tostring2 (sym->name, 'o');
-				if (!nm || !*nm) {
+				if (R_STR_ISEMPTY (nm)) {
 					continue;
 				}
 				for (int k = 0; k < 8; k++) {

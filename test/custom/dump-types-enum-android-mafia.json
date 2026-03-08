@@ -1,0 +1,11 @@
+{
+  "name": "dump-types-enum-android-mafia",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-types", "bins/android/mafia/"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "enum AppLifecycleState { detached, hidden, inactive, paused, resumed }"
+    ]
+  }
+}

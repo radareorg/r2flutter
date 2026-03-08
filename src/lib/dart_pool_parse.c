@@ -1665,7 +1665,7 @@ static int find_snapshots(DartCtx *ctx) {
 					continue;
 				}
 				const char *nm = r_bin_name_tostring2 (sym->name, 'o');
-				if (!nm || !*nm) {
+				if (R_STR_ISEMPTY (nm)) {
 					continue;
 				}
 				for (int k = 0; k < 8; k++) {
@@ -1913,15 +1913,10 @@ void dart_class_info_free(DartClassInfo *ci) {
 		free (ci->name);
 		free (ci->library_name);
 		free (ci->super_class_name);
-		if (ci->fields) {
-			r_list_free (ci->fields);
-		}
-		if (ci->interfaces) {
-			r_list_free (ci->interfaces);
-		}
-		if (ci->methods) {
-			r_list_free (ci->methods);
-		}
+		r_list_free (ci->enums);
+		r_list_free (ci->fields);
+		r_list_free (ci->interfaces);
+		r_list_free (ci->methods);
 		free (ci);
 	}
 }
@@ -1929,9 +1924,7 @@ void dart_class_info_free(DartClassInfo *ci) {
 void dart_type_info_free(DartTypeInfo *ti) {
 	if (ti) {
 		free (ti->name);
-		if (ti->type_args) {
-			r_list_free (ti->type_args);
-		}
+		r_list_free (ti->type_args);
 		free (ti);
 	}
 }
@@ -2091,6 +2084,355 @@ static void free_library_info(void *p) {
 		free (li->uri);
 		free (li);
 	}
+}
+
+typedef struct {
+	char *name;
+	bool saw_plain_name;
+	bool saw_trailing_dot;
+	RList *values;
+} DartEnumCandidate;
+
+static void free_enum_candidate(void *p) {
+	DartEnumCandidate *ec = (DartEnumCandidate *)p;
+	if (ec) {
+		free (ec->name);
+		r_list_free (ec->values);
+		free (ec);
+	}
+}
+
+static char *str_dup_n(const char *s, size_t len) {
+	char *out = malloc (len + 1);
+	if (!out) {
+		return NULL;
+	}
+	memcpy (out, s, len);
+	out[len] = '\0';
+	return out;
+}
+
+static bool has_lowercase_after(const char *s, int start) {
+	for (int i = start; s[i]; i++) {
+		if (islower ((ut8)s[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool is_type_name_candidate(const char *s) {
+	static const char *const skip_prefixes[] = {
+		"get:",
+		"set:",
+		"init:",
+		"dyn:",
+		"vm:",
+		"dart:",
+		"package:",
+		NULL
+	};
+	if (R_STR_ISEMPTY (s)) {
+		return false;
+	}
+	const char *const *prefix = skip_prefixes;
+	while (*prefix) {
+		if (r_str_startswith (s, *prefix)) {
+			return false;
+		}
+		prefix++;
+	}
+	if (strchr (s, ':') != NULL) {
+		return false;
+	}
+	if (isupper ((ut8)s[0])) {
+		return has_lowercase_after (s, 1);
+	}
+	if (s[0] == '_' && isupper ((ut8)s[1])) {
+		return has_lowercase_after (s, 2);
+	}
+	return false;
+}
+
+static bool is_enum_value_candidate(const char *s) {
+	if (!R_STR_ISNOTEMPTY (s) || !isalpha ((ut8)s[0]) || !islower ((ut8)s[0])) {
+		return false;
+	}
+	for (const ut8 *p = (const ut8 *)s + 1; *p; p++) {
+		if (isalpha (*p) || isdigit (*p) || *p == '_') {
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+static DartEnumCandidate *enum_candidate_get_or_add(RList *list, HtPP *by_name, const char *name) {
+	if (!R_STR_ISNOTEMPTY (name)) {
+		return NULL;
+	}
+	DartEnumCandidate *ec = ht_pp_find (by_name, name, NULL);
+	if (ec) {
+		return ec;
+	}
+	ec = R_NEW0 (DartEnumCandidate);
+	ec->name = strdup (name);
+	ec->values = r_list_newf (free);
+	if (!ec->name) {
+		free_enum_candidate (ec);
+		return NULL;
+	}
+	r_list_append (list, ec);
+	ht_pp_insert (by_name, ec->name, ec);
+	return ec;
+}
+
+static void enum_candidate_add_value(DartEnumCandidate *ec, const char *value) {
+	if (!R_STR_ISNOTEMPTY (value)) {
+		return;
+	}
+	if (r_list_find (ec->values, value, (RListComparator)strcmp)) {
+		return;
+	}
+	r_list_append (ec->values, strdup (value));
+}
+
+static bool has_enum_like_suffix(const char *name) {
+	static const char *suffixes[] = {
+		"Action",
+		"Affinity",
+		"Alignment",
+		"Behavior",
+		"Direction",
+		"Kind",
+		"Mode",
+		"Platform",
+		"Side",
+		"Size",
+		"State",
+		"Status",
+		"Style"
+	};
+	for (size_t i = 0; i < sizeof (suffixes) / sizeof (suffixes[0]); i++) {
+		if (r_str_endswith (name, suffixes[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool is_factory_like_value(const char *value) {
+	static const char *bad_values[] = {
+		"builder",
+		"child",
+		"compose",
+		"copy",
+		"current",
+		"dark",
+		"delayed",
+		"directory",
+		"empty",
+		"error",
+		"exit",
+		"fallback",
+		"filled",
+		"file",
+		"from",
+		"generate",
+		"identity",
+		"inverted",
+		"light",
+		"matrix",
+		"microtask",
+		"now",
+		"of",
+		"parse",
+		"root",
+		"separated",
+		"spawn",
+		"sync",
+		"timestamp",
+		"unmodifiable",
+		"utc",
+		"value",
+		"zero"
+	};
+	for (size_t i = 0; i < sizeof (bad_values) / sizeof (bad_values[0]); i++) {
+		if (!strcmp (value, bad_values[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static int enum_candidate_score(const DartEnumCandidate *ec) {
+	if (!ec || !ec->name) {
+		return 0;
+	}
+	int score = 0;
+	int count = ec->values? r_list_length (ec->values): 0;
+	if (count >= 4) {
+		score += 2;
+	} else if (count >= 3) {
+		score += 1;
+	}
+	if (has_enum_like_suffix (ec->name)) {
+		score += 3;
+	}
+	if (ec->values) {
+		RListIter *it;
+		char *value;
+		r_list_foreach (ec->values, it, value) {
+			if (is_factory_like_value (value)) {
+				score -= 2;
+				break;
+			}
+		}
+	}
+	return score;
+}
+
+static int cmp_cstr_ptr(const void *a, const void *b) {
+	const char *const *sa = (const char *const *)a;
+	const char *const *sb = (const char *const *)b;
+	return strcmp (*sa, *sb);
+}
+
+static void class_info_add_enum_values(DartClassInfo *ci, RList *values) {
+	if (r_list_length (values) == 0) {
+		return;
+	}
+	if (!ci->enums) {
+		ci->enums = r_list_newf (free);
+	}
+	int count = r_list_length (values);
+	char **sorted = calloc ((size_t)count, sizeof (char *));
+	if (!sorted) {
+		return;
+	}
+	int idx = 0;
+	RListIter *it;
+	char *value;
+	r_list_foreach (values, it, value) {
+		if (value && idx < count) {
+			sorted[idx++] = value;
+		}
+	}
+	if (idx > 1) {
+		qsort (sorted, (size_t)idx, sizeof (char *), cmp_cstr_ptr);
+	}
+	for (int i = 0; i < idx; i++) {
+		if (!sorted[i] || r_list_find (ci->enums, sorted[i], (RListComparator)strcmp)) {
+			continue;
+		}
+		r_list_append (ci->enums, strdup (sorted[i]));
+	}
+	free (sorted);
+}
+
+static void recover_enum_types_from_strings(DartCtx *ctx, RList *class_list) {
+	if (!ctx || !ctx->core || !class_list) {
+		return;
+	}
+	RList *strings = dart_pool_extract_strings (ctx);
+	if (!strings || r_list_length (strings) == 0) {
+		dart_string_list_free (strings);
+		return;
+	}
+	HtPP *class_by_name = ht_pp_new0 ();
+	HtPP *candidate_by_name = ht_pp_new0 ();
+	RList *candidates = r_list_newf (free_enum_candidate);
+	if (!class_by_name || !candidate_by_name) {
+		ht_pp_free (class_by_name);
+		ht_pp_free (candidate_by_name);
+		dart_string_list_free (strings);
+		r_list_free (candidates);
+		return;
+	}
+	RListIter *it;
+	DartClassInfo *ci;
+	r_list_foreach (class_list, it, ci) {
+		if (ci && ci->name) {
+			ht_pp_insert (class_by_name, ci->name, ci);
+		}
+	}
+	DartStringInfo *si;
+	r_list_foreach (strings, it, si) {
+		if (!si || !si->value || !*si->value) {
+			continue;
+		}
+		const char *s = si->value;
+		size_t len = strlen (s);
+		if (len > 1 && s[len - 1] == '.') {
+			char *prefix = str_dup_n (s, len - 1);
+			if (prefix && is_type_name_candidate (prefix)) {
+				DartEnumCandidate *ec = enum_candidate_get_or_add (candidates, candidate_by_name, prefix);
+				if (ec) {
+					ec->saw_trailing_dot = true;
+				}
+			}
+			free (prefix);
+			continue;
+		}
+		const char *dot = strchr (s, '.');
+		if (dot && dot != s && dot[1] && !strchr (dot + 1, '.')) {
+			char *prefix = str_dup_n (s, (size_t) (dot - s));
+			if (!prefix) {
+				continue;
+			}
+			if (is_type_name_candidate (prefix) && is_enum_value_candidate (dot + 1)) {
+				DartEnumCandidate *ec = enum_candidate_get_or_add (candidates, candidate_by_name, prefix);
+				if (ec) {
+					enum_candidate_add_value (ec, dot + 1);
+				}
+			}
+			free (prefix);
+			continue;
+		}
+		if (is_type_name_candidate (s)) {
+			DartEnumCandidate *ec = enum_candidate_get_or_add (candidates, candidate_by_name, s);
+			if (ec) {
+				ec->saw_plain_name = true;
+			}
+		}
+	}
+	DartEnumCandidate *ec;
+	int recovered = 0;
+	r_list_foreach (candidates, it, ec) {
+		if (!ec || !ec->name || r_list_length (ec->values) < 2) {
+			continue;
+		}
+		int score = enum_candidate_score (ec);
+		if (!ec->saw_trailing_dot || score < 3) {
+			continue;
+		}
+		DartClassInfo *eci = ht_pp_find (class_by_name, ec->name, NULL);
+		if (!eci) {
+			eci = R_NEW0 (DartClassInfo);
+			eci->name = strdup (ec->name);
+			eci->fields = r_list_newf ((RListFree)dart_field_info_free);
+			eci->interfaces = r_list_newf (free);
+			if (!eci->name || !eci->fields || !eci->interfaces) {
+				dart_class_info_free (eci);
+				continue;
+			}
+			r_list_append (class_list, eci);
+			ht_pp_insert (class_by_name, eci->name, eci);
+		}
+		eci->flags |= DART_CLASS_ENUM;
+		class_info_add_enum_values (eci, ec->values);
+		recovered++;
+		if (ctx->verbose > 1) {
+			fprintf (stderr, "[r2flutter] recovered enum %s (%d values, score=%d)\n", ec->name, r_list_length (ec->values), score);
+		}
+	}
+	if (ctx->verbose > 0) {
+		fprintf (stderr, "[r2flutter] Recovered %d enums from strings\n", recovered);
+	}
+	r_list_free (candidates);
+	ht_pp_free (candidate_by_name);
+	ht_pp_free (class_by_name);
+	dart_string_list_free (strings);
 }
 
 static int decode_library_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *libraries, ut64 *ref_counter) {
@@ -2360,29 +2702,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 					char saved = buf[slen];
 					buf[slen] = 0;
 					char *s = (char *)buf;
-					bool is_type = false;
-					if (strncmp (s, "get:", 4) == 0 || strncmp (s, "set:", 4) == 0 ||
-						strncmp (s, "init:", 5) == 0 || strncmp (s, "dyn:", 4) == 0 ||
-						strncmp (s, "vm:", 3) == 0 || strncmp (s, "dart:", 5) == 0 ||
-						strncmp (s, "package:", 8) == 0 || strchr (s, ':') != NULL) {
-					} else if (s[0] >= 'A' && s[0] <= 'Z') {
-						bool has_lower = false;
-						for (int i = 1; i < slen && !has_lower; i++) {
-							if (s[i] >= 'a' && s[i] <= 'z') {
-								has_lower = true;
-							}
-						}
-						is_type = has_lower;
-					} else if (s[0] == '_' && slen > 1 && s[1] >= 'A' && s[1] <= 'Z') {
-						bool has_lower = false;
-						for (int i = 2; i < slen && !has_lower; i++) {
-							if (s[i] >= 'a' && s[i] <= 'z') {
-								has_lower = true;
-							}
-						}
-						is_type = has_lower;
-					}
-					if (is_type) {
+					if (is_type_name_candidate (s)) {
 						DartClassInfo *ci = R_NEW0 (DartClassInfo);
 						ci->name = strdup (s);
 						ci->ref_id = 0;
@@ -2799,6 +3119,17 @@ static void dump_class_json(PJ *pj, const DartClassInfo *ci) {
 	pj_kb (pj, "mixin", (ci->flags & DART_CLASS_MIXIN) != 0);
 	pj_kb (pj, "toplevel", (ci->flags & DART_CLASS_TOPLEVEL) != 0);
 	pj_end (pj);
+	if (ci->enums && r_list_length (ci->enums) > 0) {
+		pj_ka (pj, "enums");
+		RListIter *eit;
+		char *value;
+		r_list_foreach (ci->enums, eit, value) {
+			if (value) {
+				pj_s (pj, value);
+			}
+		}
+		pj_end (pj);
+	}
 	if (ci->fields && r_list_length (ci->fields) > 0) {
 		pj_ka (pj, "fields");
 		RListIter *fit;
@@ -2845,8 +3176,26 @@ static void dump_class_json(PJ *pj, const DartClassInfo *ci) {
 	pj_end (pj);
 }
 
-static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt) {
+static void append_enum_values(RStrBuf *sb, const DartClassInfo *ci) {
+	if (!sb || !ci || !ci->enums || r_list_length (ci->enums) == 0) {
+		return;
+	}
+	char *joined = r_str_list_join (ci->enums, ", ");
+	if (!joined) {
+		return;
+	}
+	r_strbuf_append (sb, " { ");
+	r_strbuf_append (sb, joined);
+	r_strbuf_append (sb, " }");
+	free (joined);
+}
+
+static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool type_view) {
 	const bool emit_r2 = fmt == 'r';
+	const bool emit_enum_literal = type_view &&
+		(ci->flags & DART_CLASS_ENUM) &&
+		ci->enums &&
+		r_list_length (ci->enums) > 0;
 	if (!ci || !ci->name) {
 		return;
 	}
@@ -2854,6 +3203,13 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt) {
 		char safe_name[256];
 		snprintf (safe_name, sizeof (safe_name), "%s", ci->name);
 		r_name_filter (safe_name, 0);
+		if (emit_enum_literal) {
+			r_strbuf_appendf (sb, "# enum %s", ci->name);
+			append_enum_values (sb, ci);
+			r_strbuf_append (sb, "\n");
+			r_strbuf_appendf (sb, "\"td struct.dart.%s { };\"\n", safe_name);
+			return;
+		}
 		r_strbuf_appendf (sb, "# class %s", ci->name);
 		if (ci->super_class_name) {
 			r_strbuf_appendf (sb, " extends %s", ci->super_class_name);
@@ -2891,6 +3247,12 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt) {
 				r_strbuf_appendf (sb, "#   method 0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, r_str_get (mi->name), method_kind_name (mi->kind_tag));
 			}
 		}
+		return;
+	}
+	if (emit_enum_literal) {
+		r_strbuf_appendf (sb, "enum %s", ci->name);
+		append_enum_values (sb, ci);
+		r_strbuf_append (sb, "\n");
 		return;
 	}
 	r_strbuf_appendf (sb, "class %s", ci->name);
@@ -2941,6 +3303,13 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt) {
 
 char *dart_pool_dump_classes(DartCtx *ctx, int fmt) {
 	RList *classes = dart_pool_extract_classes (ctx);
+	const bool type_view = ctx && ctx->dump_classes == 3;
+	if (!classes && type_view) {
+		classes = r_list_newf ((RListFree)dart_class_info_free);
+	}
+	if (classes && type_view) {
+		recover_enum_types_from_strings (ctx, classes);
+	}
 	if (fmt == 'j') {
 		if (!classes || r_list_length (classes) == 0) {
 			if (classes) {
@@ -2968,7 +3337,7 @@ char *dart_pool_dump_classes(DartCtx *ctx, int fmt) {
 	RListIter *it;
 	DartClassInfo *ci;
 	r_list_foreach (classes, it, ci) {
-		dump_class_text (sb, ci, fmt);
+		dump_class_text (sb, ci, fmt, type_view);
 	}
 	dart_class_list_free (classes);
 	return r_strbuf_drain (sb);
@@ -2985,9 +3354,7 @@ void dart_string_ref_free(DartStringRef *sr) {
 void dart_string_info_free(DartStringInfo *si) {
 	if (si) {
 		free (si->value);
-		if (si->references) {
-			r_list_free (si->references);
-		}
+		r_list_free (si->references);
 		free (si);
 	}
 }
@@ -3003,13 +3370,13 @@ static bool is_ascii_char(ut8 ch) {
 }
 
 static DartStringCategory classify_string_value(const char *s) {
-	if (!s || !*s) {
+	if (R_STR_ISEMPTY (s)) {
 		return DART_STRING_CAT_UNKNOWN;
 	}
-	if (!strncmp (s, "dart:", 5) || strstr (s, "dartvm") || strstr (s, "dart/")) {
+	if (r_str_startswith (s, "dart:") || strstr (s, "dartvm") || strstr (s, "dart/")) {
 		return DART_STRING_CAT_RUNTIME;
 	}
-	if (!strncmp (s, "package:", 8) || strstr (s, ".dart")) {
+	if (r_str_startswith (s, "package:") || strstr (s, ".dart")) {
 		return DART_STRING_CAT_LIBRARY;
 	}
 	for (const char *p = s; *p; p++) {

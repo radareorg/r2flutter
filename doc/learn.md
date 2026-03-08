@@ -2,6 +2,19 @@
 
 This document summarizes key technical findings discovered during the implementation of class extraction features in r2flutter.
 
+## Enum Recovery In `--dump-types` Is Heuristic But Useful
+
+**Finding**: Production AOT samples still do not expose enough `Class` metadata to recover enum declarations directly, but enum names and variants often survive as qualified strings such as `AppLifecycleState.resumed` plus a matching `AppLifecycleState.` marker.
+
+`--dump-types` now supplements the existing type-name scanner with a conservative enum inference pass over extracted strings:
+
+- require a trailing `EnumName.` marker
+- require at least two lowercase `EnumName.value` strings
+- score candidates so enum-shaped type names like `...State`, `...Action`, `...Mode`, `...Direction`, `...Alignment`, and `...Affinity` are preferred
+- reject obvious factory-style false positives such as `Future.value`, `List.from`, and similar constructor-heavy APIs
+
+This recovers real enums in the shipped fixtures on both platforms, for example `AppLifecycleState` on iOS and Android, and `TextInputAction` on the Android `mafia` sample.
+
 ## Dump Header JSON Superset
 
 **Finding**: `-j --dump-header` emits the same snapshot/cluster fields as the old dump-snapshot JSON, plus layout metadata (version, tag style, CID table).

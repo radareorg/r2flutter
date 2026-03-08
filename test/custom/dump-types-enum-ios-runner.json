@@ -1,0 +1,11 @@
+{
+  "name": "dump-types-enum-ios-runner",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-types", "bins/ios/Runner.app"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "enum AppLifecycleState { detached, hidden, inactive, paused, resumed }"
+    ]
+  }
+}
