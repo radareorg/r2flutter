@@ -1,7 +1,8 @@
 name: ci
 
+# 6.1.0 hangs the ci because racist reasons, we will enable debs install when 6.1.2 is out
 env:
-  R2V: 6.1.0
+  R2V: 6.1.2
 
 on:
   push:
@@ -13,16 +14,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v6
-    - name: Installing radare2
-      run: |
-        wget https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2_${{env.R2V}}_amd64.deb
-        wget https://github.com/radareorg/radare2/releases/download/${{env.R2V}}/radare2-dev_${{env.R2V}}_amd64.deb
-        sudo dpkg -i radare2_${{env.R2V}}_amd64.deb
-        sudo dpkg -i radare2-dev_${{env.R2V}}_amd64.deb
-    - name: Building fluor2
-      run: make
-    - name: Install plugin
-      run: make user-install
+    - name: Installing radare2 from git
+      run: git clone --depth=1 https://github.com/radareorg/radare2 && radare2/sys/install.sh
+#    - name: Installing radare2 release ${{env.R2V}}
+#      run: https://raw.githubusercontent.com/radareorg/radare2/refs/heads/master/sys/install-debs.sh | bash
+    - name: Building r2flutter
+      run: make && make user-install
     - name: Basic Testing
       run: make test
     - name: Radare Testing
