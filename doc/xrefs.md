@@ -541,9 +541,30 @@ With current repo code, the main directly dumpable pieces are:
   - field/method attachment when data-image scans succeed
 - `--dump-strings`
   - string values and byte addresses
+- `--dump-xrefs`
+  - flattened metadata/object-graph xrefs
+  - class -> string/library/super links
+  - field -> owner/name/type links when metadata survives
+  - method -> owner/name/entry links when data-image scans succeed
+  - instruction-table entry -> code/stub address links
 - `--dump-r2script`
   - recovered function flags
   - PP-relative object-pool offsets seen in code
+
+From radare2, the equivalent entrypoint is:
+
+- `r2flutter -x`
+
+This first version is intentionally limited to:
+
+- metadata xrefs
+- data-image object scan xrefs
+
+It does not yet include:
+
+- object-pool/code-use xrefs from disassembly
+- call graph edges
+- field-use xrefs from load/store analysis
 
 ## What Still Needs More Work
 

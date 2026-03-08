@@ -210,6 +210,13 @@ Current gaps:
 - object-pool offsets can be collected from code, but pool entries are not decoded yet, so `code -> string/class/field/method` xrefs are not end-to-end
 - library URI resolution and `Field.type_ref` name resolution are still incomplete
 
+The repo now exposes the currently recoverable subset through:
+
+- CLI: `--dump-xrefs`
+- radare2 plugin: `r2flutter -x`
+
+The new dumper intentionally stops at metadata/data-image edges. Disassembly-derived object-pool xrefs and call/use edges are still future work.
+
 ## Recovering Methods Without Class Clusters
 
 Production snapshots omit the `Class` cluster, but `Function` objects are still serialized in the ROData image. r2flutter now scans the data image for objects whose CID equals `cid_function` and extracts:

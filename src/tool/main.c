@@ -14,6 +14,7 @@ typedef enum {
 	ACTION_DUMP_HEADER,
 	ACTION_DUMP_FUNCS,
 	ACTION_DUMP_IT,
+	ACTION_DUMP_XREFS,
 	ACTION_DUMP_R2SCRIPT,
 } DumpAction;
 
@@ -33,6 +34,7 @@ static const char usage_text[] =
 	"  --dump-it             Print instruction table entries to stdout\n"
 	"  --dump-r2script       Print radare2 script for snapshot analysis\n"
 	"  --dump-strings        Print all extracted strings\n"
+	"  --dump-xrefs          Print metadata/data-image xrefs\n"
 	"  --dump-types          Print string-based type names\n"
 	"Options:\n"
 	"  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)\n"
@@ -113,6 +115,8 @@ int main(int argc, char **argv) {
 			} else if (!strcmp (a, "--dump-it")) {
 				action = ACTION_DUMP_IT;
 				dctx.dump_it = true;
+			} else if (!strcmp (a, "--dump-xrefs")) {
+				action = ACTION_DUMP_XREFS;
 			} else if (!strcmp (a, "--dump-r2script")) {
 				action = ACTION_DUMP_R2SCRIPT;
 			} else if (!strcmp (a, "--use-name-pool")) {
@@ -199,6 +203,9 @@ int main(int argc, char **argv) {
 		break;
 	case ACTION_DUMP_IT:
 		output = dart_pool_dump_it (&app->dctx, fmt);
+		break;
+	case ACTION_DUMP_XREFS:
+		output = dart_pool_dump_xrefs (&dctx, fmt);
 		break;
 	case ACTION_DUMP_R2SCRIPT:
 		dart_app_load_info (app);

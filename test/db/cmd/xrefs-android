@@ -1,0 +1,36 @@
+NAME=text-xrefs-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --limit 4 --dump-xrefs bins/android/first 2>/dev/null
+EOF
+EXPECT=<<EOF
+scan class.name class _Uint16List -> string _Uint16List @ 0x1660
+scan class.name class _ExternalInt64Array -> string _ExternalInt64Array @ 0x1680
+scan class.name class FutureOr -> string FutureOr @ 0x16d0
+scan class.name class _Set -> string _Set @ 0x1720
+EOF
+RUN
+
+NAME=json-xrefs-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j --limit 3 --dump-xrefs bins/android/first 2>/dev/null
+EOF
+EXPECT=<<EOF
+[{"kind":"class.name","origin":"scan","src":{"type":"class","name":"_Uint16List"},"dst":{"type":"string","name":"_Uint16List","addr":5728}},{"kind":"class.name","origin":"scan","src":{"type":"class","name":"_ExternalInt64Array"},"dst":{"type":"string","name":"_ExternalInt64Array","addr":5760}},{"kind":"class.name","origin":"scan","src":{"type":"class","name":"FutureOr"},"dst":{"type":"string","name":"FutureOr","addr":5840}}]
+EOF
+RUN
+
+NAME=r2-xrefs-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -r --limit 2 --dump-xrefs bins/android/first 2>/dev/null
+EOF
+EXPECT=<<EOF
+# Dart xrefs
+# scan class.name class _Uint16List -> string _Uint16List @ 0x1660
+f xref.class.name._Uint16List = 0x1660
+# scan class.name class _ExternalInt64Array -> string _ExternalInt64Array @ 0x1680
+f xref.class.name._ExternalInt64Array = 0x1680
+EOF
+RUN
