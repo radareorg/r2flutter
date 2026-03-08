@@ -1,0 +1,20 @@
+NAME=text-strings-android-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --dump-strings bins/android/mafia 2>/dev/null | sed -n '1,12p'
+EOF
+EXPECT=<<EOF
+0x000001e9   28 :lib "_kDartVmSnapshotInstructions"
+0x00000206   33 :lib "_kDartIsolateSnapshotInstructions"
+0x00000228   20 :lib "_kDartVmSnapshotData"
+0x0000023d   25 :lib "_kDartIsolateSnapshotData"
+0x00000257   21 :lib "_kDartSnapshotBuildId"
+0x00000354  167 :app "97ff04a728735e6b6b098bdf983faabaproduct no-code_comments no-dwarf_stack_traces_mode dedup_instructions no-tsan no-msan no-shared_data arm64 android compressed-pointers"
+0x00000855   15 :app "<optimized out>"
+0x00000865    6 :lib "Handle"
+0x00000870   22 :lib "MonomorphicSmiableCall"
+0x0000088b   11 :lib "ClosureData"
+0x00000897   17 :app "dyn:implicit:call"
+0x000008ae   16 :lib "_NativeFinalizer"
+EOF
+RUN

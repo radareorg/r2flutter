@@ -2,6 +2,71 @@
 
 This document summarizes key technical findings discovered during the implementation of class extraction features in r2flutter.
 
+## Compressed Pointers Store Low 32 Bits Of The Tagged Pointer
+
+**Finding**: The current Dart VM sources in `third_party/sdk` do not implement compressed pointers as `heap_base + (ref << alignment_shift)`.
+
+The real model in this checkout is:
+
+- store the low 32 bits of the already-tagged pointer
+- reconstruct with `heap_base + stored32`
+- keep Smis compressed to the same 32-bit slot width
+
+This also means `PP` is not the heap-base register. `PP` is the object-pool register. On ARM64 the heap upper bits come from `HEAP_BITS`, and on x64 compressed loads add `Thread::heap_base_offset()`.
+
+## Compressed-Pointer AOT Strings Are Packed Cluster Payloads, Not ROData C Strings
+
+**Finding**: In code snapshots without compressed pointers, canonical strings can be emitted as direct ROData heap objects, which is why local iOS and `android/first` samples contain NUL-padded names such as `_Uint16List`.
+
+With compressed pointers enabled, the serializer skips that direct ROData path and writes strings through `StringSerializationCluster` instead:
+
+- alloc phase writes encoded length/type
+- fill phase writes encoded length/type again
+- then raw one-byte or UTF-16 payload bytes
+
+This is why compressed-pointer Android samples such as `android/mafia` contain byte runs like:
+
+```text
+Handle 82 1a 82 34 MonomorphicSmiableCall ...
+```
+
+The printable text is still plain, but it is separated by cluster metadata bytes instead of `0x00`.
+
+**Implication**: `--dump-strings` can recover some of these today with non-NUL-delimited text scanning, but complete support should come from snapshot-aware string-cluster decoding rather than classic C-string assumptions.
+
+## Snapshot `WriteUnsigned` Is Not Standard ULEB128
+
+**Finding**: Dart clustered snapshots do not use plain ULEB128 for `WriteUnsigned` / `ReadUnsigned`.
+
+The terminating byte is written as `value + 0x80`, so:
+
+- `6` is encoded as `0x86`
+- `12` is encoded as `0x8c`
+- multi-byte values use low 7-bit chunks followed by a final byte with bit 7 set
+
+This explains packed runs such as:
+
+```text
+9e "<optimized out>" 8c "Handle" ac "MonomorphicSmiableCall"
+```
+
+where `0x9e` is length `30` (`15 << 1`) and `0x8c` is length `12` (`6 << 1`) for one-byte strings.
+
+**Implication**: snapshot-aware string recovery must use Dart's own unsigned decoding, not a generic LEB128 reader, otherwise string lengths and cluster metadata drift immediately.
+
+## Reliable Compressed-String Recovery Comes From Packed Record Runs
+
+**Finding**: A full cluster deserializer is not required just to recover meaningful strings from compressed-pointer snapshots.
+
+In practice, scanning the snapshot cluster region for **runs** of valid Dart string records works well:
+
+- decode a Dart `ReadUnsigned`
+- interpret `encoded >> 1` as length and `encoded & 1` as one-byte vs two-byte
+- require a sequence of several valid records, tolerating a few short non-text records between them
+- emit payload addresses, not prefix-byte addresses, so results dedupe cleanly with classic section scans
+
+This recovers structured packed strings from `android/mafia` while avoiding the need to fully model every non-string cluster.
+
 ## `--use-name-pool` Must Stay Opt-In
 
 **Finding**: The name-pool fallback is useful for exploratory reversing, but it is too weak to enable by default because it can silently mislabel functions.
