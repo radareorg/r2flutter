@@ -21,6 +21,12 @@ The command now:
 
 The parser also needs a wider scan than the raw `it_off` hint on some iOS samples, because the offset can land inside the table payload rather than exactly on the `InstructionsTable::Data` header.
 
+## Plugin String Dump Flag Uses Lowercase `-s`
+
+**Finding**: The radare2 plugin now uses `r2flutter -s` for JSON string dumping instead of `r2flutter -S`.
+
+This keeps the short command set lowercase for string-oriented output (`-s` JSON, `-t` r2 comments) and avoids carrying an unnecessary uppercase-only alias in the plugin help and parser.
+
 ## r2r Coverage Needs Short Cross-Platform Windows
 
 **Finding**: The `test/db/cmd` suite is more maintainable when every dump mode is exercised on both Android and iOS using short deterministic windows instead of full dumps.

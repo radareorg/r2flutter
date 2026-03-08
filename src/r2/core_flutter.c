@@ -8,7 +8,7 @@
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [-jirfqncFStH] [args]\n"
+		"Usage: r2flutter [-jirfqncFstH] [args]\n"
 		"| r2flutter          analyze dart snapshot and apply flags/comments\n"
 		"| r2flutter -c       dump classes as JSON\n"
 		"| r2flutter -C       dump classes as r2 type definitions\n"
@@ -20,7 +20,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -n       use name pool for unknown function names\n"
 		"| r2flutter -q       analyze quietly (no extra output)\n"
 		"| r2flutter -r       output r2 script (like rabin2 -r)\n"
-		"| r2flutter -S       dump all strings as JSON\n"
+		"| r2flutter -s       dump all strings as JSON\n"
 		"| r2flutter -t       dump strings as r2 comments\n");
 }
 
@@ -219,7 +219,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		dctx.dump_fields = 1;
 		r2flutter_analyze (core, &dctx, 0);
 		return true;
-	case 'S':
+	case 's':
 		{
 			char *json = dart_pool_dump_strings (&dctx, 'j');
 			if (json) {

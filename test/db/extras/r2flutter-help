@@ -26,7 +26,7 @@ Options:
   --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
   --use-name-pool       Assign names from data image strings when unknown
 ===
-Usage: r2flutter [-jirfqncFStH] [args]
+Usage: r2flutter [-jirfqncFstH] [args]
 | r2flutter          analyze dart snapshot and apply flags/comments
 | r2flutter -c       dump classes as JSON
 | r2flutter -C       dump classes as r2 type definitions
@@ -38,7 +38,7 @@ Usage: r2flutter [-jirfqncFStH] [args]
 | r2flutter -n       use name pool for unknown function names
 | r2flutter -q       analyze quietly (no extra output)
 | r2flutter -r       output r2 script (like rabin2 -r)
-| r2flutter -S       dump all strings as JSON
+| r2flutter -s       dump all strings as JSON
 | r2flutter -t       dump strings as r2 comments
 EOF
 RUN
