@@ -1,0 +1,9 @@
+NAME=version
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -V 2>&1
+EOF
+EXPECT=<<EOF
+r2flutter 0.1.0
+EOF
+RUN

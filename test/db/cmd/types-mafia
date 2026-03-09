@@ -1,0 +1,12 @@
+NAME=text-types-mafia
+FILE=-
+CMDS=!!../bin/r2flutter --dump-types bins/android/mafia 2>/dev/null | head -6
+EXPECT=<<EOF
+class Handle (size=0)
+class MonomorphicSmiableCall (size=0)
+class ClosureData (size=0)
+class _NativeFinalizer (size=0)
+class _FunctionType (size=0)
+class Uint64List (size=0)
+EOF
+RUN

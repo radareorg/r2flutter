@@ -1,0 +1,9 @@
+NAME=json-header-authpass
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j --dump-header bins/ios/AuthPass.app 2>/dev/null
+EOF
+EXPECT=<<EOF
+{"kind":3,"hash":"f71c76320d35b65f1164dbaa6d95fe09","vm_data":7333504,"vm_instr":23168,"iso_data":7368576,"iso_instr":64960,"cluster":{"base":105,"objs":16008,"clusters":118,"it_len":2576,"it_off":12808,"total":3159106},"cws":8,"dart_version":"3.2.5","tag_style":"CID_SHIFT1","alignment":16,"header_fields":5,"it_capacity":20000,"cid_table":{"cid_class":5,"cid_function":7,"cid_code":18,"cid_string":92,"cid_one_byte_string":93,"cid_two_byte_string":94,"cid_array":89,"cid_mint":60,"cid_object_pool":22,"num_predefined":176}}
+EOF
+RUN

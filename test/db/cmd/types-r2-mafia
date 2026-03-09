@@ -1,0 +1,15 @@
+NAME=r2-types-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -r --dump-types bins/android/mafia 2>/dev/null | head -7
+EOF
+EXPECT=<<EOF
+# Dart classes extracted from snapshot
+# class Handle (size=0)
+"td struct.dart.Handle { };"
+# class MonomorphicSmiableCall (size=0)
+"td struct.dart.MonomorphicSmiableCall { };"
+# class ClosureData (size=0)
+"td struct.dart.ClosureData { };"
+EOF
+RUN

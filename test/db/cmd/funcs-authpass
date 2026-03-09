@@ -1,0 +1,20 @@
+NAME=text-funcs-authpass
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --dump-funcs --limit 3 bins/ios/AuthPass.app 2>/dev/null
+EOF
+EXPECT=<<EOF
+0x16dc70 method.fn_0
+0x16dc84 ppe:_
+0x16e1a2 method.fn_3
+EOF
+RUN
+NAME=json-funcs-authpass
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j --dump-funcs --limit 3 bins/ios/AuthPass.app 2>/dev/null
+EOF
+EXPECT=<<EOF
+[{"addr":1498224,"name":"method.fn_0"},{"addr":1498244,"name":"ppe:_"},{"addr":1499554,"name":"method.fn_3"}]
+EOF
+RUN

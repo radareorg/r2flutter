@@ -1,0 +1,12 @@
+NAME=r2-strings-android
+FILE=-
+CMDS=!!../bin/r2flutter -r --dump-strings bins/android/first 2>/dev/null | head -6
+EXPECT=<<EOF
+# Dart Strings
+iz+ 0x00000214 165
+iz+ 0x00001660 11
+iz+ 0x00001680 19
+iz+ 0x000016b0 17
+iz+ 0x000016d0 8
+EOF
+RUN

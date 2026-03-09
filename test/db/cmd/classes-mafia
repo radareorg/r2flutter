@@ -1,0 +1,25 @@
+NAME=text-classes-mafia
+FILE=-
+CMDS=!!../bin/r2flutter --dump-classes bins/android/mafia 2>/dev/null | head -6
+EXPECT=<<EOF
+class Handle (size=0)
+class MonomorphicSmiableCall (size=0)
+class ClosureData (size=0)
+class _NativeFinalizer (size=0)
+class _FunctionType (size=0)
+class Uint64List (size=0)
+EOF
+RUN
+NAME=r2-classes-mafia
+FILE=-
+CMDS=!!../bin/r2flutter -r --dump-classes bins/android/mafia 2>/dev/null | head -7
+EXPECT=<<EOF
+# Dart classes extracted from snapshot
+# class Handle (size=0)
+"td struct.dart.Handle { };"
+# class MonomorphicSmiableCall (size=0)
+"td struct.dart.MonomorphicSmiableCall { };"
+# class ClosureData (size=0)
+"td struct.dart.ClosureData { };"
+EOF
+RUN
