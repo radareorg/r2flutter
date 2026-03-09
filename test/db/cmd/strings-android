@@ -12,3 +12,18 @@ EXPECT=<<EOF
 0x000016f0   18 :app "boolean expression"
 EOF
 RUN
+
+NAME=r2-strings-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -r --dump-strings bins/android/first 2>/dev/null | head -6
+EOF
+EXPECT=<<EOF
+# Dart Strings
+iz+ 0x00000214 165
+iz+ 0x00001660 11
+iz+ 0x00001680 19
+iz+ 0x000016b0 17
+iz+ 0x000016d0 8
+EOF
+RUN

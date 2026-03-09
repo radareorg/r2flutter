@@ -1,0 +1,13 @@
+NAME=r2-strings-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -r --dump-strings bins/android/mafia 2>/dev/null | head -5
+EOF
+EXPECT=<<EOF
+# Dart Strings
+iz+ 0x00000354 167
+iz+ 0x00000855 15
+iz+ 0x00000865 6
+iz+ 0x00000870 22
+EOF
+RUN

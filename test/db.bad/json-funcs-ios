@@ -1,9 +1,0 @@
-NAME=json-funcs-ios
-FILE=-
-CMDS=<<EOF
-!!../bin/r2flutter -q -j --dump-funcs --limit 2 bins/ios/Runner.app
-EOF
-EXPECT_RE=<<EOF
-\[{"addr":\d+,"name":".+"},{"addr":\d+,"name":".+"}\]
-EOF
-RUN
