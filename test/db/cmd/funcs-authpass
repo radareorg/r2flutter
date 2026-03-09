@@ -9,6 +9,7 @@ EXPECT=<<EOF
 0x16e1a2 method.fn_3
 EOF
 RUN
+
 NAME=json-funcs-authpass
 FILE=-
 CMDS=<<EOF

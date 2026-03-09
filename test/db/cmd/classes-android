@@ -13,3 +13,18 @@ EXPECT=<<EOF
 "td struct.dart.FutureOr { };"
 EOF
 RUN
+
+NAME=text-classes-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --dump-classes bins/android/first 2>/dev/null | head -6
+EOF
+EXPECT=<<EOF
+class _Uint16List (size=0)
+class _ExternalInt64Array (size=0)
+class FutureOr (size=0)
+class _Set (size=0)
+class Int32List. (size=0)
+class Float32List (size=0)
+EOF
+RUN

@@ -9,6 +9,7 @@ EXPECT=<<EOF
 0x5b6bdd _
 EOF
 RUN
+
 NAME=r2-funcs-mafia
 FILE=-
 CMDS=<<EOF
@@ -21,6 +22,7 @@ f method.fn_1 = 0x5b6b61
 '@0x5b6b61'CC method.fn_1
 EOF
 RUN
+
 NAME=json-funcs-mafia
 FILE=-
 CMDS=<<EOF
