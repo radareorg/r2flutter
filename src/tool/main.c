@@ -172,21 +172,13 @@ int main(int argc, char **argv) {
 
 	dctx.core = core;
 
-	DartApp *app = dart_app_new (libapp_path);
+	DartApp *app = dart_app_new_from_core (core, &dctx);
 	if (!app) {
 		R_LOG_ERROR ("Failed to create DartApp");
 		r_core_free (core);
 		free (libapp_path);
 		return 1;
 	}
-
-	app->core = core;
-	app->base_addr = r_bin_get_baddr (core->bin);
-	if (app->base_addr == (ut64)-1) {
-		app->base_addr = 0;
-	}
-	app->heap_base = 0;
-	memcpy (&app->dctx, &dctx, sizeof (DartCtx));
 
 	if (dctx.verbose) {
 		fprintf (stderr, "libapp is loaded at 0x%" PFMT64x "\n", app->base_addr);

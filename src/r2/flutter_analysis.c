@@ -1066,24 +1066,11 @@ static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, RList *
 
 bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 	R_RETURN_VAL_IF_FAIL (core && dctx, false);
-	const char *filepath = R_UNWRAP4 (core, bin, cur, file);
-	if (!filepath) {
-		R_LOG_ERROR ("r2flutter: no file loaded");
-		return false;
-	}
-	DartApp *app = dart_app_new (filepath);
+	DartApp *app = dart_app_new_from_core (core, dctx);
 	if (!app) {
 		R_LOG_ERROR ("r2flutter: failed to create DartApp");
 		return false;
 	}
-	app->core = core;
-	app->base_addr = r_bin_get_baddr (core->bin);
-	if (app->base_addr == UT64_MAX) {
-		app->base_addr = 0;
-	}
-	app->heap_base = 0;
-	memcpy (&app->dctx, dctx, sizeof (DartCtx));
-	app->dctx.core = core;
 	dart_app_load_info (app);
 	dart_dumper_apply_to_core (app);
 

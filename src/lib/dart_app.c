@@ -3,11 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <r_core.h>
-#include <r_flag.h>
 #include <r_list.h>
 #include <r_util/r_name.h>
 #include "../../include/r2flutter/dart_app.h"
@@ -32,12 +28,28 @@ DartApp *dart_app_new(const char *path) {
 	if (!app) {
 		return NULL;
 	}
-	if (path) {
-		app->file_path = strdup (path);
-	} else {
-		app->file_path = NULL;
-	}
+	app->file_path = path? strdup (path): NULL;
 	app->functions = r_list_newf (free_dart_function);
+	return app;
+}
+
+DartApp *dart_app_new_from_core(RCore *core, DartCtx *dctx) {
+	const char *filepath = R_UNWRAP4 (core, bin, cur, file);
+	if (!filepath) {
+		return NULL;
+	}
+	DartApp *app = dart_app_new (filepath);
+	if (!app) {
+		return NULL;
+	}
+	app->core = core;
+	app->base_addr = r_bin_get_baddr (core->bin);
+	if (app->base_addr == UT64_MAX) {
+		app->base_addr = 0;
+	}
+	app->heap_base = 0;
+	memcpy (&app->dctx, dctx, sizeof (DartCtx));
+	app->dctx.core = core;
 	return app;
 }
 
@@ -47,9 +59,7 @@ void dart_app_free(DartApp *app) {
 	}
 	dart_obf_fini (&app->dctx);
 	r_list_free (app->functions);
-	if (app->file_path) {
-		free (app->file_path);
-	}
+	free (app->file_path);
 	free (app);
 }
 
@@ -100,98 +110,3 @@ void dart_app_load_info(DartApp *app) {
 	}
 }
 
-static int ensure_dir(const char *path) {
-	if (!path) {
-		return -1;
-	}
-	struct stat st;
-	if (stat (path, &st) == 0) {
-		if (S_ISDIR (st.st_mode)) {
-			return 0;
-		}
-		return -1;
-	}
-	// try to create
-	char cmd[1024];
-	snprintf (cmd, sizeof (cmd), "mkdir -p '%s'", path);
-	return system (cmd);
-}
-
-static void write_struct_header(const char *outpath, ut64 base) {
-	FILE *of = fopen (outpath, "w");
-	if (!of) {
-		return;
-	}
-	fprintf (of, "typedef struct DartThread {\n");
-	fprintf (of, "\tunsigned long long pad0;\n");
-	fprintf (of, "} DartThread;\n\n");
-	fprintf (of, "typedef struct DartObjectPool {\n");
-	fprintf (of, "\tunsigned long long pool_base; /* base: %#llx */\n", (unsigned long long)base);
-	fprintf (of, "} DartObjectPool;\n");
-	fclose (of);
-}
-
-void dart_app_dump4radare2(DartApp *app, const char *out_dir) {
-	if (!app || !out_dir) {
-		return;
-	}
-	ensure_dir (out_dir);
-
-	char path[4096];
-	snprintf (path, sizeof (path), "%s/addNames.r2", out_dir);
-	FILE *of = fopen (path, "w");
-	if (!of) {
-		return;
-	}
-
-	fprintf (of, "# create flags for libraries, classes and methods\n");
-	fprintf (of, "e emu.str=true\n");
-	fprintf (of, "f app.base = %#llx\n", (unsigned long long)app->base_addr);
-	fprintf (of, "f app.heap_base = %#llx\n", (unsigned long long)app->heap_base);
-
-	if (app->functions) {
-		RListIter *it;
-		DartFunction *fn;
-		r_list_foreach (app->functions, it, fn) {
-			if (!fn || !fn->name) {
-				continue;
-			}
-			char flagname[1024];
-			snprintf (flagname, sizeof (flagname), "method.%s", fn->name);
-			r_name_filter (flagname, 0);
-			fprintf (of, "f %s = %#llx\n", flagname, (unsigned long long)fn->addr);
-			fprintf (of, "'@%#llx'CC %s\n", (unsigned long long)fn->addr, fn->name);
-		}
-	}
-
-	// add gp/pp helper and object pool struct
-	fprintf (of, "dr x27=`e anal.gp`\n");
-	fprintf (of, "'f PP=x27\n");
-
-	// write a simple struct header
-	snprintf (path, sizeof (path), "%s/r2_dart_struct.h", out_dir);
-	write_struct_header (path, app->base_addr);
-
-	fclose (of);
-
-	// Also set flags in the loaded r2 core so they appear in session
-	if (app->core && app->core->flags) {
-		r_flag_set (app->core->flags, "app.base", app->base_addr, 0);
-		if (app->heap_base) {
-			r_flag_set (app->core->flags, "app.heap_base", app->heap_base, 0);
-		}
-		if (app->functions) {
-			RListIter *it;
-			DartFunction *fn;
-			r_list_foreach (app->functions, it, fn) {
-				if (!fn) {
-					continue;
-				}
-				char flagname[1024];
-				snprintf (flagname, sizeof (flagname), "method.%s", fn->name);
-				r_name_filter (flagname, 0);
-				r_flag_set (app->core->flags, flagname, fn->addr, 0);
-			}
-		}
-	}
-}
