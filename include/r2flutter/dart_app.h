@@ -27,6 +27,7 @@ typedef struct DartApp {
 } DartApp;
 
 DartApp *dart_app_new(const char *path);
+DartApp *dart_app_new_from_core(RCore *core, DartCtx *dctx);
 void dart_app_free(DartApp *app);
 void dart_app_load_info(DartApp *app);
 

@@ -28,12 +28,28 @@ DartApp *dart_app_new(const char *path) {
 	if (!app) {
 		return NULL;
 	}
-	if (path) {
-		app->file_path = strdup (path);
-	} else {
-		app->file_path = NULL;
-	}
+	app->file_path = path? strdup (path): NULL;
 	app->functions = r_list_newf (free_dart_function);
+	return app;
+}
+
+DartApp *dart_app_new_from_core(RCore *core, DartCtx *dctx) {
+	const char *filepath = R_UNWRAP4 (core, bin, cur, file);
+	if (!filepath) {
+		return NULL;
+	}
+	DartApp *app = dart_app_new (filepath);
+	if (!app) {
+		return NULL;
+	}
+	app->core = core;
+	app->base_addr = r_bin_get_baddr (core->bin);
+	if (app->base_addr == UT64_MAX) {
+		app->base_addr = 0;
+	}
+	app->heap_base = 0;
+	memcpy (&app->dctx, dctx, sizeof (DartCtx));
+	app->dctx.core = core;
 	return app;
 }
 
@@ -43,9 +59,7 @@ void dart_app_free(DartApp *app) {
 	}
 	dart_obf_fini (&app->dctx);
 	r_list_free (app->functions);
-	if (app->file_path) {
-		free (app->file_path);
-	}
+	free (app->file_path);
 	free (app);
 }
 

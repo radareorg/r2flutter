@@ -38,29 +38,6 @@ static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 	dctx->use_name_pool = r_config_get_b (core->config, R2FLUTTER_CFG_NAMEPOOL);
 }
 
-// Create and initialize a DartApp from the current r2 session
-static DartApp *r2flutter_make_app(RCore *core, DartCtx *dctx) {
-	const char *filepath = R_UNWRAP4 (core, bin, cur, file);
-	if (!filepath) {
-		R_LOG_ERROR ("r2flutter: no file loaded");
-		return NULL;
-	}
-	DartApp *app = dart_app_new (filepath);
-	if (!app) {
-		R_LOG_ERROR ("r2flutter: failed to create DartApp");
-		return NULL;
-	}
-	app->core = core;
-	app->base_addr = r_bin_get_baddr (core->bin);
-	if (app->base_addr == UT64_MAX) {
-		app->base_addr = 0;
-	}
-	app->heap_base = 0;
-	memcpy (&app->dctx, dctx, sizeof (DartCtx));
-	app->dctx.core = core;
-	return app;
-}
-
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
 		"Usage: r2flutter [-ajirfqncFstxH] [args]\n"
@@ -82,7 +59,7 @@ static void r2flutter_help(RCore *core) {
 }
 
 static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
-	DartApp *app = r2flutter_make_app (core, dctx);
+	DartApp *app = dart_app_new_from_core (core, dctx);
 	if (!app) {
 		return false;
 	}
@@ -100,7 +77,7 @@ static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
 }
 
 static bool r2flutter_dump_r2script(RCore *core, DartCtx *dctx) {
-	DartApp *app = r2flutter_make_app (core, dctx);
+	DartApp *app = dart_app_new_from_core (core, dctx);
 	if (!app) {
 		return false;
 	}
@@ -187,7 +164,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 				}
 			}
 			dctx.quiet = 1;
-			DartApp *app = r2flutter_make_app (core, &dctx);
+			DartApp *app = dart_app_new_from_core (core, &dctx);
 			if (!app) {
 				return true;
 			}
