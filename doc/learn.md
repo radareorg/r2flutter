@@ -2,6 +2,19 @@
 
 This document summarizes key technical findings discovered during the implementation of class extraction features in r2flutter.
 
+## Field Flags Can Reuse Raw `kind_bits`
+
+**Finding**: `DartFieldInfo.flags` does not need a second packed enum layout.
+
+The Dart VM already stores the field properties we care about in `Field.kind_bits_`, and the current snapshot layout in `third_party/sdk/runtime/vm/object.h` places them at:
+
+- `const`: bit 0
+- `static`: bit 1
+- `final`: bit 2
+- `late`: bit 6
+
+Because r2flutter only tests those bits as booleans later, `fi->flags` can keep the raw `kind_bits` value directly as long as `DART_FIELD_*` mirrors the VM bit positions.
+
 ## Compressed Pointers Store Low 32 Bits Of The Tagged Pointer
 
 **Finding**: The current Dart VM sources in `third_party/sdk` do not implement compressed pointers as `heap_base + (ref << alignment_shift)`.
@@ -104,6 +117,19 @@ This recovers real enums in the shipped fixtures on both platforms, for example 
 
 This makes the legacy dump-snapshot flag redundant and keeps scripts relying on `cluster` and snapshot addresses intact.
 
+## Direct-Ref Annotation Prefixes Are Better As Data Than Control Flow
+
+**Finding**: `flutter_process_direct_ref ()` only dispatches across a fixed set of flag-name prefixes, so an open-coded chain of `flutter_annotate_flag_ref ()` calls adds noise without adding logic.
+
+Keeping the prefixes in a tiny local table makes the supported mappings explicit:
+
+- `dart.class.` -> `class ref`
+- `dart.type.` -> `type ref`
+- `dart.field.` -> `field ref`
+- `dart.str.` and `str.` -> `string`
+
+**Implication**: refactors to add or reorder supported direct-reference prefixes now touch one data block and one loop instead of duplicating another boolean clause.
+
 ## InstructionTable Dumping Is A Real Output Mode Now
 
 **Finding**: `--dump-it` should be treated like the other dump commands, not as a stderr-only debug side effect.
@@ -192,6 +218,12 @@ This produces clean `--dump-strings` output even when the clustered snapshot con
 ## `--dump-strings` Must Stay Inside Dart Snapshot Windows
 
 **Finding**: Letting the string dumper scan every readable section regresses badly on iOS once Mach-O `__text`, code stubs, cert blobs, and loader metadata are included in the candidate set.
+
+## `R_STR_ISEMPTY` Only Applies To Real Strings
+
+**Finding**: The repo style rule to prefer `R_STR_ISEMPTY` / `R_STR_ISNOTEMPTY` only applies to C string checks.
+
+Cases like `char *value` should use `R_STR_ISEMPTY (value)` instead of open-coded `!value || !*value`, but guards for non-string pointers such as `ut64 *addrp` should stay as pointer/value checks because they are not string buffers.
 
 The practical fix is:
 
@@ -519,3 +551,11 @@ This keeps the CLI and plugin call sites on the same mode switch (`0`, `'j'`, `'
 ## Obfuscation Maps
 
 Flutter obfuscation maps use the VM `--save-obfuscation-map` format: one JSON array with alternating `original, obfuscated` strings. r2flutter has to reverse that relation during analysis because the snapshot only carries the obfuscated side. Applying the rename map at identifier materialization points keeps `--dump-strings` faithful to the raw binary while still deobfuscating function, class, field, and method outputs.
+
+## `r_str_newf ()` In This Tree Is Treated As Infallible
+
+Local radare2 coding rules for this repo treat `r_str_newf ()` like `R_NEW`/`R_NEW0`: do not add `NULL` checks after the call. Cleanup in `flutter_analysis.c` can remove follow-up `if (!msg)` and `if (!flag_name)` branches when the only possible failure path was the `r_str_newf ()` allocation itself.
+
+## Snapshot Hash Matching Should Use Exact String Equality
+
+`dart_version_from_hash ()` matches canonical 32-character MD5 strings from `known_hashes[]`. Using `strncmp (..., 32)` there reads like a prefix test and would also accept a longer input whose first 32 bytes happen to match. `strcmp ()` is the clearer exact-match form for this table lookup.

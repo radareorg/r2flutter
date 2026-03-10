@@ -132,7 +132,7 @@ const char *dart_version_from_hash(const char *hash) {
 		return NULL;
 	}
 	for (int i = 0; known_hashes[i].hash; i++) {
-		if (!strncmp (known_hashes[i].hash, hash, 32)) {
+		if (!strcmp (known_hashes[i].hash, hash)) {
 			return known_hashes[i].version;
 		}
 	}

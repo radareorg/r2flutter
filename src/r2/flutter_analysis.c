@@ -15,7 +15,6 @@
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "flutter_analysis.h"
 
-#define DART_ANALYSIS_COMMENT_PREFIX "dart: "
 #define DART_ANALYSIS_MAX_REGS 32
 
 typedef struct {
@@ -308,16 +307,10 @@ static char *flutter_build_flag_name(const char *prefix, const char *name, ut64 
 		return NULL;
 	}
 	char *tmp = r_str_newf ("%s.%s", prefix, name);
-	if (!tmp) {
-		return NULL;
-	}
 	r_name_filter (tmp, 0);
 	if (addr != UT64_MAX) {
 		char *with_addr = r_str_newf ("%s.0x%" PFMT64x, tmp, addr);
 		free (tmp);
-		if (!with_addr) {
-			return NULL;
-		}
 		r_name_filter (with_addr, 0);
 		return with_addr;
 	}
@@ -329,16 +322,10 @@ static void flutter_set_flag(RCore *core, const char *prefix, const char *name, 
 		return;
 	}
 	char *flag_name = flutter_build_flag_name (prefix, name, force_addr_suffix? addr: UT64_MAX);
-	if (!flag_name) {
-		return;
-	}
 	RFlagItem *fi = r_flag_get (core->flags, flag_name);
 	if (fi && fi->addr != addr) {
 		free (flag_name);
 		flag_name = flutter_build_flag_name (prefix, name, addr);
-		if (!flag_name) {
-			return;
-		}
 	}
 	r_flag_set (core->flags, flag_name, addr, size);
 	free (flag_name);
@@ -444,11 +431,9 @@ static void flutter_apply_model_to_core(FlutterAnalModel *model, RCore *core, Fl
 		const DartStringInfo *csi = flutter_model_find_string_by_value (model, ci->name);
 		if (csi && csi->address) {
 			flutter_set_flag (core, "dart.class", ci->name, csi->address, 0, false);
-			char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "class %s", ci->name);
-			if (msg) {
-				flutter_append_comment (core, csi->address, msg, stats);
-				free (msg);
-			}
+			char *msg = r_str_newf ("dart: class %s", ci->name);
+			flutter_append_comment (core, csi->address, msg, stats);
+			free (msg);
 		}
 		if (R_STR_ISNOTEMPTY (ci->super_class_name)) {
 			const DartStringInfo *ssi = flutter_model_find_string_by_value (model, ci->super_class_name);
@@ -466,15 +451,11 @@ static void flutter_apply_model_to_core(FlutterAnalModel *model, RCore *core, Fl
 				const DartStringInfo *fsi = flutter_model_find_string_by_value (model, fi->name);
 				if (fsi && fsi->address) {
 					char *field_name = r_str_newf ("%s.%s", ci->name, fi->name);
-					if (field_name) {
-						flutter_set_flag (core, "dart.field", field_name, fsi->address, 0, true);
-						char *msg = fi->type_name? r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "field %s offset=0x%x type=%s", field_name, fi->offset, fi->type_name): r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "field %s offset=0x%x", field_name, fi->offset);
-						if (msg) {
-							flutter_append_comment (core, fsi->address, msg, stats);
-							free (msg);
-						}
-						free (field_name);
-					}
+					flutter_set_flag (core, "dart.field", field_name, fsi->address, 0, true);
+					char *msg = fi->type_name? r_str_newf ("dart: field %s offset=0x%x type=%s", field_name, fi->offset, fi->type_name): r_str_newf ("dart: field %s offset=0x%x", field_name, fi->offset);
+					flutter_append_comment (core, fsi->address, msg, stats);
+					free (msg);
+					free (field_name);
 				}
 				if (R_STR_ISNOTEMPTY (fi->type_name)) {
 					const DartStringInfo *tsi = flutter_model_find_string_by_value (model, fi->type_name);
@@ -493,15 +474,10 @@ static void flutter_apply_model_to_core(FlutterAnalModel *model, RCore *core, Fl
 				}
 				ut64 addr = flutter_normalize_code_addr (mi->entry_point);
 				char *flag_name = r_str_newf ("%s.%s", ci->name, mi->name);
-				if (!flag_name) {
-					continue;
-				}
 				flutter_set_flag (core, "dart.method", flag_name, addr, 0, true);
-				char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "%s.%s", ci->name, mi->name);
-				if (msg) {
-					flutter_append_comment (core, addr, msg, stats);
-					free (msg);
-				}
+				char *msg = r_str_newf ("dart: %s.%s", ci->name, mi->name);
+				flutter_append_comment (core, addr, msg, stats);
+				free (msg);
 				free (flag_name);
 			}
 		}
@@ -569,11 +545,9 @@ static void flutter_apply_app_methods_to_core(RCore *core, const DartApp *app, F
 		}
 		ut64 addr = flutter_normalize_code_addr (fn->addr);
 		flutter_set_flag (core, "dart.method", flutter_method_leaf_name (fn->name), addr, fn->size, true);
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "%s", fn->name);
-		if (msg) {
-			flutter_append_comment (core, addr, msg, stats);
-			free (msg);
-		}
+		char *msg = r_str_newf ("dart: %s", fn->name);
+		flutter_append_comment (core, addr, msg, stats);
+		free (msg);
 	}
 }
 
@@ -645,18 +619,14 @@ static void flutter_annotate_string_ref(RCore *core, FlutterAnalModel *model, ut
 	flutter_ensure_generic_string_flag (core, si);
 	flutter_add_ref (core, at, si->address, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
 	stats->string_refs++;
-	char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "string \"%s\"", si->value);
-	if (msg) {
-		flutter_append_comment (core, at, msg, stats);
-		free (msg);
-	}
+	char *msg = r_str_newf ("dart: string \"%s\"", si->value);
+	flutter_append_comment (core, at, msg, stats);
+	free (msg);
 	if (flutter_model_find_class (model, si->value)) {
 		stats->class_refs++;
-		char *cmt = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "class ref %s", si->value);
-		if (cmt) {
-			flutter_append_comment (core, at, cmt, stats);
-			free (cmt);
-		}
+		char *cmt = r_str_newf ("dart: class ref %s", si->value);
+		flutter_append_comment (core, at, cmt, stats);
+		free (cmt);
 	}
 }
 
@@ -686,15 +656,41 @@ static void flutter_annotate_field_ref(RCore *core, FlutterAnalModel *model, ut6
 		}
 	}
 	char *field_name = r_str_newf ("%s.%s", r_str_get (ci->name), r_str_get (fi->name));
-	if (!field_name) {
-		return;
-	}
-	char *msg = fi->type_name? r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "%s %s @ +0x%x : %s", is_write? "write": "read", field_name, fi->offset, fi->type_name): r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "%s %s @ +0x%x", is_write? "write": "read", field_name, fi->offset);
-	if (msg) {
+	char *name = fi->type_name? r_str_newf (" : %s", fi->type_name): strdup ("");
+	char *msg = r_str_newf ("dart: %s %s @ +0x%x%s", is_write? "write": "read", field_name, fi->offset, name);
+	flutter_append_comment (core, at, msg, stats);
+	free (msg);
+	free (name);
+	free (field_name);
+}
+
+static bool flutter_annotate_flag_ref(RCore *core, ut64 at, ut64 target, const char *name, FlutterAnalStats *stats) {
+	const struct {
+		const char *p;
+		const char *l;
+		ut64 *c;
+	} t[] = {
+		{ "dart.class.", "class ref", &stats->class_refs },
+		{ "dart.type.", "type ref", &stats->type_refs },
+		{ "dart.field.", "field ref", &stats->field_refs },
+		{ "dart.str.", "string", &stats->string_refs },
+		{ "str.", "string", &stats->string_refs },
+};
+	for (size_t i = 0; i < sizeof (t) / sizeof (t[0]); i++) {
+		if (!r_str_startswith (name, t[i].p)) {
+			continue;
+		}
+		flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
+		(*t[i].c)++;
+		char *msg = r_str_newf ("dart: "
+			"%s %s",
+			t[i].l,
+			name + strlen (t[i].p));
 		flutter_append_comment (core, at, msg, stats);
 		free (msg);
+		return true;
 	}
-	free (field_name);
+	return false;
 }
 
 static void flutter_process_direct_ref(RCore *core, FlutterAnalModel *model, ut64 at, ut64 target, FlutterAnalStats *stats) {
@@ -707,48 +703,8 @@ static void flutter_process_direct_ref(RCore *core, FlutterAnalModel *model, ut6
 		return;
 	}
 	RFlagItem *fi = flutter_get_flag_at (core, target);
-	if (!fi || R_STR_ISEMPTY (fi->name)) {
-		return;
-	}
-	if (r_str_startswith (fi->name, "dart.class.")) {
-		flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
-		stats->class_refs++;
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "class ref %s", fi->name + strlen ("dart.class."));
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
-		return;
-	}
-	if (r_str_startswith (fi->name, "dart.type.")) {
-		flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
-		stats->type_refs++;
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "type ref %s", fi->name + strlen ("dart.type."));
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
-		return;
-	}
-	if (r_str_startswith (fi->name, "dart.field.")) {
-		flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
-		stats->field_refs++;
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "field ref %s", fi->name + strlen ("dart.field."));
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
-		return;
-	}
-	if (r_str_startswith (fi->name, "dart.str.") || r_str_startswith (fi->name, "str.")) {
-		flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
-		stats->string_refs++;
-		const char *leaf = r_str_startswith (fi->name, "dart.str.")? fi->name + strlen ("dart.str."): fi->name + strlen ("str.");
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "string %s", leaf);
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
+	if (fi) {
+		flutter_annotate_flag_ref (core, at, target, fi->name, stats);
 	}
 }
 
@@ -760,20 +716,21 @@ static void flutter_process_call(RCore *core, FlutterAnalModel *model, ut64 at, 
 	stats->call_xrefs++;
 	const DartMethodInfo *mi = flutter_model_find_method (model, target);
 	if (mi && R_STR_ISNOTEMPTY (mi->owner_name) && R_STR_ISNOTEMPTY (mi->name)) {
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "call %s.%s", mi->owner_name, mi->name);
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
+		char *msg = r_str_newf ("dart: "
+			"call %s.%s",
+			mi->owner_name,
+			mi->name);
+		flutter_append_comment (core, at, msg, stats);
+		free (msg);
 		return;
 	}
 	RFlagItem *fi = flutter_get_flag_at (core, target);
 	if (fi && flutter_flag_is_method (fi->name)) {
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "call %s", flutter_method_leaf_name (fi->name));
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
+		char *msg = r_str_newf ("dart: "
+			"call %s",
+			flutter_method_leaf_name (fi->name));
+		flutter_append_comment (core, at, msg, stats);
+		free (msg);
 	}
 }
 
@@ -864,11 +821,11 @@ static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, ut64 a
 	memset (&state->regs[dst], 0, sizeof (state->regs[dst]));
 	state->regs[dst].has_pp_off = true;
 	state->regs[dst].pp_off = pp_off;
-	char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "PP slot +0x%" PFMT64x, pp_off);
-	if (msg) {
-		flutter_append_comment (core, at, msg, stats);
-		free (msg);
-	}
+	char *msg = r_str_newf ("dart: "
+		"PP slot +0x%" PFMT64x,
+		pp_off);
+	flutter_append_comment (core, at, msg, stats);
+	free (msg);
 	stats->pp_refs++;
 	return true;
 }
@@ -933,11 +890,9 @@ static void flutter_process_indirect_call(RCore *core, FlutterAnalState *state, 
 		return;
 	}
 	if (state->regs[reg].has_pp_off) {
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "indirect call via PP+0x%" PFMT64x, state->regs[reg].pp_off);
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
+		char *msg = r_str_newf ("dart: indirect call via PP+0x%" PFMT64x, state->regs[reg].pp_off);
+		flutter_append_comment (core, at, msg, stats);
+		free (msg);
 		stats->pp_refs++;
 	}
 }
