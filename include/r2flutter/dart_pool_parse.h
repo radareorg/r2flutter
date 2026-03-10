@@ -66,10 +66,10 @@ typedef struct DartFieldInfo {
 	ut64 owner_ref;
 } DartFieldInfo;
 
-#define DART_FIELD_STATIC (1 << 0)
-#define DART_FIELD_FINAL (1 << 1)
-#define DART_FIELD_LATE (1 << 2)
-#define DART_FIELD_CONST (1 << 3)
+#define DART_FIELD_CONST (1 << 0)
+#define DART_FIELD_STATIC (1 << 1)
+#define DART_FIELD_FINAL (1 << 2)
+#define DART_FIELD_LATE (1 << 6)
 
 typedef struct DartClassInfo {
 	ut64 ref_id;

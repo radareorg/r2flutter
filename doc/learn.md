@@ -2,6 +2,19 @@
 
 This document summarizes key technical findings discovered during the implementation of class extraction features in r2flutter.
 
+## Field Flags Can Reuse Raw `kind_bits`
+
+**Finding**: `DartFieldInfo.flags` does not need a second packed enum layout.
+
+The Dart VM already stores the field properties we care about in `Field.kind_bits_`, and the current snapshot layout in `third_party/sdk/runtime/vm/object.h` places them at:
+
+- `const`: bit 0
+- `static`: bit 1
+- `final`: bit 2
+- `late`: bit 6
+
+Because r2flutter only tests those bits as booleans later, `fi->flags` can keep the raw `kind_bits` value directly as long as `DART_FIELD_*` mirrors the VM bit positions.
+
 ## Compressed Pointers Store Low 32 Bits Of The Tagged Pointer
 
 **Finding**: The current Dart VM sources in `third_party/sdk` do not implement compressed pointers as `heap_base + (ref << alignment_shift)`.

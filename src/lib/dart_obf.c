@@ -15,13 +15,6 @@ static void free_obf_kv(HtPPKv *kv) {
 	free (kv->value);
 }
 
-static char *dup_n(const char *s, size_t len) {
-	char *out = malloc (len + 1);
-	memcpy (out, s, len);
-	out[len] = '\0';
-	return out;
-}
-
 static char *resolve_dot_pieces(DartCtx *ctx, const char *name) {
 	size_t out_cap = strlen (name) + 1;
 	char *out = malloc (out_cap);
@@ -32,7 +25,7 @@ static char *resolve_dot_pieces(DartCtx *ctx, const char *name) {
 	while (*cur) {
 		const char *dot = strchr (cur, '.');
 		size_t piece_len = dot? (size_t) (dot - cur): strlen (cur);
-		char *piece = dup_n (cur, piece_len);
+		char *piece = r_str_ndup (cur, piece_len);
 		const char *mapped = (const char *)ht_pp_find (ctx->obf_by_obfuscated, piece, NULL);
 		const char *emit = mapped? mapped: piece;
 		size_t emit_len = strlen (emit);

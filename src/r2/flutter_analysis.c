@@ -697,6 +697,20 @@ static void flutter_annotate_field_ref(RCore *core, FlutterAnalModel *model, ut6
 	free (field_name);
 }
 
+static bool flutter_annotate_flag_ref(RCore *core, ut64 at, ut64 target, FlutterAnalStats *stats, const char *name, const char *prefix, const char *label, ut64 *counter) {
+	if (!r_str_startswith (name, prefix)) {
+		return false;
+	}
+	flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
+	(*counter)++;
+	char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "%s %s", label, name + strlen (prefix));
+	if (msg) {
+		flutter_append_comment (core, at, msg, stats);
+		free (msg);
+	}
+	return true;
+}
+
 static void flutter_process_direct_ref(RCore *core, FlutterAnalModel *model, ut64 at, ut64 target, FlutterAnalStats *stats) {
 	if (!core || !model || !at || !target) {
 		return;
@@ -710,45 +724,8 @@ static void flutter_process_direct_ref(RCore *core, FlutterAnalModel *model, ut6
 	if (!fi || R_STR_ISEMPTY (fi->name)) {
 		return;
 	}
-	if (r_str_startswith (fi->name, "dart.class.")) {
-		flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
-		stats->class_refs++;
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "class ref %s", fi->name + strlen ("dart.class."));
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
+	if (flutter_annotate_flag_ref (core, at, target, stats, fi->name, "dart.class.", "class ref", &stats->class_refs) || flutter_annotate_flag_ref (core, at, target, stats, fi->name, "dart.type.", "type ref", &stats->type_refs) || flutter_annotate_flag_ref (core, at, target, stats, fi->name, "dart.field.", "field ref", &stats->field_refs) || flutter_annotate_flag_ref (core, at, target, stats, fi->name, "dart.str.", "string", &stats->string_refs) || flutter_annotate_flag_ref (core, at, target, stats, fi->name, "str.", "string", &stats->string_refs)) {
 		return;
-	}
-	if (r_str_startswith (fi->name, "dart.type.")) {
-		flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
-		stats->type_refs++;
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "type ref %s", fi->name + strlen ("dart.type."));
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
-		return;
-	}
-	if (r_str_startswith (fi->name, "dart.field.")) {
-		flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
-		stats->field_refs++;
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "field ref %s", fi->name + strlen ("dart.field."));
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
-		return;
-	}
-	if (r_str_startswith (fi->name, "dart.str.") || r_str_startswith (fi->name, "str.")) {
-		flutter_add_ref (core, at, target, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
-		stats->string_refs++;
-		const char *leaf = r_str_startswith (fi->name, "dart.str.")? fi->name + strlen ("dart.str."): fi->name + strlen ("str.");
-		char *msg = r_str_newf (DART_ANALYSIS_COMMENT_PREFIX "string %s", leaf);
-		if (msg) {
-			flutter_append_comment (core, at, msg, stats);
-			free (msg);
-		}
 	}
 }
 

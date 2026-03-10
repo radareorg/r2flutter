@@ -109,4 +109,3 @@ void dart_app_load_info(DartApp *app) {
 		fprintf (stderr, "Found %d functions (from Dart ObjectPool)\n", app->functions? r_list_length (app->functions): 0);
 	}
 }
-

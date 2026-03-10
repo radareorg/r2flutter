@@ -106,7 +106,6 @@ static bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len) {
 	int r = r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
 	return r > 0;
 }
-
 static bool read_uleb128_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_next) {
 	ut64 v = 0;
 	int shift = 0;
@@ -131,11 +130,6 @@ static bool read_uleb128_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_ne
 }
 
 static bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz);
-
-static bool is_print_ascii(ut8 ch) {
-	return (ch >= 32 && ch < 127) || ch == '\t';
-}
-
 typedef struct {
 	ut64 ep_offs[8];
 	int ep_offs_n;
@@ -158,6 +152,20 @@ static void init_layout_hints(LayoutHints *lh) {
 	lh->name_offs[lh->name_offs_n++] = 0x20;
 }
 
+static void read_json_u64_array(const RJson *parent, const char *key, ut64 *out, int *out_n, int max) {
+	const RJson *arr = r_json_get (parent, key);
+	if (arr && arr->type == R_JSON_ARRAY) {
+		*out_n = 0;
+		size_t n = arr->children.count;
+		for (size_t i = 0; i < n && *out_n < max; i++) {
+			const RJson *el = r_json_item (arr, i);
+			if (el && el->type == R_JSON_INTEGER) {
+				out[(*out_n)++] = (ut64)el->num.u_value;
+			}
+		}
+	}
+}
+
 static void enrich_layout_hints_from_json(LayoutHints *lh, const char *hash) {
 	if (!lh || !hash) {
 		return;
@@ -174,43 +182,11 @@ static void enrich_layout_hints_from_json(LayoutHints *lh, const char *hash) {
 		free (s);
 		return;
 	}
-	const RJson *hashes = r_json_get (j, "hashes");
-	const RJson *item = r_json_get (hashes, hash);
+	const RJson *item = r_json_get (r_json_get (j, "hashes"), hash);
 	if (item) {
-		const RJson *arr;
-		arr = r_json_get (item, "code_entry_point_offsets");
-		if (arr && arr->type == R_JSON_ARRAY) {
-			lh->ep_offs_n = 0;
-			size_t n = arr->children.count;
-			for (size_t i = 0; i < n && (int)i < 8; i++) {
-				const RJson *el = r_json_item (arr, i);
-				if (el && el->type == R_JSON_INTEGER) {
-					lh->ep_offs[lh->ep_offs_n++] = (ut64)el->num.u_value;
-				}
-			}
-		}
-		arr = r_json_get (item, "code_owner_offsets");
-		if (arr && arr->type == R_JSON_ARRAY) {
-			lh->owner_offs_n = 0;
-			size_t n = arr->children.count;
-			for (size_t i = 0; i < n && (int)i < 8; i++) {
-				const RJson *el = r_json_item (arr, i);
-				if (el && el->type == R_JSON_INTEGER) {
-					lh->owner_offs[lh->owner_offs_n++] = (ut64)el->num.u_value;
-				}
-			}
-		}
-		arr = r_json_get (item, "function_name_offsets");
-		if (arr && arr->type == R_JSON_ARRAY) {
-			lh->name_offs_n = 0;
-			size_t n = arr->children.count;
-			for (size_t i = 0; i < n && (int)i < 8; i++) {
-				const RJson *el = r_json_item (arr, i);
-				if (el && el->type == R_JSON_INTEGER) {
-					lh->name_offs[lh->name_offs_n++] = (ut64)el->num.u_value;
-				}
-			}
-		}
+		read_json_u64_array (item, "code_entry_point_offsets", lh->ep_offs, &lh->ep_offs_n, 8);
+		read_json_u64_array (item, "code_owner_offsets", lh->owner_offs, &lh->owner_offs_n, 8);
+		read_json_u64_array (item, "function_name_offsets", lh->name_offs, &lh->name_offs_n, 8);
 	}
 	r_json_free (j);
 	free (s);
@@ -281,7 +257,7 @@ static bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz) 
 				ok = 0;
 				break;
 			}
-			if (!is_print_ascii (b2)) {
+			if (!IS_PRINTABLE (b2)) {
 				ok = 0;
 				break;
 			}
@@ -300,7 +276,7 @@ static bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz) 
 	if (read_mem (ctx, addr, tmp, sizeof (tmp))) {
 		int start = -1, end = -1;
 		for (int i = 0; i < (int)sizeof (tmp); i++) {
-			if (is_print_ascii (tmp[i])) {
+			if (IS_PRINTABLE (tmp[i])) {
 				if (start < 0) {
 					start = i;
 				}
@@ -367,11 +343,7 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 					}
 					char sname[128];
 					if (try_read_dart_string (ctx, namep, sname, sizeof (sname))) {
-						for (char *q = sname; *q; q++) {
-							if ((ut8)*q < 32) {
-								*q = ' ';
-							}
-						}
+						r_str_filter_zeroline (sname, sizeof (sname));
 						bool looks_ok = false;
 						if (strstr (sname, "package:") || strstr (sname, "dart:")) {
 							looks_ok = true;
@@ -406,7 +378,7 @@ static int extract_printable_string(const ut8 *buf, int pos, int buflen, char *o
 		if (ch == '\0') {
 			break;
 		}
-		if ((ch >= 32 && ch < 127) || ch == '\t') {
+		if (IS_PRINTABLE (ch)) {
 			out[k++] = (char)ch;
 		} else {
 			break;
@@ -570,11 +542,7 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 		ut64 saddr = data_image_base + (ut64)entry->stack_map_offset;
 		char sname[128];
 		if (try_read_dart_string (ctx, saddr, sname, sizeof (sname))) {
-			for (char *p = sname; *p; p++) {
-				if ((ut8)*p < 32) {
-					*p = ' ';
-				}
-			}
+			r_str_filter_zeroline (sname, sizeof (sname));
 			bool looks_ok = strstr (sname, "package:") || strstr (sname, "dart:");
 			if (!looks_ok && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) {
 				looks_ok = true;
@@ -589,11 +557,7 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 				ut64 cand = saddr + (ut64)delta;
 				char s2[128];
 				if (try_read_dart_string (ctx, cand, s2, sizeof (s2))) {
-					for (char *p = s2; *p; p++) {
-						if ((ut8)*p < 32) {
-							*p = ' ';
-						}
-					}
+					r_str_filter_zeroline (s2, sizeof (s2));
 					if (strstr (s2, "package:") || strstr (s2, "dart:") || strchr (s2, '/')) {
 						snprintf (out, outsz, "%s", s2);
 						break;
@@ -1050,6 +1014,23 @@ static void derive_layout_from_flags(DartCtx *ctx) {
 	} else if (ctx->layout && ctx->layout->max_alignment != 16) {
 		((DartVerLayout *)ctx->layout)->max_alignment = 16;
 	}
+}
+
+static DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp) {
+	extract_snapshot_hash_flags (ctx, ctx->vm_data);
+	ctx->layout = load_layout_from_json (ctx->snapshot_hash, tmp);
+	DartVerLayout *owned = NULL;
+	if (!ctx->layout) {
+		owned = dart_pick_layout_by_hash (ctx->snapshot_hash);
+		ctx->layout = owned;
+	}
+	derive_layout_from_flags (ctx);
+	return owned;
+}
+
+static void dart_ctx_fini_layout(DartCtx *ctx, DartVerLayout *owned) {
+	dart_ver_layout_free (owned);
+	ctx->layout = NULL;
 }
 
 // ============================================================================
@@ -1842,15 +1823,8 @@ int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(cons
 				(unsigned long long)ctx->iso_data,
 				(unsigned long long)ctx->iso_instr);
 		}
-		extract_snapshot_hash_flags (ctx, ctx->vm_data);
 		DartVerLayout layout_tmp;
-		DartVerLayout *layout_owned = NULL;
-		ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
-		if (!ctx->layout) {
-			layout_owned = dart_pick_layout_by_hash (ctx->snapshot_hash);
-			ctx->layout = layout_owned;
-		}
-		derive_layout_from_flags (ctx);
+		DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
 		if (ctx->verbose > 1) {
 			ut8 peek[32] = { 0 };
 			if (read_mem (ctx, ctx->iso_data, peek, sizeof (peek))) {
@@ -1865,9 +1839,7 @@ int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(cons
 			emit_stub_symbols (ctx, on_fn, user);
 		}
 		int rc = decode_pool_and_emit (ctx, on_fn, user, NULL, NULL, false, 0);
-		if (layout_owned) {
-			dart_ver_layout_free (layout_owned);
-		}
+		dart_ctx_fini_layout (ctx, layout_owned);
 		return rc;
 	}
 	if (out_base) {
@@ -1969,19 +1941,7 @@ static int decode_field_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *field
 		cs_read_ref_id (s, &initializer_ref);
 		uint32_t kind_bits = 0;
 		cs_read_u32 (s, &kind_bits);
-		fi->flags = 0;
-		if (kind_bits & (1 << 0)) {
-			fi->flags |= DART_FIELD_STATIC;
-		}
-		if (kind_bits & (1 << 4)) {
-			fi->flags |= DART_FIELD_FINAL;
-		}
-		if (kind_bits & (1 << 1)) {
-			fi->flags |= DART_FIELD_CONST;
-		}
-		if (kind_bits & (1 << 6)) {
-			fi->flags |= DART_FIELD_LATE;
-		}
+		fi->flags = kind_bits;
 		ut64 offset_or_id = 0;
 		cs_read_ref_id (s, &offset_or_id);
 		fi->offset = (ut32)offset_or_id;
@@ -2085,17 +2045,6 @@ static void free_enum_candidate(void *p) {
 		free (ec);
 	}
 }
-
-static char *str_dup_n(const char *s, size_t len) {
-	char *out = malloc (len + 1);
-	if (!out) {
-		return NULL;
-	}
-	memcpy (out, s, len);
-	out[len] = '\0';
-	return out;
-}
-
 static bool has_lowercase_after(const char *s, int start) {
 	for (int i = start; s[i]; i++) {
 		if (islower ((ut8)s[i])) {
@@ -2348,7 +2297,7 @@ static void recover_enum_types_from_strings(DartCtx *ctx, RList *class_list) {
 		const char *s = si->value;
 		size_t len = strlen (s);
 		if (len > 1 && s[len - 1] == '.') {
-			char *prefix = str_dup_n (s, len - 1);
+			char *prefix = r_str_ndup (s, len - 1);
 			if (prefix && is_type_name_candidate (prefix)) {
 				DartEnumCandidate *ec = enum_candidate_get_or_add (candidates, candidate_by_name, prefix);
 				if (ec) {
@@ -2360,7 +2309,7 @@ static void recover_enum_types_from_strings(DartCtx *ctx, RList *class_list) {
 		}
 		const char *dot = strchr (s, '.');
 		if (dot && dot != s && dot[1] && !strchr (dot + 1, '.')) {
-			char *prefix = str_dup_n (s, (size_t) (dot - s));
+			char *prefix = r_str_ndup (s, (size_t) (dot - s));
 			if (!prefix) {
 				continue;
 			}
@@ -2585,21 +2534,11 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		return NULL;
 	}
 	ut64 snapshot_base = ctx->iso_data;
-	extract_snapshot_hash_flags (ctx, ctx->vm_data);
 	DartVerLayout layout_tmp;
-	bool layout_is_dynamic = false;
-	ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
-	if (!ctx->layout) {
-		ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
-		layout_is_dynamic = true;
-	}
-	derive_layout_from_flags (ctx);
+	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
 	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, total_len = 0, cluster_start = 0;
 	if (parse_snapshot_header (ctx, snapshot_base, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) != 0) {
-		if (layout_is_dynamic) {
-			free ((void *)ctx->layout);
-			ctx->layout = NULL;
-		}
+		dart_ctx_fini_layout (ctx, layout_owned);
 		return NULL;
 	}
 	bool header_valid = (nc > 0 && nc < 1000000 && no > 0 && no < 10000000);
@@ -2733,10 +2672,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 			}
 		}
 	}
-	if (layout_is_dynamic) {
-		free ((void *)ctx->layout);
-		ctx->layout = NULL;
-	}
+	dart_ctx_fini_layout (ctx, layout_owned);
 	return class_list;
 }
 
@@ -2817,19 +2753,7 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 				DartFieldInfo *fi = R_NEW0 (DartFieldInfo);
 				fi->name = strdup (field_name);
 				fi->offset = offset_val;
-				fi->flags = 0;
-				if (kind_bits & (1 << 0)) {
-					fi->flags |= DART_FIELD_STATIC;
-				}
-				if (kind_bits & (1 << 4)) {
-					fi->flags |= DART_FIELD_FINAL;
-				}
-				if (kind_bits & (1 << 1)) {
-					fi->flags |= DART_FIELD_CONST;
-				}
-				if (kind_bits & (1 << 6)) {
-					fi->flags |= DART_FIELD_LATE;
-				}
+				fi->flags = kind_bits;
 				r_list_append (owner_ci->fields, fi);
 				if (ctx->verbose > 1) {
 					fprintf (stderr, "[r2flutter] Found field: %s.%s offset=0x%x\n", owner_name, field_name, offset_val);
@@ -2913,17 +2837,10 @@ static bool read_object_pointer(DartCtx *ctx, const ut8 *buf, ut32 off, bool use
 }
 
 static bool read_string_safe(DartCtx *ctx, ut64 addr, char *out, int outsz) {
-	if (!addr) {
+	if (!addr || !try_read_dart_string (ctx, addr, out, outsz)) {
 		return false;
 	}
-	if (!try_read_dart_string (ctx, addr, out, outsz)) {
-		return false;
-	}
-	for (char *p = out; *p; p++) {
-		if ((ut8)*p < 32) {
-			*p = ' ';
-		}
-	}
+	r_str_filter_zeroline (out, outsz);
 	return true;
 }
 
@@ -3357,11 +3274,6 @@ void dart_string_list_free(RList *list) {
 }
 
 #define DART_STRING_SCAN_LIMIT 50000
-
-static bool is_ascii_char(ut8 ch) {
-	return (ch >= 32 && ch < 127);
-}
-
 static DartStringCategory classify_string_value(const char *s) {
 	if (R_STR_ISEMPTY (s)) {
 		return DART_STRING_CAT_UNKNOWN;
@@ -3599,11 +3511,11 @@ static void scan_ascii_strings(const ut8 *buf, ut64 base, ut64 size, RList *list
 	}
 	ut64 pos = 0;
 	while (pos < size) {
-		while (pos < size && !is_ascii_char (buf[pos])) {
+		while (pos < size && !IS_PRINTABLE (buf[pos])) {
 			pos++;
 		}
 		ut64 start = pos;
-		while (pos < size && is_ascii_char (buf[pos])) {
+		while (pos < size && IS_PRINTABLE (buf[pos])) {
 			pos++;
 		}
 		ut64 length = pos - start;
@@ -4035,15 +3947,8 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 	}
 	ut64 ref_counter = 0;
 	if (find_snapshots (ctx) == 0 && ctx->vm_data) {
-		extract_snapshot_hash_flags (ctx, ctx->vm_data);
 		DartVerLayout layout_tmp;
-		bool layout_is_dynamic = false;
-		ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
-		if (!ctx->layout) {
-			ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
-			layout_is_dynamic = true;
-		}
-		derive_layout_from_flags (ctx);
+		DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
 		ut64 vm_upper = 0;
 		if (ctx->iso_data > ctx->vm_data) {
 			vm_upper = ctx->iso_data;
@@ -4066,10 +3971,7 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 				scan_snapshot_region (ctx, ctx->iso_data + 0x100, iso_upper - (ctx->iso_data + 0x100), string_list, seen_addrs, &ref_counter);
 			}
 		}
-		if (layout_is_dynamic) {
-			dart_ver_layout_free ((DartVerLayout *)ctx->layout);
-		}
-		ctx->layout = NULL;
+		dart_ctx_fini_layout (ctx, layout_owned);
 	}
 	RListIter *iter;
 	RBinSection *sec;
@@ -4452,15 +4354,8 @@ static void collect_data_image_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 	if (find_snapshots (ctx) != 0 || !ctx->iso_data) {
 		return;
 	}
-	extract_snapshot_hash_flags (ctx, ctx->vm_data);
 	DartVerLayout layout_tmp;
-	DartVerLayout *layout_owned = NULL;
-	ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
-	if (!ctx->layout) {
-		layout_owned = dart_pick_layout_by_hash (ctx->snapshot_hash);
-		ctx->layout = layout_owned;
-	}
-	derive_layout_from_flags (ctx);
+	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
 	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, total_len = 0, cluster_start = 0;
 	ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
 	RList *seen_fields = r_list_newf (free);
@@ -4480,10 +4375,7 @@ static void collect_data_image_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 	}
 	ht_up_free (seen_ep);
 	r_list_free (seen_fields);
-	if (layout_owned) {
-		dart_ver_layout_free (layout_owned);
-	}
-	ctx->layout = NULL;
+	dart_ctx_fini_layout (ctx, layout_owned);
 }
 
 static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
@@ -4942,22 +4834,13 @@ RList *dart_pool_extract_instruction_table(DartCtx *ctx) {
 			(unsigned long long)ctx->iso_data,
 			(unsigned long long)ctx->iso_instr);
 	}
-	extract_snapshot_hash_flags (ctx, ctx->vm_data);
 	DartVerLayout layout_tmp;
-	DartVerLayout *layout_owned = NULL;
-	ctx->layout = load_layout_from_json (ctx->snapshot_hash, &layout_tmp);
-	if (!ctx->layout) {
-		layout_owned = dart_pick_layout_by_hash (ctx->snapshot_hash);
-		ctx->layout = layout_owned;
-	}
-	derive_layout_from_flags (ctx);
+	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
 	if (decode_pool_and_emit (ctx, NULL, NULL, collect_it_entry_cb, list, true, ctx->dump_fns_limit > 0? (ut64)ctx->dump_fns_limit: 0) != 0) {
 		r_list_free (list);
 		list = NULL;
 	}
-	if (layout_owned) {
-		dart_ver_layout_free (layout_owned);
-	}
+	dart_ctx_fini_layout (ctx, layout_owned);
 	return list;
 }
 
