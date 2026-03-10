@@ -545,3 +545,7 @@ This keeps the CLI and plugin call sites on the same mode switch (`0`, `'j'`, `'
 ## Obfuscation Maps
 
 Flutter obfuscation maps use the VM `--save-obfuscation-map` format: one JSON array with alternating `original, obfuscated` strings. r2flutter has to reverse that relation during analysis because the snapshot only carries the obfuscated side. Applying the rename map at identifier materialization points keeps `--dump-strings` faithful to the raw binary while still deobfuscating function, class, field, and method outputs.
+
+## `r_str_newf ()` In This Tree Is Treated As Infallible
+
+Local radare2 coding rules for this repo treat `r_str_newf ()` like `R_NEW`/`R_NEW0`: do not add `NULL` checks after the call. Cleanup in `flutter_analysis.c` can remove follow-up `if (!msg)` and `if (!flag_name)` branches when the only possible failure path was the `r_str_newf ()` allocation itself.
