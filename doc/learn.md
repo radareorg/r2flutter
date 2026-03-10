@@ -117,6 +117,19 @@ This recovers real enums in the shipped fixtures on both platforms, for example 
 
 This makes the legacy dump-snapshot flag redundant and keeps scripts relying on `cluster` and snapshot addresses intact.
 
+## Direct-Ref Annotation Prefixes Are Better As Data Than Control Flow
+
+**Finding**: `flutter_process_direct_ref ()` only dispatches across a fixed set of flag-name prefixes, so an open-coded chain of `flutter_annotate_flag_ref ()` calls adds noise without adding logic.
+
+Keeping the prefixes in a tiny local table makes the supported mappings explicit:
+
+- `dart.class.` -> `class ref`
+- `dart.type.` -> `type ref`
+- `dart.field.` -> `field ref`
+- `dart.str.` and `str.` -> `string`
+
+**Implication**: refactors to add or reorder supported direct-reference prefixes now touch one data block and one loop instead of duplicating another boolean clause.
+
 ## InstructionTable Dumping Is A Real Output Mode Now
 
 **Finding**: `--dump-it` should be treated like the other dump commands, not as a stderr-only debug side effect.

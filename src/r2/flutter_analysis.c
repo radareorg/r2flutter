@@ -724,8 +724,22 @@ static void flutter_process_direct_ref(RCore *core, FlutterAnalModel *model, ut6
 	if (!fi || R_STR_ISEMPTY (fi->name)) {
 		return;
 	}
-	if (flutter_annotate_flag_ref (core, at, target, stats, fi->name, "dart.class.", "class ref", &stats->class_refs) || flutter_annotate_flag_ref (core, at, target, stats, fi->name, "dart.type.", "type ref", &stats->type_refs) || flutter_annotate_flag_ref (core, at, target, stats, fi->name, "dart.field.", "field ref", &stats->field_refs) || flutter_annotate_flag_ref (core, at, target, stats, fi->name, "dart.str.", "string", &stats->string_refs) || flutter_annotate_flag_ref (core, at, target, stats, fi->name, "str.", "string", &stats->string_refs)) {
-		return;
+	struct flutter_flag_ref_desc_t {
+		const char *prefix;
+		const char *label;
+		ut64 *counter;
+	};
+	struct flutter_flag_ref_desc_t refs[] = {
+		{ "dart.class.", "class ref", &stats->class_refs },
+		{ "dart.type.", "type ref", &stats->type_refs },
+		{ "dart.field.", "field ref", &stats->field_refs },
+		{ "dart.str.", "string", &stats->string_refs },
+		{ "str.", "string", &stats->string_refs },
+	};
+	for (size_t i = 0; i < sizeof (refs) / sizeof (refs[0]); i++) {
+		if (flutter_annotate_flag_ref (core, at, target, stats, fi->name, refs[i].prefix, refs[i].label, refs[i].counter)) {
+			return;
+		}
 	}
 }
 
