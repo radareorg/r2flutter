@@ -23,7 +23,6 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 	if (!core || !offsets) {
 		return;
 	}
-	// r_core_cmdf (core, "af@0x%08"PFMT64x, addr);
 	r_strf_var (cmd, 128, "pdfj @ 0x%" PFMT64x, addr);
 	char *s = r_core_cmd_str (core, cmd);
 	if (!s) {
@@ -58,12 +57,10 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 		if (!comma) {
 			continue;
 		}
-		// skip spaces
 		const char *p = comma + 1;
 		while (*p == ' ' || *p == '#') {
 			p++;
 		}
-		// read number until non-hex/non-digit
 		const char *q = p;
 		while ((*q >= '0' && *q <= '9') || (*q >= 'a' && *q <= 'f') || (*q >= 'A' && *q <= 'F')) {
 			q++;
@@ -97,7 +94,6 @@ static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
 		return;
 	}
 	RList *offsets = r_list_newf (free);
-	// collect from all known functions
 	RListIter *it;
 	DartFunction *fn;
 	r_list_foreach (app->functions, it, fn) {
@@ -106,7 +102,6 @@ static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
 		}
 		collect_pool_offsets_from_fn (app->core, fn->addr, offsets);
 	}
-	// emit flags and comments
 	RListIter *it2;
 	ut64 *offp;
 	r_list_foreach (offsets, it2, offp) {
@@ -114,6 +109,25 @@ static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
 		r_strbuf_appendf (sb, "'@PP+0x%" PFMT64x "'CC pool_entry_%" PFMT64x "\n", (uint64_t)*offp, (uint64_t)*offp);
 	}
 	r_list_free (offsets);
+}
+
+// Build a "method.xxx" flag name, avoiding double "method." prefix
+static char *make_method_flagname(const char *name) {
+	char *safe = strdup (name);
+	r_name_filter (safe, 0);
+	if (r_str_startswith (safe, "method.")) {
+		return safe;
+	}
+	char *flagname = r_str_newf ("method.%s", safe);
+	free (safe);
+	return flagname;
+}
+
+static void dump_func_r2(RStrBuf *sb, const DartFunction *fn) {
+	char *flagname = make_method_flagname (fn->name);
+	r_strbuf_appendf (sb, "f %s = 0x%" PFMT64x "\n", flagname, (uint64_t)fn->addr);
+	r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC %s\n", (uint64_t)fn->addr, fn->name);
+	free (flagname);
 }
 
 char *dart_dumper_dump4radare2(DartApp *app) {
@@ -131,22 +145,13 @@ char *dart_dumper_dump4radare2(DartApp *app) {
 			if (!fn || !fn->name) {
 				continue;
 			}
-			r_strf_var (safe, 1024, "%s", fn->name);
-			r_name_filter (safe, 0);
-			// Avoid double 'method.' prefix if the name already includes it
-			if (r_str_startswith (safe, "method.")) {
-				r_strbuf_appendf (sb, "f %s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
-			} else {
-				r_strbuf_appendf (sb, "f method.%s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
-			}
-			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC %s\n", (uint64_t)fn->addr, fn->name);
+			dump_func_r2 (sb, fn);
 		}
 	}
 
 	r_strbuf_append (sb, "dr x27=`e anal.gp`\n");
 	r_strbuf_append (sb, "'f PP=x27\n");
 
-	// Scan code to gather Object Pool offsets used via PP (x27)
 	dump_pool_offsets_flags (app, sb);
 
 	return r_strbuf_drain (sb);
@@ -177,18 +182,6 @@ static void dump_func_json(PJ *pj, const DartFunction *fn) {
 
 static void dump_func_text(RStrBuf *sb, const DartFunction *fn) {
 	r_strbuf_appendf (sb, "0x%" PFMT64x " %s\n", (uint64_t)fn->addr, fn->name);
-}
-
-static void dump_func_r2(RStrBuf *sb, const DartFunction *fn) {
-	r_strf_var (safe, 1024, "%s", fn->name);
-	r_name_filter (safe, 0);
-	// Avoid double 'method.' prefix if the name already includes it
-	if (r_str_startswith (safe, "method.")) {
-		r_strbuf_appendf (sb, "f %s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
-	} else {
-		r_strbuf_appendf (sb, "f method.%s = 0x%" PFMT64x "\n", safe, (uint64_t)fn->addr);
-	}
-	r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC %s\n", (uint64_t)fn->addr, fn->name);
 }
 
 char *dart_dumper_dump_funcs(DartApp *app, int fmt) {
@@ -254,18 +247,10 @@ void dart_dumper_apply_to_core(DartApp *app) {
 			if (!fn || !fn->name) {
 				continue;
 			}
-			char *safe = strdup (fn->name);
-			r_name_filter (safe, 0);
-			char *flagname;
-			if (r_str_startswith (safe, "method.")) {
-				flagname = r_str_newf ("%s", safe);
-			} else {
-				flagname = r_str_newf ("method.%s", safe);
-			}
+			char *flagname = make_method_flagname (fn->name);
 			r_flag_set (core->flags, flagname, fn->addr, fn->size);
 			r_meta_set_string (core->anal, R_META_TYPE_COMMENT, fn->addr, fn->name);
 			free (flagname);
-			free (safe);
 		}
 	}
 

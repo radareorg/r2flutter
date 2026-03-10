@@ -398,12 +398,32 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 
 #define CHUNK_SIZE 4096
 
+// Extract a printable ASCII string starting at buf[pos], return length or 0
+static int extract_printable_string(const ut8 *buf, int pos, int buflen, char *out, int outsz) {
+	int k = 0;
+	for (int j = pos; j < buflen && k < outsz - 1; j++) {
+		ut8 ch = buf[j];
+		if (ch == '\0') {
+			break;
+		}
+		if ((ch >= 32 && ch < 127) || ch == '\t') {
+			out[k++] = (char)ch;
+		} else {
+			break;
+		}
+	}
+	out[k] = '\0';
+	return k;
+}
+
 static RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
 	if (!ctx || !ctx->core) {
 		return NULL;
 	}
-	const char *needle1 = "package:";
-	const char *needle2 = "dart:";
+	struct { const char *needle; int len; int min_match; } needles[] = {
+		{ "package:", 8, 8 },
+		{ "dart:", 5, 5 },
+	};
 	ut8 buf[CHUNK_SIZE];
 	RList *out = r_list_newf (free);
 	if (!out) {
@@ -424,58 +444,29 @@ static RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_i
 			break;
 		}
 		for (int i = 0; i + 8 < toread; i++) {
-			if (buf[i] == 'p') {
-				if (i + 8 < toread && !memcmp (buf + i, needle1, 8)) {
-					char s[128];
-					int k = 0;
-					for (int j = i; j < toread && k < (int)sizeof (s) - 1; j++) {
-						ut8 ch = buf[j];
-						if (ch == '\0') {
-							break;
-						}
-						if ((ch >= 32 && ch < 127) || ch == '\t') {
-							s[k++] = (char)ch;
-						} else {
-							break;
-						}
-					}
-					s[k] = '\0';
-					if (k > 8) {
-						char *dup = strdup (s);
-						if (dup) {
-							r_list_append (out, dup);
-							if (--cap == 0) {
-								return out;
-							}
+			size_t n;
+			for (n = 0; n < sizeof (needles) / sizeof (needles[0]); n++) {
+				if (buf[i] != needles[n].needle[0]) {
+					continue;
+				}
+				if (i + needles[n].len > toread) {
+					continue;
+				}
+				if (memcmp (buf + i, needles[n].needle, needles[n].len)) {
+					continue;
+				}
+				char s[128];
+				int k = extract_printable_string (buf, i, toread, s, sizeof (s));
+				if (k > needles[n].min_match) {
+					char *dup = strdup (s);
+					if (dup) {
+						r_list_append (out, dup);
+						if (--cap == 0) {
+							return out;
 						}
 					}
 				}
-			} else if (buf[i] == 'd') {
-				if (i + 5 < toread && !memcmp (buf + i, needle2, 5)) {
-					char s[128];
-					int k = 0;
-					for (int j = i; j < toread && k < (int)sizeof (s) - 1; j++) {
-						ut8 ch = buf[j];
-						if (ch == '\0') {
-							break;
-						}
-						if ((ch >= 32 && ch < 127) || ch == '\t') {
-							s[k++] = (char)ch;
-						} else {
-							break;
-						}
-					}
-					s[k] = '\0';
-					if (k > 5) {
-						char *dup = strdup (s);
-						if (dup) {
-							r_list_append (out, dup);
-							if (--cap == 0) {
-								return out;
-							}
-						}
-					}
-				}
+				break;
 			}
 		}
 	}
@@ -520,19 +511,7 @@ static void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 
 				int n = r_io_read_at (ctx->core->io, addr, buf, sizeof (buf));
 				if (n > 0) {
 					char s2[128];
-					int z = 0;
-					for (int i = 0; i < n && z < (int)sizeof (s2) - 1; i++) {
-						ut8 ch = buf[i];
-						if (ch == '\0') {
-							break;
-						}
-						if ((ch >= 32 && ch < 127) || ch == '\t') {
-							s2[z++] = (char)ch;
-						} else {
-							break;
-						}
-					}
-					s2[z] = '\0';
+					int z = extract_printable_string (buf, 0, n, s2, sizeof (s2));
 					if (z > 5) {
 						char *dup2 = strdup (s2);
 						if (dup2) {

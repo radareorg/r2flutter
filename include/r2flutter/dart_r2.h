@@ -56,11 +56,4 @@ typedef struct {
 	bool obf_map_tried;
 } DartCtx;
 
-int dart_r2_find_snapshots(RCore *core, ut64 *vm_data, ut64 *vm_instr, ut64 *iso_data, ut64 *iso_instr);
-void dart_r2_emit_stub_symbols(DartCtx *ctx, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user);
-ut64 dart_r2_find_pp_base(DartCtx *ctx);
-HtUP *dart_r2_scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
-RList *dart_r2_collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
-void dart_r2_collect_data_names_with_cmd(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
-
 #endif
