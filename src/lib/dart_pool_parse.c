@@ -392,10 +392,14 @@ static RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_i
 	if (!ctx || !ctx->core) {
 		return NULL;
 	}
-	struct { const char *needle; int len; int min_match; } needles[] = {
+	struct {
+		const char *needle;
+		int len;
+		int min_match;
+	} needles[] = {
 		{ "package:", 8, 8 },
 		{ "dart:", 5, 5 },
-	};
+};
 	ut8 buf[CHUNK_SIZE];
 	RList *out = r_list_newf (free);
 	if (!out) {
