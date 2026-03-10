@@ -2295,7 +2295,7 @@ static void recover_enum_types_from_strings(DartCtx *ctx, RList *class_list) {
 	}
 	DartStringInfo *si;
 	r_list_foreach (strings, it, si) {
-		if (!si || !si->value || !*si->value) {
+		if (!si || R_STR_ISEMPTY (si->value)) {
 			continue;
 		}
 		const char *s = si->value;

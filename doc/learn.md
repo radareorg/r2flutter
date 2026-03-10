@@ -219,6 +219,12 @@ This produces clean `--dump-strings` output even when the clustered snapshot con
 
 **Finding**: Letting the string dumper scan every readable section regresses badly on iOS once Mach-O `__text`, code stubs, cert blobs, and loader metadata are included in the candidate set.
 
+## `R_STR_ISEMPTY` Only Applies To Real Strings
+
+**Finding**: The repo style rule to prefer `R_STR_ISEMPTY` / `R_STR_ISNOTEMPTY` only applies to C string checks.
+
+Cases like `char *value` should use `R_STR_ISEMPTY (value)` instead of open-coded `!value || !*value`, but guards for non-string pointers such as `ut64 *addrp` should stay as pointer/value checks because they are not string buffers.
+
 The practical fix is:
 
 - prefer snapshot-bounded windows (`vm_data` up to the next snapshot, and similarly for `iso_data` when applicable)
@@ -549,3 +555,7 @@ Flutter obfuscation maps use the VM `--save-obfuscation-map` format: one JSON ar
 ## `r_str_newf ()` In This Tree Is Treated As Infallible
 
 Local radare2 coding rules for this repo treat `r_str_newf ()` like `R_NEW`/`R_NEW0`: do not add `NULL` checks after the call. Cleanup in `flutter_analysis.c` can remove follow-up `if (!msg)` and `if (!flag_name)` branches when the only possible failure path was the `r_str_newf ()` allocation itself.
+
+## Snapshot Hash Matching Should Use Exact String Equality
+
+`dart_version_from_hash ()` matches canonical 32-character MD5 strings from `known_hashes[]`. Using `strncmp (..., 32)` there reads like a prefix test and would also accept a longer input whose first 32 bytes happen to match. `strcmp ()` is the clearer exact-match form for this table lookup.
