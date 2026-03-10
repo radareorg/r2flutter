@@ -100,23 +100,10 @@ static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
 }
 
 static bool r2flutter_dump_r2script(RCore *core, DartCtx *dctx) {
-	const char *filepath = R_UNWRAP4 (core, bin, cur, file);
-	if (!filepath) {
-		R_LOG_ERROR ("r2flutter: no file loaded");
-		return false;
-	}
-	DartApp *app = dart_app_new (filepath);
+	DartApp *app = r2flutter_make_app (core, dctx);
 	if (!app) {
 		return false;
 	}
-	app->core = core;
-	app->base_addr = r_bin_get_baddr (core->bin);
-	if (app->base_addr == UT64_MAX) {
-		app->base_addr = 0;
-	}
-	app->heap_base = 0;
-	memcpy (&app->dctx, dctx, sizeof (DartCtx));
-	app->dctx.core = core;
 	dart_app_load_info (app);
 	char *script = dart_dumper_dump4radare2 (app);
 	if (script) {
@@ -200,23 +187,10 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 				}
 			}
 			dctx.quiet = 1;
-			const char *filepath = R_UNWRAP4 (core, bin, cur, file);
-			if (!filepath) {
-				R_LOG_ERROR ("r2flutter: no file loaded");
-				return true;
-			}
-			DartApp *app = dart_app_new (filepath);
+			DartApp *app = r2flutter_make_app (core, &dctx);
 			if (!app) {
 				return true;
 			}
-			app->core = core;
-			app->base_addr = r_bin_get_baddr (core->bin);
-			if (app->base_addr == UT64_MAX) {
-				app->base_addr = 0;
-			}
-			app->heap_base = 0;
-			memcpy (&app->dctx, &dctx, sizeof (DartCtx));
-			app->dctx.core = core;
 			dart_app_load_info (app);
 			int count = 0;
 			if (app->functions) {
