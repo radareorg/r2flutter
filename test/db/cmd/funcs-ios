@@ -4,7 +4,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -j --dump-funcs --limit 3 bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"addr":73509,"name":"method.fn_0"},{"addr":81385,"name":"method.fn_1"},{"addr":81391,"name":"method.fn_4"}]
+[{"addr":59240,"name":"func.0000e768"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"func.0000e7a0"}]
 EOF
 RUN
 
@@ -14,9 +14,9 @@ CMDS=<<EOF
 !!../bin/r2flutter -r --dump-funcs --limit 2 bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
-f method.fn_0 = 0x11f25
-'@0x11f25'CC method.fn_0
-f method.fn_1 = 0x13de9
-'@0x13de9'CC method.fn_1
+f method.func.0000e768 = 0xe768
+'@0xe768'CC func.0000e768
+f method.func.0000e770 = 0xe770
+'@0xe770'CC func.0000e770
 EOF
 RUN

@@ -547,8 +547,9 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 		char sname[128];
 		if (try_read_dart_string (ctx, saddr, sname, sizeof (sname))) {
 			r_str_filter_zeroline (sname, sizeof (sname));
+			size_t slen = strlen (sname);
 			bool looks_ok = strstr (sname, "package:") || strstr (sname, "dart:");
-			if (!looks_ok && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) {
+			if (!looks_ok && slen >= 4 && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) {
 				looks_ok = true;
 			}
 			if (looks_ok) {
@@ -562,7 +563,9 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 				char s2[128];
 				if (try_read_dart_string (ctx, cand, s2, sizeof (s2))) {
 					r_str_filter_zeroline (s2, sizeof (s2));
-					if (strstr (s2, "package:") || strstr (s2, "dart:") || strchr (s2, '/')) {
+					size_t s2len = strlen (s2);
+					if ((strstr (s2, "package:") || strstr (s2, "dart:")) ||
+						(s2len >= 4 && (strchr (s2, '/') || strchr (s2, '.') || strchr (s2, ':')))) {
 						snprintf (out, outsz, "%s", s2);
 						break;
 					}
@@ -617,6 +620,97 @@ static bool looks_like_it_entries(DartCtx *ctx, ut64 entries_addr, ut32 length) 
 	return sane >= samples - 1 && monotonic >= samples - 2;
 }
 
+static bool read_it_data_header_from_string_object(DartCtx *ctx, ut64 obj_addr, ut64 data_image_end, ut64 itlen, DartInstructionTableHeader *out) {
+	if (!ctx || !ctx->layout || !out) {
+		return false;
+	}
+	ut8 objhdr[16];
+	if (!read_mem (ctx, obj_addr, objhdr, sizeof (objhdr))) {
+		return false;
+	}
+	ut64 tags = *(ut64 *)objhdr;
+	ut32 cid = 0;
+	switch (ctx->layout->tag_style) {
+	case DART_TAG_STYLE_OBJECT_HEADER:
+		cid = (ut32) ((tags >> 12) & 0xFFFFF);
+		break;
+	case DART_TAG_STYLE_CID_SHIFT1:
+		cid = (ut32) (tags >> 1);
+		break;
+	case DART_TAG_STYLE_CID_INT32:
+	default:
+		cid = (ut32) ((tags >> 12) & 0xFFFFF);
+		break;
+	}
+	int string_cid = ctx->layout->cid_one_byte_string? ctx->layout->cid_one_byte_string: kOneByteStringCid;
+	if ((int)cid != string_cid) {
+		return false;
+	}
+	ut64 len_smi = *(ut64 *) (objhdr + 8);
+	if (len_smi & 1ULL) {
+		return false;
+	}
+	ut64 payload_len = len_smi >> 1;
+	if (payload_len < 24) {
+		return false;
+	}
+	ut64 payload_addr = obj_addr + 16;
+	if (data_image_end && payload_addr + payload_len > data_image_end) {
+		return false;
+	}
+	ut8 hdr[16];
+	if (!read_mem (ctx, payload_addr, hdr, sizeof (hdr))) {
+		return false;
+	}
+	ut32 canonical = *(ut32 *) (hdr + 0);
+	ut32 length = *(ut32 *) (hdr + 4);
+	ut32 first = *(ut32 *) (hdr + 8);
+	if (!length || length > (1U << 24) || first > length) {
+		return false;
+	}
+	if (16ULL + ((ut64)length * 8ULL) > payload_len) {
+		return false;
+	}
+	if (canonical && (canonical < sizeof (hdr) + ((ut64)length * 8ULL) || canonical >= payload_len)) {
+		return false;
+	}
+	if (itlen && (length < (itlen / 2) || length > (itlen * 128))) {
+		return false;
+	}
+	if (!looks_like_it_entries (ctx, payload_addr + 16, length)) {
+		return false;
+	}
+	out->header_addr = payload_addr;
+	out->canonical_stack_map_entries_offset = canonical;
+	out->length = length;
+	out->first_entry_with_code = first;
+	return true;
+}
+
+static bool scan_it_data_header_in_strings(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end, ut64 itlen, DartInstructionTableHeader *out) {
+	static const ut64 image_header_size = 0x40;
+	if (!ctx || !out || data_image_end <= data_image_base + image_header_size) {
+		return false;
+	}
+	DartInstructionTableHeader best = { 0 };
+	ut32 best_len = 0;
+	for (ut64 addr = data_image_base + image_header_size; addr + 32 < data_image_end; addr += 16) {
+		DartInstructionTableHeader cand = { 0 };
+		if (!read_it_data_header_from_string_object (ctx, addr, data_image_end, itlen, &cand)) {
+			continue;
+		}
+		if (cand.length > best_len) {
+			best = cand;
+			best_len = cand.length;
+		}
+	}
+	if (!best_len) {
+		return false;
+	}
+	*out = best;
+	return true;
+}
+
 static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64 data_image_end, ut64 itlen, DartInstructionTableHeader *out) {
 	static const int probes[] = { 16, 0, 8, 12 };
 	if (!ctx || !out) {
@@ -663,6 +757,12 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 			}
 		}
 	}
+	DartInstructionTableHeader str_hdr = { 0 };
+	bool found_str_hdr = scan_it_data_header_in_strings (ctx, data_image_base, data_image_end, itlen, &str_hdr);
+	if (found_str_hdr && (!best_len || str_hdr.length > best_len)) {
+		best = str_hdr;
+		best_len = str_hdr.length;
+	}
 	if (best_len > 0) {
 		*out = best;
 		return true;
@@ -671,7 +771,7 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 	if (data_image_end && scan_end > data_image_end) {
 		scan_end = data_image_end;
 	}
-	for (ut64 addr = data_image_base; addr + 16 < scan_end; addr += 8) {
+	for (ut64 addr = data_image_base + 0x40; addr + 16 < scan_end; addr += 8) {
 		ut8 hdr[16];
 		if (!read_mem (ctx, addr, hdr, sizeof (hdr))) {
 			continue;
@@ -701,6 +801,10 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 	}
 	if (best_len > 0) {
 		*out = best;
+		return true;
+	}
+	if (found_str_hdr) {
+		*out = str_hdr;
 		return true;
 	}
 	return false;
@@ -748,9 +852,13 @@ static int emit_it_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut
 	ctx->it_first_with_code = hdr.first_entry_with_code;
 	ctx->it_canonical_stack_map_offset = hdr.canonical_stack_map_entries_offset;
 	ut64 entries_addr = hdr.header_addr + 16;
+	ut64 effective_max = max_entries;
+	if (!include_stubs && itlen && (!effective_max || effective_max > itlen)) {
+		effective_max = itlen;
+	}
 	ut64 emitted = 0;
 	for (ut64 idx = 0; idx < hdr.length; idx++) {
-		if (max_entries && emitted >= max_entries) {
+		if (effective_max && emitted >= effective_max) {
 			break;
 		}
 		ut8 ebuf[8];
@@ -1577,7 +1685,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		goto beach;
 	}
 	ut64 table_addr = data_image_base + itdata;
-	if (on_it && emit_it_fixed (ctx, table_addr, data_image_base, itlen, max_entries, include_stubs, sym_by_addr, on_fn, fn_user, on_it, it_user) == 0) {
+	if (emit_it_fixed (ctx, table_addr, data_image_base, itlen, max_entries, include_stubs, sym_by_addr, on_fn, fn_user, on_it, it_user) == 0) {
 		goto beach;
 	}
 	for (int delta = -64; delta <= 64; delta += 4) {

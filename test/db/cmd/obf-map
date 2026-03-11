@@ -4,7 +4,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -j --dump-funcs --limit 3 --omfile custom/obf-map.txt bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"addr":73509,"name":"method.initState"},{"addr":81385,"name":"method.build"},{"addr":81391,"name":"method.teardown"}]
+[{"addr":59240,"name":"func.0000e768"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"func.0000e7a0"}]
 EOF
 RUN
 

@@ -5,7 +5,8 @@
   "timeout": 30,
   "expect": {
     "contains": [
-      "method.fn_0"
+      "func.0000e768",
+      "0xe768"
     ]
   }
 }

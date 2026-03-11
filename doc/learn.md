@@ -80,6 +80,18 @@ In practice, scanning the snapshot cluster region for **runs** of valid Dart str
 
 This recovers structured packed strings from `android/mafia` while avoiding the need to fully model every non-string cluster.
 
+## InstructionsTable Data Lives Inside A String Object In The RO Image
+
+**Finding**: Modern AOT snapshots do not place `InstructionsTable::Data` directly at the `it_data_off` address inside the clustered blob.
+
+For current Android samples, the read-only image after the clustered snapshot starts with an `Image` header (`0x40` bytes), and the instruction-table bytes are wrapped in a large `OneByteString` object. The usable table header starts at that string payload:
+
+- object start: aligned `it_data` string in the RO image
+- payload start: `object + 0x10` on current 64-bit `HASH_IN_OBJECT_HEADER` builds
+- payload header: `canonical_stack_map_entries_offset`, `length`, `first_entry_with_code`, `padding`
+
+**Implication**: probing `it_data_off` as if it were already the `InstructionsTable::Data` header can collapse the table to a bogus 3-entry decode. A robust parser should scan the RO image strings for a payload whose header and entry array look like a real instruction table.
+
 ## `--use-name-pool` Must Stay Opt-In
 
 **Finding**: The name-pool fallback is useful for exploratory reversing, but it is too weak to enable by default because it can silently mislabel functions.
