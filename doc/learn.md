@@ -278,14 +278,16 @@ Important current limitation:
 
 ## Recovering Methods Without Class Clusters
 
-Production snapshots omit the `Class` cluster, but `Function` objects are still serialized in the ROData image. r2flutter now scans the data image for objects whose CID equals `cid_function` and extracts:
+Production snapshots omit the `Class` cluster, but that does **not** mean current `r2flutter` can rely on direct cluster deserialization for methods. On the Dart `3.8.1` Android sample in `poc/app/libapp.so`, the current clustered walk yields `strings=0 classes=0 functions=0`, so method recovery has to be treated as a raw data-image / `Code` + `Function` reconstruction problem rather than a simple “parse the Function cluster” problem.
+
+r2flutter does have a raw data-image method scan for objects whose CID equals `cid_function`, and that is the right direction. The intended extraction is:
 
 - Entry point (validated against the isolate instructions region)
 - Symbolic name strings
 - Owning class pointers to recover class names
 - `kind_tag` values to classify constructors/getters/stubs
 
-Functions whose owner names resolve to discovered classes are attached to the matching class in both JSON and r2 outputs. We deduplicate functions by entry point and cap the scan at 30k methods to keep processing bounded.
+In practice, this still needs more work on newer Android samples. The key lesson is that qualified function recovery should be built from raw `Function -> owner -> class/library` reconstruction and then joined with InstructionTable addresses, not from direct cluster metadata alone.
 
 ## Memory Layout Observations
 
@@ -435,7 +437,7 @@ r2flutter maintains 40+ known snapshot hashes from Flutter 1.22.x (Dart 2.10.0) 
 | String literals used in code | Source code locations (release) |
 | Global/static identifiers | Variable names (local scope) |
 
-Class names, method names, and field names are **never completely removed** - they are required for VM runtime type checking, dynamic dispatch, and GC.
+Class names, method names, and field names are not reliably exposed as standalone `Class` / `Function` / `String` clusters in production AOT snapshots. Enough metadata often still survives somewhere in the data image for tools like blutter and unflutter to recover names, but `r2flutter` must not assume that a direct clustered walk will expose those objects in a convenient form.
 
 ## Android vs iOS: Cluster Counts and String Encoding Differences
 
