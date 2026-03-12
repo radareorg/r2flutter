@@ -5,8 +5,8 @@
   "timeout": 30,
   "expect": {
     "contains": [
-      "get:mailTabBarTitleMail",
-      "0x16dc70"
+      "func.0000fe28",
+      "0xfe28"
     ]
   }
 }

@@ -4,9 +4,9 @@ CMDS=<<EOF
 !!../bin/r2flutter --dump-funcs --limit 3 bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
-0x5b69c0 method.fn_0
-0x5b6aa4 method.fn_1
-0x5b6b64 method.fn_2
+0x5b69c0 method.DateTime.compareTo
+0x5b6aa4 method.Duration.compareTo
+0x5b6b64 method.Duration.dyn:_
 EOF
 RUN
 
@@ -16,10 +16,10 @@ CMDS=<<EOF
 !!../bin/r2flutter -r --dump-funcs --limit 2 bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
-f method.fn_0 = 0x5b69c0
-'@0x5b69c0'CC method.fn_0
-f method.fn_1 = 0x5b6aa4
-'@0x5b6aa4'CC method.fn_1
+f method.DateTime.compareTo = 0x5b69c0
+'@0x5b69c0'CC method.DateTime.compareTo
+f method.Duration.compareTo = 0x5b6aa4
+'@0x5b6aa4'CC method.Duration.compareTo
 EOF
 RUN
 
@@ -29,6 +29,6 @@ CMDS=<<EOF
 !!../bin/r2flutter -j --dump-funcs --limit 3 bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"addr":5990848,"name":"method.fn_0"},{"addr":5991076,"name":"method.fn_1"},{"addr":5991268,"name":"method.fn_2"}]
+[{"addr":5990848,"name":"method.DateTime.compareTo"},{"addr":5991076,"name":"method.Duration.compareTo"},{"addr":5991268,"name":"method.Duration.dyn:_"}]
 EOF
 RUN

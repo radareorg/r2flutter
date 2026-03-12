@@ -92,6 +92,21 @@ For current Android samples, the read-only image after the clustered snapshot st
 
 **Implication**: probing `it_data_off` as if it were already the `InstructionsTable::Data` header can collapse the table to a bogus 3-entry decode. A robust parser should scan the RO image strings for a payload whose header and entry array look like a real instruction table.
 
+## Sample `it_len` Does Not Equal The Real Code-Entry Count
+
+**Finding**: On the `poc/app/libapp.so` Dart `3.8.1` sample, the clustered header reports `it_len=2953`, but the real RO-image `InstructionsTable::Data` payload found in the wrapped `OneByteString` has `length=26413`.
+
+The recovered string object starts at `0x2e2fc0`, and its payload decodes the expected early entries:
+
+- index `0` -> `0x396900`
+- index `1` -> `0x3969c0`
+- index `42` -> `0x3980fc`
+- index `43` -> `0x398174`
+
+Those addresses match the reference outputs from blutter and unflutter for `DateTime.compareTo`, its dynamic variant, `_runMain`, and the `_runMain` anonymous closure.
+
+**Implication**: `cluster.it_len` is not a reliable upper bound for `--dump-funcs` on this sample. Function dumping should trust the decoded RO-image table length and should not cap itself to the smaller clustered-header value.
+
 ## `--use-name-pool` Must Stay Opt-In
 
 **Finding**: The name-pool fallback is useful for exploratory reversing, but it is too weak to enable by default because it can silently mislabel functions.
@@ -573,3 +588,55 @@ Local radare2 coding rules for this repo treat `r_str_newf ()` like `R_NEW`/`R_N
 ## Snapshot Hash Matching Should Use Exact String Equality
 
 `dart_version_from_hash ()` matches canonical 32-character MD5 strings from `known_hashes[]`. Using `strncmp (..., 32)` there reads like a prefix test and would also accept a longer input whose first 32 bytes happen to match. `strcmp ()` is the clearer exact-match form for this table lookup.
+
+## Minimal Offline Dart Runtime For Names
+
+For Dart `3.8.1` ARM64 AOT with compressed pointers, the current raw `Function` scan offsets in `src/lib/dart_pool_parse.c` are not aligned with the SDK layout. The important corrected offsets are:
+
+- `Function.entry_point = 0x08`
+- `Function.code = 0x2c`
+- `Function.kind_tag = 0x30`
+- `Code.owner = 0x38`
+- `Class.name = 0x08`
+- `ClosureData.parent_function = 0x0c`
+
+This is enough to justify a small read-only “REDART” layer inside `r2flutter`: parse tagged/compressed pointers, expose `Function`/`Code`/`Class`/`Library` accessors, port `String::ScrubName ()`, and then format names blutter-style. That gets us much closer to blutter’s semantics without embedding the Dart runtime or depending on the Dart toolchain.
+
+## `offsets.json` Arm64 AOT Invariants
+
+Re-checking the tagged SDK releases in `poc/dart-sdk/runtime/vm/compiler/runtime_offsets_extracted.h` shows that the arm64 AOT `Code` layout used by `offsets.json` is stable from Dart `2.10.0` through `3.10.7`:
+
+- `Code.entry_point` candidates stay `[0x08, 0x18, 0x10, 0x20]`
+- `Code.owner` stays `0x38`
+
+The owner-name side also stays simple across those tags when cross-checking `runtime/vm/raw_object.h`:
+
+- `Function.name = 0x18`
+- `Class.name = 0x08`
+
+That lets `offsets.json` grow by hash without inventing per-hash guesses: the missing hashes can all reuse the same source-backed arm64 AOT offsets, while `compressed_word_size` still follows the version/profile or the sample already recorded in-tree.
+
+## Dart `3.8.1` Cluster Parser Fixes For Full Function Naming
+
+Cross-checking `poc/unflutter-source/internal/cluster/*.go` against the current C parser exposed the real regressions behind the `--dump-funcs` mismatch on `poc/app/libapp.so` and the Android `mafia` sample:
+
+- object-header cluster tags use `CanonicalBit = 1`, not bit `0`
+- clustered unsigned integers use the Dart VLE terminator rules (`byte > 127`, final contribution `byte - 128`)
+- `Mint` alloc is not `count`-only: it is `count + count * ReadTagged64()`
+- many predefined CIDs above `Instance` are **not** instance clusters; `Double`, `LibraryPrefix`, `Closure`, `Map`, `ConstMap`, `Set`, `ConstSet`, `GrowableObjectArray`, ports, and related runtime helper objects stay on simple/ref-based formats
+- typed-data detection must only cover the real typed-data families (`TypedData`, `ExternalTypedData`, `TypedDataView`, and the internal `TypedDataInt8Array..ByteDataView` stride range), otherwise unrelated CIDs like `ConstMap` get misparsed as byte blobs
+- `Type`, `FunctionType`, `RecordType`, and `TypeParameter` fill layouts for modern object-header snapshots were shifted/mismatched and must follow the version-specific CID table rather than older hard-coded assumptions
+
+The naming side also needed one structural change borrowed from unflutter:
+
+- prefer `Code.owner` -> `Function` resolution over `Function.code_index` as the primary binding from instruction-table slot to method name
+
+That change fixes the main off-by-owner/name mismatches in practice. On the `mafia` sample it restores names like:
+
+- `method.DateTime.compareTo`
+- `method.DateTime.dyn:compareTo`
+- `method._anon_closure`
+
+Closure naming still needs the extra relation carried by `ClosureData`:
+
+- `ClosureData.parent_function` is the snapshot-side link that lets a closure code object be rendered as `_anon_closure` instead of inheriting the parent function name verbatim

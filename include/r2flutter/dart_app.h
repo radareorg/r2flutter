@@ -15,6 +15,7 @@ typedef struct DartFunction {
 	char *name;
 	ut64 addr;
 	ut64 size;
+	int quality;
 } DartFunction;
 
 typedef struct DartApp {

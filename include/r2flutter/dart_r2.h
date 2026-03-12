@@ -28,6 +28,8 @@ typedef struct {
 	const DartVerLayout *layout;
 	int compressed_word_size;
 	HtUP *name_by_ep;
+	char **name_by_code_index;
+	ut64 name_by_code_index_count;
 	RList *name_pool;
 	int name_pool_idx;
 	RList *strings;
