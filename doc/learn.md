@@ -674,3 +674,9 @@ Directly running the Dart `3.8.1` executable on either fixture fails cleanly wit
 Follow-up testing showed that `mafia` works after building `blutter_dartvm3.9.0_android_arm64`, producing about `173M` of output and 1980 generated asm files. The older `first` fixture is stricter: even after building Dart `2.18.2` no-analysis/no-compressed-pointers Blutter binaries for both Android and a patched Linux VM target, Dart rejects the snapshot because the snapshot feature string requires `no-tsan arm64 linux no-compressed-pointers` while the local Dart VM reports `no-asserts arm64-sysv no-compressed-pointers no-null-safety`.
 
 Rerunning the compatible `poc/app` target into a fresh directory produced the same file count and size. Byte diffs are mostly ASLR-dependent native/heap pointer values embedded in `pp.txt`, `objs.txt`, IDA structs, and asm comments; after normalizing those runtime addresses, representative app asm matched.
+
+## R2R Extras Must Load The Local Core Plugin
+
+The `test/db/extras` cases exercise the `r2flutter` command inside radare2, not only the standalone `bin/r2flutter` CLI. Running `r2r test/db/extras` from a checkout with no user-installed plugin leaves those commands unhandled, which looks like empty stdout instead of a parser failure. Keep the extras fixtures self-contained by loading `../src/r2/core_flutter.so` in their `CMDS` blocks, and make `make test-r2r` build `src/r2/core_flutter.so` before invoking r2r.
+
+`r2flutter -a` can internally ask radare2 to create functions for recovered Dart entrypoints. Some entrypoints are already present in radare2's exact-address function table before they have blocks, so checking only `r_anal_get_fcn_in ()` can miss them and trigger noisy duplicate-function warnings from `af`. Check `r_anal_get_function_at ()` first and suppress warning-level logs around the internal `af` loop; the user-facing analysis summary should remain the only plugin log line.
