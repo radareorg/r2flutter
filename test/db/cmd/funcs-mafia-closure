@@ -1,0 +1,10 @@
+NAME=text-funcs-mafia-closure
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --dump-funcs --quiet bins/android/mafia 2>/dev/null | grep -E '0x5b72b0|0x5b74cc'
+EOF
+EXPECT=<<EOF
+0x5b72b0 method.FlutterError._anon_closure
+0x5b74cc method._anon_closure
+EOF
+RUN

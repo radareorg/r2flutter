@@ -5,8 +5,8 @@
   "timeout": 30,
   "expect": {
     "contains": [
-      "method.fn_0",
-      "0x5b6940"
+      "method.DateTime.compareTo",
+      "0x5b69c0"
     ]
   }
 }

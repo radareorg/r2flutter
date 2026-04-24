@@ -114,8 +114,8 @@ static bool read_uleb128_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_ne
 		if (!read_mem (ctx, addr + i, &b, 1)) {
 			return false;
 		}
-		v |= ((ut64) (b & 0x7f)) << shift;
-		if ((b & 0x80) == 0) {
+		if (b > 0x7f) {
+			v |= ((ut64) (b - 0x80)) << shift;
 			if (out_val) {
 				*out_val = v;
 			}
@@ -124,6 +124,7 @@ static bool read_uleb128_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_ne
 			}
 			return true;
 		}
+		v |= ((ut64)b) << shift;
 		shift += 7;
 	}
 	return false;
@@ -521,6 +522,12 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 		return;
 	}
 	out[0] = '\0';
+	if (ctx && ctx->name_by_code_index && entry->has_code && entry->code_index < ctx->name_by_code_index_count) {
+		const char *ns = ctx->name_by_code_index[entry->code_index];
+		if (R_STR_ISNOTEMPTY (ns)) {
+			snprintf (out, outsz, "%s", ns);
+		}
+	}
 	if (sym_by_addr) {
 		RBinSymbol *bs = (RBinSymbol *)ht_up_find (sym_by_addr, entry->address, NULL);
 		if (bs && bs->name) {
@@ -547,8 +554,9 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 		char sname[128];
 		if (try_read_dart_string (ctx, saddr, sname, sizeof (sname))) {
 			r_str_filter_zeroline (sname, sizeof (sname));
+			size_t slen = strlen (sname);
 			bool looks_ok = strstr (sname, "package:") || strstr (sname, "dart:");
-			if (!looks_ok && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) {
+			if (!looks_ok && slen >= 4 && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) {
 				looks_ok = true;
 			}
 			if (looks_ok) {
@@ -562,7 +570,9 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 				char s2[128];
 				if (try_read_dart_string (ctx, cand, s2, sizeof (s2))) {
 					r_str_filter_zeroline (s2, sizeof (s2));
-					if (strstr (s2, "package:") || strstr (s2, "dart:") || strchr (s2, '/')) {
+					size_t s2len = strlen (s2);
+					if ((strstr (s2, "package:") || strstr (s2, "dart:")) ||
+						(s2len >= 4 && (strchr (s2, '/') || strchr (s2, '.') || strchr (s2, ':')))) {
 						snprintf (out, outsz, "%s", s2);
 						break;
 					}
@@ -570,14 +580,37 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 			}
 		}
 	}
-	if (!*out && ctx->use_name_pool && ctx->name_pool && entry->has_code && ctx->name_pool_idx < r_list_length (ctx->name_pool)) {
+	// Name-pool fallback is order-sensitive: pulling a name for slot N when
+	// slot N is actually a stub shifts every following name by one. Only
+	// consume the pool when the slot's owner is a regular Function (or the
+	// owner kind could not be determined at all). Slots known to be stubs
+	// must never advance the pool cursor.
+	ut8 owner_kind = DART_OWNER_UNKNOWN;
+	if (ctx && ctx->owner_kind_by_code_index && entry->code_index < ctx->owner_kind_by_code_index_count) {
+		owner_kind = ctx->owner_kind_by_code_index[entry->code_index];
+	}
+	bool pool_allowed = owner_kind == DART_OWNER_FUNCTION || owner_kind == DART_OWNER_UNKNOWN;
+	if (!*out && pool_allowed && ctx->use_name_pool && ctx->name_pool && entry->has_code && ctx->name_pool_idx < r_list_length (ctx->name_pool)) {
 		const char *pooln = (const char *)r_list_get_n (ctx->name_pool, ctx->name_pool_idx++);
 		if (pooln && *pooln) {
 			snprintf (out, outsz, "%s", pooln);
 		}
 	}
 	if (!*out) {
-		snprintf (out, outsz, "method.fn_%" PRIu64, (uint64_t)entry->code_index);
+		switch (owner_kind) {
+		case DART_OWNER_VM_STUB:
+			snprintf (out, outsz, "stub.vm_%" PRIu64, (uint64_t)entry->code_index);
+			break;
+		case DART_OWNER_CLASS:
+			snprintf (out, outsz, "stub.allocate_%" PRIu64, (uint64_t)entry->code_index);
+			break;
+		case DART_OWNER_TYPE:
+			snprintf (out, outsz, "stub.typetest_%" PRIu64, (uint64_t)entry->code_index);
+			break;
+		default:
+			snprintf (out, outsz, "method.fn_%" PRIu64, (uint64_t)entry->code_index);
+			break;
+		}
 	}
 	dart_obf_apply_buf (ctx, out, outsz);
 }
@@ -615,6 +648,97 @@ static bool looks_like_it_entries(DartCtx *ctx, ut64 entries_addr, ut32 length) 
 		prev_pc = pc_offset;
 	}
 	return sane >= samples - 1 && monotonic >= samples - 2;
+}
+
+static bool read_it_data_header_from_string_object(DartCtx *ctx, ut64 obj_addr, ut64 data_image_end, ut64 itlen, DartInstructionTableHeader *out) {
+	if (!ctx || !ctx->layout || !out) {
+		return false;
+	}
+	ut8 objhdr[16];
+	if (!read_mem (ctx, obj_addr, objhdr, sizeof (objhdr))) {
+		return false;
+	}
+	ut64 tags = *(ut64 *)objhdr;
+	ut32 cid = 0;
+	switch (ctx->layout->tag_style) {
+	case DART_TAG_STYLE_OBJECT_HEADER:
+		cid = (ut32) ((tags >> 12) & 0xFFFFF);
+		break;
+	case DART_TAG_STYLE_CID_SHIFT1:
+		cid = (ut32) (tags >> 1);
+		break;
+	case DART_TAG_STYLE_CID_INT32:
+	default:
+		cid = (ut32) ((tags >> 12) & 0xFFFFF);
+		break;
+	}
+	int string_cid = ctx->layout->cid_one_byte_string? ctx->layout->cid_one_byte_string: kOneByteStringCid;
+	if ((int)cid != string_cid) {
+		return false;
+	}
+	ut64 len_smi = *(ut64 *) (objhdr + 8);
+	if (len_smi & 1ULL) {
+		return false;
+	}
+	ut64 payload_len = len_smi >> 1;
+	if (payload_len < 24) {
+		return false;
+	}
+	ut64 payload_addr = obj_addr + 16;
+	if (data_image_end && payload_addr + payload_len > data_image_end) {
+		return false;
+	}
+	ut8 hdr[16];
+	if (!read_mem (ctx, payload_addr, hdr, sizeof (hdr))) {
+		return false;
+	}
+	ut32 canonical = *(ut32 *) (hdr + 0);
+	ut32 length = *(ut32 *) (hdr + 4);
+	ut32 first = *(ut32 *) (hdr + 8);
+	if (!length || length > (1U << 24) || first > length) {
+		return false;
+	}
+	if (16ULL + ((ut64)length * 8ULL) > payload_len) {
+		return false;
+	}
+	if (canonical && (canonical < sizeof (hdr) + ((ut64)length * 8ULL) || canonical >= payload_len)) {
+		return false;
+	}
+	if (itlen && (length < (itlen / 2) || length > (itlen * 128))) {
+		return false;
+	}
+	if (!looks_like_it_entries (ctx, payload_addr + 16, length)) {
+		return false;
+	}
+	out->header_addr = payload_addr;
+	out->canonical_stack_map_entries_offset = canonical;
+	out->length = length;
+	out->first_entry_with_code = first;
+	return true;
+}
+
+static bool scan_it_data_header_in_strings(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end, ut64 itlen, DartInstructionTableHeader *out) {
+	static const ut64 image_header_size = 0x40;
+	if (!ctx || !out || data_image_end <= data_image_base + image_header_size) {
+		return false;
+	}
+	DartInstructionTableHeader best = { 0 };
+	ut32 best_len = 0;
+	for (ut64 addr = data_image_base + image_header_size; addr + 32 < data_image_end; addr += 16) {
+		DartInstructionTableHeader cand = { 0 };
+		if (!read_it_data_header_from_string_object (ctx, addr, data_image_end, itlen, &cand)) {
+			continue;
+		}
+		if (cand.length > best_len) {
+			best = cand;
+			best_len = cand.length;
+		}
+	}
+	if (!best_len) {
+		return false;
+	}
+	*out = best;
+	return true;
 }
 
 static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64 data_image_end, ut64 itlen, DartInstructionTableHeader *out) {
@@ -663,6 +787,12 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 			}
 		}
 	}
+	DartInstructionTableHeader str_hdr = { 0 };
+	bool found_str_hdr = scan_it_data_header_in_strings (ctx, data_image_base, data_image_end, itlen, &str_hdr);
+	if (found_str_hdr && (!best_len || str_hdr.length > best_len)) {
+		best = str_hdr;
+		best_len = str_hdr.length;
+	}
 	if (best_len > 0) {
 		*out = best;
 		return true;
@@ -671,7 +801,7 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 	if (data_image_end && scan_end > data_image_end) {
 		scan_end = data_image_end;
 	}
-	for (ut64 addr = data_image_base; addr + 16 < scan_end; addr += 8) {
+	for (ut64 addr = data_image_base + 0x40; addr + 16 < scan_end; addr += 8) {
 		ut8 hdr[16];
 		if (!read_mem (ctx, addr, hdr, sizeof (hdr))) {
 			continue;
@@ -701,6 +831,10 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 	}
 	if (best_len > 0) {
 		*out = best;
+		return true;
+	}
+	if (found_str_hdr) {
+		*out = str_hdr;
 		return true;
 	}
 	return false;
@@ -748,9 +882,13 @@ static int emit_it_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut
 	ctx->it_first_with_code = hdr.first_entry_with_code;
 	ctx->it_canonical_stack_map_offset = hdr.canonical_stack_map_entries_offset;
 	ut64 entries_addr = hdr.header_addr + 16;
+	ut64 effective_max = max_entries;
+	if (!include_stubs && itlen && (!effective_max || effective_max > itlen)) {
+		effective_max = itlen;
+	}
 	ut64 emitted = 0;
 	for (ut64 idx = 0; idx < hdr.length; idx++) {
-		if (max_entries && emitted >= max_entries) {
+		if (effective_max && emitted >= effective_max) {
 			break;
 		}
 		ut8 ebuf[8];
@@ -1071,20 +1209,100 @@ static bool cs_read_unsigned(ClusterStream *s, ut64 *out) {
 		if (!cs_read_u8 (s, &b)) {
 			return false;
 		}
-		v |= ((ut64) (b & 0x7f)) << shift;
-		if ((b & 0x80) == 0) {
+		if (b > 0x7f) {
+			v |= ((ut64) (b - 0x80)) << shift;
 			if (out) {
 				*out = v;
 			}
 			return true;
 		}
+		v |= ((ut64)b) << shift;
 		shift += 7;
 	}
 	return false;
 }
 
 static bool cs_read_ref_id(ClusterStream *s, ut64 *out) {
-	return cs_read_unsigned (s, out);
+	int64_t result = 0;
+	for (int i = 0; i < 5; i++) {
+		ut8 raw = 0;
+		if (!cs_read_u8 (s, &raw)) {
+			return false;
+		}
+		int8_t b = (int8_t)raw;
+		result = (int64_t)b + (result << 7);
+		if (b < 0) {
+			if (out) {
+				*out = (ut64) (result + 128);
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool cs_read_tagged32(ClusterStream *s, ut32 *out) {
+	ut8 b = 0;
+	if (!cs_read_u8 (s, &b)) {
+		return false;
+	}
+	if (b > 0x7f) {
+		if (out) {
+			*out = (ut32) (b - 0xc0);
+		}
+		return true;
+	}
+	ut32 v = 0;
+	int shift = 0;
+	v |= (ut32)b;
+	shift += 7;
+	for (int i = 1; i < 5; i++) {
+		if (!cs_read_u8 (s, &b)) {
+			return false;
+		}
+		if (b > 0x7f) {
+			v |= ((ut32) (b - 0xc0)) << shift;
+			if (out) {
+				*out = v;
+			}
+			return true;
+		}
+		v |= ((ut32)b) << shift;
+		shift += 7;
+	}
+	return false;
+}
+
+static bool cs_read_tagged64(ClusterStream *s, int64_t *out) {
+	ut8 raw = 0;
+	if (!cs_read_u8 (s, &raw)) {
+		return false;
+	}
+	int8_t b = (int8_t)raw;
+	if (b < 0) {
+		if (out) {
+			*out = (int64_t)b + 192;
+		}
+		return true;
+	}
+	int64_t v = (int64_t)raw;
+	int shift = 7;
+	for (int i = 1; i < 10; i++) {
+		if (!cs_read_u8 (s, &raw)) {
+			return false;
+		}
+		b = (int8_t)raw;
+		if (b < 0) {
+			v |= ((int64_t)b + 192) << shift;
+			if (out) {
+				*out = v;
+			}
+			return true;
+		}
+		v |= ((int64_t)raw) << shift;
+		shift += 7;
+	}
+	return false;
 }
 
 static bool cs_read_bytes(ClusterStream *s, ut8 *buf, int len) {
@@ -1094,6 +1312,1589 @@ static bool cs_read_bytes(ClusterStream *s, ut8 *buf, int len) {
 	bool ok = read_mem (s->ctx, s->cursor, buf, len);
 	s->cursor += len;
 	return ok;
+}
+
+typedef enum {
+	MODERN_ALLOC_SIMPLE,
+	MODERN_ALLOC_CANONICAL_SET,
+	MODERN_ALLOC_STRING,
+	MODERN_ALLOC_MINT,
+	MODERN_ALLOC_ARRAY,
+	MODERN_ALLOC_WEAK_ARRAY,
+	MODERN_ALLOC_TYPE_ARGUMENTS,
+	MODERN_ALLOC_CLASS,
+	MODERN_ALLOC_CODE,
+	MODERN_ALLOC_OBJECT_POOL,
+	MODERN_ALLOC_RODATA,
+	MODERN_ALLOC_EXCEPTION_HANDLERS,
+	MODERN_ALLOC_CONTEXT,
+	MODERN_ALLOC_CONTEXT_SCOPE,
+	MODERN_ALLOC_RECORD,
+	MODERN_ALLOC_TYPED_DATA,
+	MODERN_ALLOC_INSTANCE,
+	MODERN_ALLOC_EMPTY,
+	MODERN_ALLOC_UNKNOWN,
+} ModernAllocKind;
+
+typedef enum {
+	MODERN_FILL_NONE,
+	MODERN_FILL_REFS,
+	MODERN_FILL_CLASS,
+	MODERN_FILL_ARRAY,
+	MODERN_FILL_WEAK_ARRAY,
+	MODERN_FILL_TYPE_ARGUMENTS,
+	MODERN_FILL_EXCEPTION_HANDLERS,
+	MODERN_FILL_CONTEXT,
+	MODERN_FILL_CONTEXT_SCOPE,
+	MODERN_FILL_CODE,
+	MODERN_FILL_OBJECT_POOL,
+	MODERN_FILL_INLINE_BYTES,
+	MODERN_FILL_TYPED_DATA,
+	MODERN_FILL_RECORD,
+	MODERN_FILL_INSTANCE,
+	MODERN_FILL_UNKNOWN,
+} ModernFillKind;
+
+typedef enum {
+	MODERN_SCALAR_UNSIGNED,
+	MODERN_SCALAR_TAGGED32,
+	MODERN_SCALAR_TAGGED64,
+	MODERN_SCALAR_BOOL,
+	MODERN_SCALAR_INT8,
+	MODERN_SCALAR_UINT8,
+	MODERN_SCALAR_REFID,
+} ModernScalarOp;
+
+typedef struct {
+	ModernFillKind kind;
+	int num_refs;
+	int name_idx;
+	int owner_idx;
+	int scalar_count;
+	ModernScalarOp scalars[6];
+} ModernFillSpec;
+
+typedef struct {
+	int cid;
+	bool is_canonical;
+	bool is_immutable;
+	ut64 count;
+	ut64 start_ref;
+	ut64 main_count;
+	int next_field_offset_words;
+	ut8 *discarded_codes;
+} ModernClusterMeta;
+
+static bool modern_is_supported_snapshot(DartCtx *ctx) {
+	return ctx && ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER && ctx->compressed_word_size == 4;
+}
+
+static int modern_cid_class(DartCtx *ctx) {
+	return ctx && ctx->layout? ctx->layout->cid_class: 5;
+}
+
+static int modern_cid_function(DartCtx *ctx) {
+	return ctx && ctx->layout? ctx->layout->cid_function: 7;
+}
+
+static int modern_cid_code(DartCtx *ctx) {
+	return ctx && ctx->layout? ctx->layout->cid_code: 18;
+}
+
+static int modern_cid_object_pool(DartCtx *ctx) {
+	return ctx && ctx->layout? ctx->layout->cid_object_pool: 23;
+}
+
+static int modern_cid_string(DartCtx *ctx) {
+	return ctx && ctx->layout? ctx->layout->cid_string: 93;
+}
+
+static int modern_cid_mint(DartCtx *ctx) {
+	return ctx && ctx->layout? ctx->layout->cid_mint: 61;
+}
+
+static int modern_cid_one_byte_string(DartCtx *ctx) {
+	return ctx && ctx->layout? ctx->layout->cid_one_byte_string: 94;
+}
+
+static int modern_cid_two_byte_string(DartCtx *ctx) {
+	return ctx && ctx->layout? ctx->layout->cid_two_byte_string: 95;
+}
+
+static int modern_cid_array(DartCtx *ctx) {
+	return ctx && ctx->layout? ctx->layout->cid_array: 90;
+}
+
+static int modern_cid_immutable_array(DartCtx *ctx) {
+	return modern_cid_array (ctx) + 1;
+}
+
+static int modern_cid_growable_array(DartCtx *ctx) {
+	return modern_cid_array (ctx) + 2;
+}
+
+static int modern_cid_typed_data(DartCtx *ctx) {
+	return modern_cid_string (ctx) - 24;
+}
+
+static int modern_cid_external_typed_data(DartCtx *ctx) {
+	return modern_cid_typed_data (ctx) + 1;
+}
+
+static int modern_cid_typed_data_view(DartCtx *ctx) {
+	return modern_cid_typed_data (ctx) + 2;
+}
+
+static int modern_typed_data_internal_base(DartCtx *ctx) {
+	if (ctx && ctx->layout && ctx->layout->num_predefined_cids > 0) {
+		return ctx->layout->num_predefined_cids - 63;
+	}
+	return 112;
+}
+
+static int modern_typed_data_internal_limit(DartCtx *ctx) {
+	return modern_typed_data_internal_base (ctx) + (14 * 4);
+}
+
+static bool modern_typed_data_internal_kind(DartCtx *ctx, int cid, int *out_rem) {
+	int base = modern_typed_data_internal_base (ctx);
+	int limit = modern_typed_data_internal_limit (ctx);
+	if (cid < base || cid >= limit) {
+		return false;
+	}
+	int rem = (cid - base) % 4;
+	if (out_rem) {
+		*out_rem = rem;
+	}
+	return true;
+}
+
+static bool modern_is_typed_data_alloc_cid(DartCtx *ctx, int cid) {
+	if (cid == 1 || cid == modern_cid_typed_data (ctx)) {
+		return true;
+	}
+	int rem = 0;
+	return modern_typed_data_internal_kind (ctx, cid, &rem) && rem == 0;
+}
+
+static int modern_typed_data_element_size(DartCtx *ctx, int cid) {
+	if (cid == 1 || cid == modern_cid_typed_data (ctx)) {
+		return 1;
+	}
+	int base = modern_typed_data_internal_base (ctx);
+	int limit = modern_typed_data_internal_limit (ctx);
+	if (cid < base || cid >= limit) {
+		return 1;
+	}
+	int idx = (cid - base) / 4;
+	static const int sizes[] = { 1, 1, 1, 2, 2, 4, 4, 8, 8, 4, 8, 16, 16, 16 };
+	if (idx >= 0 && idx < (int) (sizeof (sizes) / sizeof (sizes[0]))) {
+		return sizes[idx];
+	}
+	return 1;
+}
+
+static bool modern_is_simple_alloc_cid(int cid) {
+	switch (cid) {
+	case 46:
+	case 57:
+	case 62:
+	case 64:
+	case 65:
+	case 66:
+	case 74:
+	case 75:
+	case 76:
+	case 77:
+	case 78:
+	case 79:
+	case 80:
+	case 81:
+	case 83:
+	case 84:
+	case 85:
+	case 86:
+	case 87:
+	case 88:
+	case 89:
+	case 92:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool modern_skip_n_bytes(ClusterStream *s, ut64 len) {
+	if (!s || s->cursor + len > s->end) {
+		return false;
+	}
+	s->cursor += len;
+	return true;
+}
+
+static bool modern_skip_scalar(ClusterStream *s, ModernScalarOp op) {
+	ut64 uv = 0;
+	ut32 u32v = 0;
+	int64_t i64v = 0;
+	switch (op) {
+	case MODERN_SCALAR_UNSIGNED:
+		return cs_read_unsigned (s, &uv);
+	case MODERN_SCALAR_TAGGED32:
+		return cs_read_tagged32 (s, &u32v);
+	case MODERN_SCALAR_TAGGED64:
+		return cs_read_tagged64 (s, &i64v);
+	case MODERN_SCALAR_BOOL:
+	case MODERN_SCALAR_INT8:
+	case MODERN_SCALAR_UINT8:
+		return modern_skip_n_bytes (s, 1);
+	case MODERN_SCALAR_REFID:
+		return cs_read_ref_id (s, &uv);
+	default:
+		return false;
+	}
+}
+
+static bool modern_skip_canonical_set(ClusterStream *s, ut64 count) {
+	ut64 table_len = 0;
+	ut64 first_element = 0;
+	if (!cs_read_unsigned (s, &table_len)) {
+		return false;
+	}
+	if (!cs_read_unsigned (s, &first_element)) {
+		return false;
+	}
+	if (first_element > count) {
+		return false;
+	}
+	for (ut64 i = first_element; i < count; i++) {
+		ut64 gap = 0;
+		if (!cs_read_unsigned (s, &gap)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static ModernAllocKind modern_alloc_kind(DartCtx *ctx, int cid) {
+	if (cid == modern_cid_string (ctx) || cid == modern_cid_one_byte_string (ctx) || cid == modern_cid_two_byte_string (ctx)) {
+		return MODERN_ALLOC_STRING;
+	}
+	if (cid == modern_cid_mint (ctx)) {
+		return MODERN_ALLOC_MINT;
+	}
+	if (modern_is_simple_alloc_cid (cid)) {
+		return MODERN_ALLOC_SIMPLE;
+	}
+	if (cid == modern_cid_array (ctx) || cid == modern_cid_immutable_array (ctx)) {
+		return MODERN_ALLOC_ARRAY;
+	}
+	if (cid == 17) {
+		return MODERN_ALLOC_WEAK_ARRAY;
+	}
+	if (cid == 47) {
+		return MODERN_ALLOC_TYPE_ARGUMENTS;
+	}
+	if (cid == modern_cid_class (ctx)) {
+		return MODERN_ALLOC_CLASS;
+	}
+	if (cid == modern_cid_code (ctx)) {
+		return MODERN_ALLOC_CODE;
+	}
+	if (cid == modern_cid_object_pool (ctx)) {
+		return MODERN_ALLOC_OBJECT_POOL;
+	}
+	if (cid == 24 || cid == 25 || cid == 26) {
+		return MODERN_ALLOC_RODATA;
+	}
+	if (cid == 28) {
+		return MODERN_ALLOC_EXCEPTION_HANDLERS;
+	}
+	if (cid == 29) {
+		return MODERN_ALLOC_CONTEXT;
+	}
+	if (cid == 30) {
+		return MODERN_ALLOC_CONTEXT_SCOPE;
+	}
+	if (cid == 67) {
+		return MODERN_ALLOC_RECORD;
+	}
+	if (modern_is_typed_data_alloc_cid (ctx, cid)) {
+		return MODERN_ALLOC_TYPED_DATA;
+	}
+	if (cid == 49 || cid == 50 || cid == 51 || cid == 52) {
+		return MODERN_ALLOC_CANONICAL_SET;
+	}
+	if (cid == 16) {
+		return MODERN_ALLOC_EMPTY;
+	}
+	if (cid >= 45) {
+		return MODERN_ALLOC_INSTANCE;
+	}
+	return MODERN_ALLOC_SIMPLE;
+}
+
+static bool modern_skip_alloc(ClusterStream *s, DartCtx *ctx, ModernClusterMeta *meta) {
+	if (!s || !meta) {
+		return false;
+	}
+	ut64 count = 0;
+	ModernAllocKind kind = modern_alloc_kind (ctx, meta->cid);
+	switch (kind) {
+	case MODERN_ALLOC_EMPTY:
+		meta->count = 0;
+		return true;
+	case MODERN_ALLOC_SIMPLE:
+		if (!cs_read_unsigned (s, &count)) {
+			return false;
+		}
+		meta->count = count;
+		return true;
+	case MODERN_ALLOC_CANONICAL_SET:
+		if (!cs_read_unsigned (s, &count)) {
+			return false;
+		}
+		meta->count = count;
+		if (meta->is_canonical) {
+			return modern_skip_canonical_set (s, count);
+		}
+		return true;
+	case MODERN_ALLOC_STRING:
+		if (!cs_read_unsigned (s, &count)) {
+			return false;
+		}
+		meta->count = count;
+		for (ut64 i = 0; i < count; i++) {
+			ut64 encoded = 0;
+			if (!cs_read_unsigned (s, &encoded)) {
+				return false;
+			}
+		}
+		if (meta->is_canonical) {
+			return modern_skip_canonical_set (s, count);
+		}
+		return true;
+	case MODERN_ALLOC_MINT:
+		if (!cs_read_unsigned (s, &count)) {
+			return false;
+		}
+		meta->count = count;
+		for (ut64 i = 0; i < count; i++) {
+			int64_t value = 0;
+			if (!cs_read_tagged64 (s, &value)) {
+				return false;
+			}
+		}
+		return true;
+	case MODERN_ALLOC_ARRAY:
+	case MODERN_ALLOC_WEAK_ARRAY:
+	case MODERN_ALLOC_TYPE_ARGUMENTS:
+	case MODERN_ALLOC_OBJECT_POOL:
+	case MODERN_ALLOC_RODATA:
+	case MODERN_ALLOC_EXCEPTION_HANDLERS:
+	case MODERN_ALLOC_CONTEXT:
+	case MODERN_ALLOC_CONTEXT_SCOPE:
+	case MODERN_ALLOC_RECORD:
+	case MODERN_ALLOC_TYPED_DATA:
+		if (!cs_read_unsigned (s, &count)) {
+			return false;
+		}
+		meta->count = count;
+		for (ut64 i = 0; i < count; i++) {
+			ut64 item = 0;
+			if (!cs_read_unsigned (s, &item)) {
+				return false;
+			}
+		}
+		if ((kind == MODERN_ALLOC_STRING || kind == MODERN_ALLOC_TYPE_ARGUMENTS || kind == MODERN_ALLOC_RODATA) && meta->is_canonical) {
+			return modern_skip_canonical_set (s, count);
+		}
+		return true;
+	case MODERN_ALLOC_CLASS:
+		{
+			ut64 predefined = 0;
+			if (!cs_read_unsigned (s, &predefined)) {
+				return false;
+			}
+			if (ctx->layout && ctx->layout->num_predefined_cids > 0 && predefined > (ut64)ctx->layout->num_predefined_cids) {
+				if (!cs_read_unsigned (s, &predefined)) {
+					return false;
+				}
+			}
+			meta->main_count = predefined;
+			for (ut64 i = 0; i < predefined; i++) {
+				ut32 cidv = 0;
+				if (!cs_read_tagged32 (s, &cidv)) {
+					return false;
+				}
+			}
+			ut64 new_count = 0;
+			if (!cs_read_unsigned (s, &new_count)) {
+				return false;
+			}
+			meta->count = predefined + new_count;
+			return true;
+		}
+	case MODERN_ALLOC_CODE:
+		{
+			if (!cs_read_unsigned (s, &count)) {
+				return false;
+			}
+			meta->main_count = count;
+			meta->discarded_codes = (ut8 *)calloc ((size_t)count + 1, 1);
+			for (ut64 i = 0; i < count; i++) {
+				ut32 state_bits = 0;
+				if (!cs_read_tagged32 (s, &state_bits)) {
+					return false;
+				}
+				if (meta->discarded_codes && ((state_bits >> 3) & 1)) {
+					meta->discarded_codes[i] = 1;
+				}
+			}
+			ut64 deferred = 0;
+			if (!cs_read_unsigned (s, &deferred)) {
+				return false;
+			}
+			meta->count = count + deferred;
+			for (ut64 i = 0; i < deferred; i++) {
+				ut32 state_bits = 0;
+				if (!cs_read_tagged32 (s, &state_bits)) {
+					return false;
+				}
+			}
+			return true;
+		}
+	case MODERN_ALLOC_INSTANCE:
+		{
+			ut32 nfo = 0;
+			ut32 instance_size = 0;
+			if (!cs_read_unsigned (s, &count)) {
+				return false;
+			}
+			meta->count = count;
+			if (!cs_read_tagged32 (s, &nfo)) {
+				return false;
+			}
+			if (!cs_read_tagged32 (s, &instance_size)) {
+				return false;
+			}
+			meta->next_field_offset_words = (int)nfo;
+			return true;
+		}
+	case MODERN_ALLOC_UNKNOWN:
+	default:
+		return false;
+	}
+}
+
+static ModernFillSpec modern_fill_spec_unknown(void) {
+	ModernFillSpec spec = { 0 };
+	spec.kind = MODERN_FILL_UNKNOWN;
+	spec.name_idx = -1;
+	spec.owner_idx = -1;
+	return spec;
+}
+
+static ModernFillSpec modern_fill_spec_refs(int num_refs, int name_idx, int owner_idx, int scalar_count, ModernScalarOp a, ModernScalarOp b, ModernScalarOp c, ModernScalarOp d) {
+	ModernFillSpec spec = { 0 };
+	spec.kind = MODERN_FILL_REFS;
+	spec.num_refs = num_refs;
+	spec.name_idx = name_idx;
+	spec.owner_idx = owner_idx;
+	spec.scalar_count = scalar_count;
+	if (scalar_count > 0) {
+		spec.scalars[0] = a;
+	}
+	if (scalar_count > 1) {
+		spec.scalars[1] = b;
+	}
+	if (scalar_count > 2) {
+		spec.scalars[2] = c;
+	}
+	if (scalar_count > 3) {
+		spec.scalars[3] = d;
+	}
+	return spec;
+}
+
+static ModernFillSpec modern_get_fill_spec(DartCtx *ctx, int cid) {
+	if (cid == modern_cid_string (ctx) || cid == modern_cid_one_byte_string (ctx) || cid == modern_cid_two_byte_string (ctx)) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_NONE;
+		spec.name_idx = -1;
+		spec.owner_idx = -1;
+		return spec;
+	}
+	if (cid == modern_cid_class (ctx)) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_CLASS;
+		spec.num_refs = 13;
+		spec.name_idx = 0;
+		spec.owner_idx = -1;
+		return spec;
+	}
+	if (cid == modern_cid_function (ctx)) {
+		return modern_fill_spec_refs (4, 0, 1, 2, MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_TAGGED32, 0, 0);
+	}
+	if (cid == 8) {
+		return modern_fill_spec_refs (4, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == modern_cid_mint (ctx)) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_NONE;
+		spec.name_idx = -1;
+		spec.owner_idx = -1;
+		return spec;
+	}
+	if (cid == 16) {
+		return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == 62) {
+		return modern_fill_spec_refs (0, -1, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
+	}
+	if (cid == 64 || cid == 65) {
+		return modern_fill_spec_refs (0, -1, -1, 4, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32);
+	}
+	if (cid == 66) {
+		return modern_fill_spec_refs (0, -1, -1, 2, MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64, 0, 0);
+	}
+	if (cid == 6) {
+		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == 9) {
+		return modern_fill_spec_refs (2, -1, -1, 1, MODERN_SCALAR_UNSIGNED, 0, 0, 0);
+	}
+	if (cid == 10) {
+		return modern_fill_spec_refs (4, -1, -1, 2, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8, 0, 0);
+	}
+	if (cid == 11) {
+		return modern_fill_spec_refs (4, 0, 1, 2, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_REFID, 0, 0);
+	}
+	if (cid == 12) {
+		return modern_fill_spec_refs (1, 0, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
+	}
+	if (cid == 13) {
+		return modern_fill_spec_refs (10, 0, -1, 4, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_INT8, MODERN_SCALAR_UINT8);
+	}
+	if (cid == 14) {
+		return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == 15) {
+		return modern_fill_spec_refs (9, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == modern_cid_code (ctx)) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_CODE;
+		spec.name_idx = -1;
+		spec.owner_idx = -1;
+		return spec;
+	}
+	if (cid == modern_cid_object_pool (ctx)) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_OBJECT_POOL;
+		spec.name_idx = -1;
+		spec.owner_idx = -1;
+		return spec;
+	}
+	if (cid == modern_cid_array (ctx) || cid == modern_cid_immutable_array (ctx)) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_ARRAY;
+		return spec;
+	}
+	if (cid == 17) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_WEAK_ARRAY;
+		return spec;
+	}
+	if (cid == 47) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_TYPE_ARGUMENTS;
+		return spec;
+	}
+	if (cid == 28) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_EXCEPTION_HANDLERS;
+		return spec;
+	}
+	if (cid == 29) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_CONTEXT;
+		return spec;
+	}
+	if (cid == 30) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_CONTEXT_SCOPE;
+		return spec;
+	}
+	if (cid == 24 || cid == 25 || cid == 26) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_INLINE_BYTES;
+		return spec;
+	}
+	if (cid == 31) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_NONE;
+		spec.name_idx = -1;
+		spec.owner_idx = -1;
+		return spec;
+	}
+	if (cid == 32) {
+		return modern_fill_spec_refs (1, -1, -1, 2, MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64, 0, 0);
+	}
+	if (cid == 33) {
+		return modern_fill_spec_refs (2, 0, -1, 1, MODERN_SCALAR_BOOL, 0, 0, 0);
+	}
+	if (cid == 34) {
+		return modern_fill_spec_refs (0, -1, -1, 2, MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64, 0, 0);
+	}
+	if (cid == 35) {
+		return modern_fill_spec_refs (2, 0, -1, 1, MODERN_SCALAR_BOOL, 0, 0, 0);
+	}
+	if (cid == 36) {
+		return modern_fill_spec_refs (3, -1, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
+	}
+	if (cid == 37) {
+		return modern_fill_spec_refs (4, -1, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
+	}
+	if (cid == 38) {
+		return modern_fill_spec_refs (1, -1, -1, 2, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, 0, 0);
+	}
+	if (cid == 39) {
+		return modern_fill_spec_refs (1, -1, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
+	}
+	if (cid == 42) {
+		return modern_fill_spec_refs (4, -1, -1, 3, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL, MODERN_SCALAR_INT8, 0);
+	}
+	if (cid == 43) {
+		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == 46) {
+		return modern_fill_spec_refs (2, 0, -1, 2, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL, 0, 0);
+	}
+	if (cid == 48) {
+		return modern_fill_spec_refs (3, -1, -1, 1, MODERN_SCALAR_UNSIGNED, 0, 0, 0);
+	}
+	if (cid == 49) {
+		return modern_fill_spec_refs (3, -1, -1, 1, MODERN_SCALAR_UNSIGNED, 0, 0, 0);
+	}
+	if (cid == 50) {
+		return modern_fill_spec_refs (6, -1, -1, 3, MODERN_SCALAR_UINT8, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, 0);
+	}
+	if (cid == 51) {
+		return modern_fill_spec_refs (4, -1, -1, 1, MODERN_SCALAR_UINT8, 0, 0, 0);
+	}
+	if (cid == 52) {
+		return modern_fill_spec_refs (3, -1, -1, 3, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8, 0);
+	}
+	if (cid == 57) {
+		return modern_fill_spec_refs (6, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == 67) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_RECORD;
+		return spec;
+	}
+	if (cid == 68) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_TYPED_DATA;
+		return spec;
+	}
+	if (cid == modern_cid_typed_data_view (ctx)) {
+		return modern_fill_spec_refs (3, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == modern_cid_external_typed_data (ctx)) {
+		return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == modern_cid_typed_data (ctx) || cid == 1) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_TYPED_DATA;
+		return spec;
+	}
+	int typed_rem = 0;
+	if (modern_typed_data_internal_kind (ctx, cid, &typed_rem)) {
+		if (typed_rem == 0) {
+			ModernFillSpec spec = { 0 };
+			spec.kind = MODERN_FILL_TYPED_DATA;
+			return spec;
+		}
+		if (typed_rem == 1) {
+			return modern_fill_spec_refs (3, -1, -1, 0, 0, 0, 0, 0);
+		}
+		if (typed_rem != 0) {
+			return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
+		}
+	}
+	if (cid == 74) {
+		return modern_fill_spec_refs (0, -1, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
+	}
+	if (cid == 75) {
+		return modern_fill_spec_refs (1, -1, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
+	}
+	if (cid == 76) {
+		return modern_fill_spec_refs (0, -1, -1, 2, MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64, 0, 0);
+	}
+	if (cid == 77) {
+		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == 78) {
+		return modern_fill_spec_refs (2, -1, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
+	}
+	if (cid == 79) {
+		return modern_fill_spec_refs (6, -1, -1, 3, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_INT8, 0);
+	}
+	if (cid == 80 || cid == 81) {
+		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == 83) {
+		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == 84) {
+		return modern_fill_spec_refs (1, 0, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
+	}
+	if (cid == 85) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_NONE;
+		spec.name_idx = -1;
+		spec.owner_idx = -1;
+		return spec;
+	}
+	if (cid == 86 || cid == 87 || cid == 88 || cid == 89) {
+		return modern_fill_spec_refs (5, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == modern_cid_growable_array (ctx)) {
+		return modern_fill_spec_refs (3, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid >= 45) {
+		ModernFillSpec spec = { 0 };
+		spec.kind = MODERN_FILL_INSTANCE;
+		return spec;
+	}
+	return modern_fill_spec_unknown ();
+}
+
+static bool modern_skip_fill_refs(ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+	if (!s || !meta || !spec) {
+		return false;
+	}
+	for (ut64 i = 0; i < meta->count; i++) {
+		for (int j = 0; j < spec->num_refs; j++) {
+			ut64 ref = 0;
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+		}
+		for (int j = 0; j < spec->scalar_count; j++) {
+			if (!modern_skip_scalar (s, spec->scalars[j])) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_array(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		ut64 ref = 0;
+		if (!cs_read_unsigned (s, &length)) {
+			return false;
+		}
+		if (!cs_read_ref_id (s, &ref)) {
+			return false;
+		}
+		for (ut64 j = 0; j < length; j++) {
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_weak_array(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		ut64 ref = 0;
+		if (!cs_read_unsigned (s, &length)) {
+			return false;
+		}
+		for (ut64 j = 0; j < length; j++) {
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_type_arguments(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		ut64 ref = 0;
+		ut32 tmp32 = 0;
+		if (!cs_read_unsigned (s, &length)) {
+			return false;
+		}
+		if (!cs_read_tagged32 (s, &tmp32)) {
+			return false;
+		}
+		if (!cs_read_unsigned (s, &ref)) {
+			return false;
+		}
+		if (!cs_read_ref_id (s, &ref)) {
+			return false;
+		}
+		for (ut64 j = 0; j < length; j++) {
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_exception_handlers(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 raw = 0;
+		ut64 ref = 0;
+		ut32 tmp32 = 0;
+		if (!cs_read_unsigned (s, &raw)) {
+			return false;
+		}
+		ut64 length = raw >> 1;
+		if (!cs_read_ref_id (s, &ref)) {
+			return false;
+		}
+		for (ut64 j = 0; j < length; j++) {
+			if (!cs_read_tagged32 (s, &tmp32)) {
+				return false;
+			}
+			if (!cs_read_tagged32 (s, &tmp32)) {
+				return false;
+			}
+			if (!modern_skip_n_bytes (s, 3)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_context(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		ut64 ref = 0;
+		if (!cs_read_unsigned (s, &length)) {
+			return false;
+		}
+		if (!cs_read_ref_id (s, &ref)) {
+			return false;
+		}
+		for (ut64 j = 0; j < length; j++) {
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_context_scope(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		ut64 ref = 0;
+		if (!cs_read_unsigned (s, &length)) {
+			return false;
+		}
+		if (!modern_skip_n_bytes (s, 1)) {
+			return false;
+		}
+		for (ut64 j = 0; j < length * 7; j++) {
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_inline_bytes(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		if (!cs_read_unsigned (s, &length)) {
+			return false;
+		}
+		if (!modern_skip_n_bytes (s, length)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_typed_data(ClusterStream *s, DartCtx *ctx, const ModernClusterMeta *meta) {
+	int elem_size = modern_typed_data_element_size (ctx, meta->cid);
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		if (!cs_read_unsigned (s, &length)) {
+			return false;
+		}
+		if (!modern_skip_n_bytes (s, length *(ut64)elem_size)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_record(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 shape = 0;
+		ut64 ref = 0;
+		if (!cs_read_unsigned (s, &shape)) {
+			return false;
+		}
+		ut64 fields = shape & 0xffffULL;
+		for (ut64 j = 0; j < fields; j++) {
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_instance(ClusterStream *s, const ModernClusterMeta *meta) {
+	ut64 bitmap = 0;
+	if (!cs_read_unsigned (s, &bitmap)) {
+		return false;
+	}
+	int header_words = 2;
+	int num_fields = meta->next_field_offset_words - header_words;
+	if (num_fields < 0) {
+		num_fields = 0;
+	}
+	for (ut64 i = 0; i < meta->count; i++) {
+		for (int j = 0; j < num_fields; j++) {
+			int field_word_idx = header_words + j;
+			bool is_unboxed = ((bitmap >> field_word_idx) & 1ULL) != 0;
+			if (is_unboxed) {
+				ut32 tmp32 = 0;
+				if (!cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32)) {
+					return false;
+				}
+			} else {
+				ut64 ref = 0;
+				if (!cs_read_ref_id (s, &ref)) {
+					return false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_code(ClusterStream *s, const ModernClusterMeta *meta) {
+	const int num_refs = 6;
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 ref = 0;
+		if (i < meta->main_count) {
+			ut64 payload = 0;
+			if (!cs_read_unsigned (s, &payload)) {
+				return false;
+			}
+			if (meta->discarded_codes && meta->discarded_codes[i]) {
+				if (!cs_read_ref_id (s, &ref)) {
+					return false;
+				}
+				continue;
+			}
+		}
+		for (int j = 0; j < num_refs; j++) {
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_object_pool(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		if (!cs_read_unsigned (s, &length)) {
+			return false;
+		}
+		for (ut64 j = 0; j < length; j++) {
+			ut8 entry_bits = 0;
+			if (!cs_read_u8 (s, &entry_bits)) {
+				return false;
+			}
+			ut8 behavior = entry_bits >> 5;
+			ut8 type = entry_bits & 0x0f;
+			if (behavior == 0) {
+				if (type == 0) {
+					int64_t imm = 0;
+					if (!cs_read_tagged64 (s, &imm)) {
+						return false;
+					}
+				} else if (type == 1) {
+					ut64 ref = 0;
+					if (!cs_read_ref_id (s, &ref)) {
+						return false;
+					}
+				} else if (type != 2) {
+					return false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+static int modern_name_quality(const char *name) {
+	if (R_STR_ISEMPTY (name)) {
+		return 0;
+	}
+	if (strstr (name, "AnonymousClosure")) {
+		return 20;
+	}
+	if (r_str_startswith (name, "method.")) {
+		return 100;
+	}
+	if (strchr (name, '.')) {
+		return 60;
+	}
+	return 40;
+}
+
+static void modern_set_name_for_code_index(DartCtx *ctx, ut64 code_index, char *name) {
+	if (!ctx || !ctx->name_by_code_index || code_index >= ctx->name_by_code_index_count || R_STR_ISEMPTY (name)) {
+		free (name);
+		return;
+	}
+	char *old = ctx->name_by_code_index[code_index];
+	if (!old || modern_name_quality (name) > modern_name_quality (old) || strlen (name) > strlen (old)) {
+		free (old);
+		ctx->name_by_code_index[code_index] = name;
+		return;
+	}
+	free (name);
+}
+
+static const char *modern_resolve_ref_name(char **strings_by_ref, ut64 *class_name_ref, ut64 *library_name_ref, ut64 *patch_wrapped_ref, ut64 *function_name_ref, ut64 refs_count, ut64 ref, int depth) {
+	if (!ref || ref >= refs_count || depth > 8) {
+		return NULL;
+	}
+	if (class_name_ref[ref] && class_name_ref[ref] < refs_count) {
+		return strings_by_ref[class_name_ref[ref]];
+	}
+	if (library_name_ref[ref] && library_name_ref[ref] < refs_count) {
+		return strings_by_ref[library_name_ref[ref]];
+	}
+	if (patch_wrapped_ref[ref]) {
+		return modern_resolve_ref_name (strings_by_ref, class_name_ref, library_name_ref, patch_wrapped_ref, function_name_ref, refs_count, patch_wrapped_ref[ref], depth + 1);
+	}
+	if (function_name_ref[ref] && function_name_ref[ref] < refs_count) {
+		return strings_by_ref[function_name_ref[ref]];
+	}
+	return NULL;
+}
+
+static char *modern_build_full_name(DartCtx *ctx, const char *owner_name, const char *method_name) {
+	if (R_STR_ISEMPTY (method_name)) {
+		return NULL;
+	}
+	char *owner_dup = owner_name? strdup (owner_name): NULL;
+	char *method_dup = strdup (method_name);
+	if (owner_dup) {
+		dart_obf_apply (ctx, &owner_dup);
+	}
+	dart_obf_apply (ctx, &method_dup);
+	if (method_dup && !strcmp (method_dup, "AnonymousClosure")) {
+		free (method_dup);
+		method_dup = strdup ("_anon_closure");
+	}
+	char *full = owner_dup && *owner_dup
+		? r_str_newf ("method.%s.%s", owner_dup, method_dup)
+		: r_str_newf ("method.%s", method_dup);
+	r_name_filter (full, 0);
+	free (owner_dup);
+	free (method_dup);
+	return full;
+}
+
+static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen) {
+	if (!modern_is_supported_snapshot (ctx) || !itlen || cluster_start >= cluster_end) {
+		return false;
+	}
+	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)num_clusters, sizeof (ModernClusterMeta));
+	if (!meta) {
+		return false;
+	}
+	ut64 total_refs = ctx->num_base_objects + ctx->num_objects + 16;
+	char **strings_by_ref = (char **)calloc ((size_t)total_refs, sizeof (char *));
+	ut64 *class_name_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut64 *library_name_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut64 *patch_wrapped_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut64 *function_name_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut64 *function_owner_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut64 *function_data_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut64 *function_code_index = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut64 *closure_parent_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut64 *code_owner_ref_by_index = (ut64 *)calloc ((size_t)itlen, sizeof (ut64));
+	// Per-slot owner cid: used to distinguish Function/Class/AbstractType/null
+	// owners so we can synthesize AllocateXStub / TypeStub / VMStub names
+	// instead of letting the name_pool fallback shift every later entry.
+	int *code_owner_cid_by_index = (int *)calloc ((size_t)itlen, sizeof (int));
+	if (!strings_by_ref || !class_name_ref || !library_name_ref || !patch_wrapped_ref || !function_name_ref || !function_owner_ref || !function_data_ref || !function_code_index || !closure_parent_ref || !code_owner_ref_by_index || !code_owner_cid_by_index) {
+		free (meta);
+		free (strings_by_ref);
+		free (class_name_ref);
+		free (library_name_ref);
+		free (patch_wrapped_ref);
+		free (function_name_ref);
+		free (function_owner_ref);
+		free (function_data_ref);
+		free (function_code_index);
+		free (closure_parent_ref);
+		free (code_owner_ref_by_index);
+		free (code_owner_cid_by_index);
+		return false;
+	}
+	ClusterStream s = {
+		.ctx = ctx,
+		.cursor = cluster_start,
+		.end = cluster_end,
+};
+	ut64 current_cluster = UT64_MAX;
+	int current_cid = -1;
+	ut64 next_code_index = 0;
+	ut64 next_ref = ctx->num_base_objects + 1;
+	for (ut64 i = 0; i < num_clusters; i++) {
+		current_cluster = i;
+		ut32 tags = 0;
+		if (!cs_read_tagged32 (&s, &tags)) {
+			if (ctx->verbose > 0) {
+				fprintf (stderr, "[r2flutter] modern alloc: failed reading cluster tag at %" PRIu64 " off=0x%" PFMT64x "\n", i, s.cursor);
+			}
+			goto fail;
+		}
+		meta[i].cid = (int) ((tags >> 12) & 0xFFFFF);
+		current_cid = meta[i].cid;
+		meta[i].is_canonical = ((tags >> 1) & 1) != 0;
+		meta[i].is_immutable = (tags & (1 << 6)) != 0;
+		meta[i].start_ref = next_ref;
+		if (!modern_skip_alloc (&s, ctx, &meta[i])) {
+			if (ctx->verbose > 0) {
+				fprintf (stderr, "[r2flutter] modern alloc: failed skipping cid=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, i, s.cursor);
+			}
+			goto fail;
+		}
+		next_ref += meta[i].count;
+	}
+	if (!ctx->name_by_code_index || ctx->name_by_code_index_count != itlen) {
+		if (ctx->name_by_code_index) {
+			for (ut64 i = 0; i < ctx->name_by_code_index_count; i++) {
+				free (ctx->name_by_code_index[i]);
+			}
+			free (ctx->name_by_code_index);
+		}
+		ctx->name_by_code_index = (char **)calloc ((size_t)itlen, sizeof (char *));
+		ctx->name_by_code_index_count = itlen;
+	}
+	if (!ctx->owner_kind_by_code_index || ctx->owner_kind_by_code_index_count != itlen) {
+		free (ctx->owner_kind_by_code_index);
+		ctx->owner_kind_by_code_index = (ut8 *)calloc ((size_t)itlen, sizeof (ut8));
+		ctx->owner_kind_by_code_index_count = itlen;
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		current_cluster = i;
+		current_cid = meta[i].cid;
+		ModernFillSpec spec = modern_get_fill_spec (ctx, meta[i].cid);
+		ut64 ref = meta[i].start_ref;
+		if (meta[i].cid == modern_cid_string (ctx) || meta[i].cid == modern_cid_one_byte_string (ctx) || meta[i].cid == modern_cid_two_byte_string (ctx)) {
+			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
+				ut64 encoded = 0;
+				if (!cs_read_unsigned (&s, &encoded)) {
+					if (ctx->verbose > 0) {
+						fprintf (stderr, "[r2flutter] modern fill: failed string encoded cid=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, i, s.cursor);
+					}
+					goto fail;
+				}
+				ut64 length = encoded >> 1;
+				bool is_two_byte = (encoded & 1) != 0;
+				if (is_two_byte) {
+					ut64 nbytes = length * 2;
+					ut8 *raw = (ut8 *)calloc ((size_t)nbytes + 1, 1);
+					if (!raw || !cs_read_bytes (&s, raw, (int)nbytes)) {
+						free (raw);
+						goto fail;
+					}
+					char *value = (char *)calloc ((size_t)length + 1, 1);
+					for (ut64 k = 0; k < length; k++) {
+						value[k] = raw[k * 2];
+					}
+					free (raw);
+					strings_by_ref[ref] = value;
+				} else {
+					char *value = (char *)calloc ((size_t)length + 1, 1);
+					if (!value || !cs_read_bytes (&s, (ut8 *)value, (int)length)) {
+						free (value);
+						goto fail;
+					}
+					strings_by_ref[ref] = value;
+				}
+			}
+			continue;
+		}
+		if (spec.kind == MODERN_FILL_CLASS) {
+			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
+				ut64 name_ref = 0;
+				ut32 class_id = 0;
+				ut32 tmp32 = 0;
+				for (int k = 0; k < spec.num_refs; k++) {
+					ut64 rv = 0;
+					if (!cs_read_ref_id (&s, &rv)) {
+						goto fail;
+					}
+					if (k == 0) {
+						name_ref = rv;
+					}
+				}
+				if (!cs_read_tagged32 (&s, &class_id) || !cs_read_tagged32 (&s, &tmp32) || !cs_read_tagged32 (&s, &tmp32) || !cs_read_tagged32 (&s, &tmp32) || !cs_read_tagged32 (&s, &tmp32) || !cs_read_tagged32 (&s, &tmp32) || !cs_read_tagged32 (&s, &tmp32)) {
+					goto fail;
+				}
+				bool is_predefined = j < meta[i].main_count;
+				bool is_top_level = class_id >= (1U << 20);
+				if (is_predefined || !is_top_level) {
+					ut64 bitmap = 0;
+					if (!cs_read_unsigned (&s, &bitmap)) {
+						goto fail;
+					}
+				}
+				class_name_ref[ref] = name_ref;
+			}
+			continue;
+		}
+		if (meta[i].cid == modern_cid_function (ctx)) {
+			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
+				ut64 name_ref = 0;
+				ut64 owner_ref = 0;
+				ut64 sig_ref = 0;
+				ut64 data_ref = 0;
+				ut64 code_index = 0;
+				ut32 kind_tag = 0;
+				if (!cs_read_ref_id (&s, &name_ref) || !cs_read_ref_id (&s, &owner_ref) || !cs_read_ref_id (&s, &sig_ref) || !cs_read_ref_id (&s, &data_ref) || !cs_read_unsigned (&s, &code_index) || !cs_read_tagged32 (&s, &kind_tag)) {
+					goto fail;
+				}
+				function_name_ref[ref] = name_ref;
+				function_owner_ref[ref] = owner_ref;
+				function_data_ref[ref] = data_ref;
+				function_code_index[ref] = code_index;
+			}
+			continue;
+		}
+		if (meta[i].cid == modern_cid_code (ctx)) {
+			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
+				ut64 owner_ref = 0;
+				ut64 tmp_ref = 0;
+				ut64 slot = UT64_MAX;
+				if (j < meta[i].main_count) {
+					ut64 payload = 0;
+					if (!cs_read_unsigned (&s, &payload)) {
+						goto fail;
+					}
+					slot = next_code_index++;
+					if (meta[i].discarded_codes && meta[i].discarded_codes[j]) {
+						if (!cs_read_ref_id (&s, &tmp_ref)) {
+							goto fail;
+						}
+						continue;
+					}
+				}
+				for (int k = 0; k < 6; k++) {
+					if (!cs_read_ref_id (&s, &tmp_ref)) {
+						goto fail;
+					}
+					if (k == 0) {
+						owner_ref = tmp_ref;
+					}
+				}
+				if (slot != UT64_MAX && slot < itlen) {
+					code_owner_ref_by_index[slot] = owner_ref;
+					// Resolve the owner ref back to the cluster cid that
+					// allocated it; this tells us if the slot is a regular
+					// function, an allocate stub (owner is a Class), a type
+					// test stub (owner is an AbstractType), or a VM stub
+					// (owner_ref == 0, not in any cluster).
+					int owner_cid = 0;
+					if (owner_ref > 0) {
+						for (ut64 m = 0; m < num_clusters; m++) {
+							if (meta[m].count == 0) {
+								continue;
+							}
+							ut64 lo = meta[m].start_ref;
+							ut64 hi = lo + meta[m].count;
+							if (owner_ref >= lo && owner_ref < hi) {
+								owner_cid = meta[m].cid;
+								break;
+							}
+						}
+					}
+					code_owner_cid_by_index[slot] = owner_cid;
+				}
+			}
+			continue;
+		}
+		if (meta[i].cid == 9) {
+			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
+				ut64 parent_function_ref = 0;
+				ut64 closure_ref = 0;
+				ut64 default_kind = 0;
+				if (!cs_read_ref_id (&s, &parent_function_ref) || !cs_read_ref_id (&s, &closure_ref) || !cs_read_unsigned (&s, &default_kind)) {
+					goto fail;
+				}
+				closure_parent_ref[ref] = parent_function_ref;
+			}
+			continue;
+		}
+		if (meta[i].cid == 13) {
+			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
+				ut64 name_ref = 0;
+				for (int k = 0; k < 10; k++) {
+					ut64 rv = 0;
+					if (!cs_read_ref_id (&s, &rv)) {
+						goto fail;
+					}
+					if (k == 0) {
+						name_ref = rv;
+					}
+				}
+				for (int k = 0; k < 4; k++) {
+					if (!modern_skip_scalar (&s, spec.scalars[k])) {
+						goto fail;
+					}
+				}
+				library_name_ref[ref] = name_ref;
+			}
+			continue;
+		}
+		if (meta[i].cid == 6) {
+			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
+				ut64 wrapped_ref = 0;
+				ut64 script_ref = 0;
+				if (!cs_read_ref_id (&s, &wrapped_ref) || !cs_read_ref_id (&s, &script_ref)) {
+					goto fail;
+				}
+				patch_wrapped_ref[ref] = wrapped_ref;
+			}
+			continue;
+		}
+		switch (spec.kind) {
+		case MODERN_FILL_REFS:
+			if (!modern_skip_fill_refs (&s, &meta[i], &spec)) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_ARRAY:
+			if (!modern_skip_fill_array (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_WEAK_ARRAY:
+			if (!modern_skip_fill_weak_array (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_TYPE_ARGUMENTS:
+			if (!modern_skip_fill_type_arguments (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_EXCEPTION_HANDLERS:
+			if (!modern_skip_fill_exception_handlers (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_CONTEXT:
+			if (!modern_skip_fill_context (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_CONTEXT_SCOPE:
+			if (!modern_skip_fill_context_scope (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_CODE:
+			if (!modern_skip_fill_code (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_OBJECT_POOL:
+			if (!modern_skip_fill_object_pool (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_INLINE_BYTES:
+			if (!modern_skip_fill_inline_bytes (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_TYPED_DATA:
+			if (!modern_skip_fill_typed_data (&s, ctx, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_RECORD:
+			if (!modern_skip_fill_record (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_INSTANCE:
+			if (!modern_skip_fill_instance (&s, &meta[i])) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_NONE:
+			break;
+		default:
+			if (ctx->verbose > 0) {
+				fprintf (stderr, "[r2flutter] modern fill: unsupported cid=%d kind=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, spec.kind, i, s.cursor);
+			}
+			goto fail;
+		}
+	}
+	ut64 mapped = 0;
+	const int cid_class_v = modern_cid_class (ctx);
+	const int cid_function_v = modern_cid_function (ctx);
+	// Cluster cids for abstract-type owners (Type/FunctionType/RecordType).
+	// These live just past the Class/Function predefined cids; on Dart 3.8.x
+	// they are 112/113/114 in the VM but in the snapshot cluster-cid space
+	// they appear as modern_cid_function + N. Rather than hardcode, treat any
+	// non-Class non-Function owner as a type-test-like stub.
+	for (ut64 code_index = 0; code_index < itlen; code_index++) {
+		ut64 owner_ref = code_owner_ref_by_index[code_index];
+		int owner_cid = code_owner_cid_by_index[code_index];
+		ut8 kind = DART_OWNER_UNKNOWN;
+		char *full = NULL;
+		if (owner_ref == 0) {
+			// Code object with no owner in the cluster graph: these are
+			// precompiled VM stubs (runtime helpers). Mark the slot so the
+			// IT resolver doesn't burn a name-pool entry on it.
+			kind = DART_OWNER_VM_STUB;
+		} else if (owner_ref >= total_refs) {
+			// Out of range, leave unknown.
+		} else if (owner_cid == cid_function_v && function_name_ref[owner_ref]) {
+			const char *method_name = function_name_ref[owner_ref] < total_refs? strings_by_ref[function_name_ref[owner_ref]]: NULL;
+			ut64 data_ref = function_data_ref[owner_ref];
+			if (data_ref < total_refs && closure_parent_ref[data_ref]) {
+				method_name = "_anon_closure";
+			}
+			const char *owner_name = modern_resolve_ref_name (strings_by_ref, class_name_ref, library_name_ref, patch_wrapped_ref, function_name_ref, total_refs, function_owner_ref[owner_ref], 0);
+			full = modern_build_full_name (ctx, owner_name, method_name);
+			kind = DART_OWNER_FUNCTION;
+		} else if (owner_cid == cid_class_v) {
+			// Allocate stub for a user class. Name it like blutter's
+			// Allocate<ClassName>Stub so cross-tool diffs line up.
+			const char *cls_name = class_name_ref[owner_ref] && class_name_ref[owner_ref] < total_refs
+				? strings_by_ref[class_name_ref[owner_ref]]: NULL;
+			if (R_STR_ISNOTEMPTY (cls_name)) {
+				full = r_str_newf ("stub.Allocate%sStub", cls_name);
+				if (full) {
+					r_name_filter (full, 0);
+				}
+			}
+			kind = DART_OWNER_CLASS;
+		} else if (owner_cid > 0) {
+			// Non-Function, non-Class owner: most commonly a Type or
+			// FunctionType (type-test stub). Try to recover a readable name
+			// via modern_resolve_ref_name (walks class_name/library_name
+			// chains) and fall back to a generic tag.
+			const char *t_name = modern_resolve_ref_name (strings_by_ref, class_name_ref, library_name_ref, patch_wrapped_ref, function_name_ref, total_refs, owner_ref, 0);
+			if (R_STR_ISNOTEMPTY (t_name)) {
+				full = r_str_newf ("stub.TypeTest_%s", t_name);
+				if (full) {
+					r_name_filter (full, 0);
+				}
+			}
+			kind = DART_OWNER_TYPE;
+		}
+		if (ctx->owner_kind_by_code_index && code_index < ctx->owner_kind_by_code_index_count) {
+			ctx->owner_kind_by_code_index[code_index] = kind;
+		}
+		if (full) {
+			modern_set_name_for_code_index (ctx, code_index, full);
+		}
+	}
+	for (ut64 ref = 1; ref < total_refs; ref++) {
+		if (!function_name_ref[ref] || function_code_index[ref] >= ctx->name_by_code_index_count) {
+			continue;
+		}
+		ut64 ci = function_code_index[ref];
+		if (ctx->name_by_code_index[ci]) {
+			continue;
+		}
+		const char *method_name = function_name_ref[ref] < total_refs? strings_by_ref[function_name_ref[ref]]: NULL;
+		ut64 data_ref = function_data_ref[ref];
+		if (data_ref < total_refs && closure_parent_ref[data_ref]) {
+			method_name = "_anon_closure";
+		}
+		const char *owner_name = modern_resolve_ref_name (strings_by_ref, class_name_ref, library_name_ref, patch_wrapped_ref, function_name_ref, total_refs, function_owner_ref[ref], 0);
+		char *full = modern_build_full_name (ctx, owner_name, method_name);
+		modern_set_name_for_code_index (ctx, ci, full);
+		if (ctx->owner_kind_by_code_index && ci < ctx->owner_kind_by_code_index_count) {
+			ctx->owner_kind_by_code_index[ci] = DART_OWNER_FUNCTION;
+		}
+	}
+	for (ut64 i = 0; i < ctx->name_by_code_index_count; i++) {
+		if (R_STR_ISNOTEMPTY (ctx->name_by_code_index[i])) {
+			mapped++;
+		}
+	}
+	if (ctx->verbose > 0) {
+		fprintf (stderr, "[r2flutter] modern cluster naming mapped=%" PRIu64 "\n", mapped);
+	}
+	for (ut64 i = 0; i < total_refs; i++) {
+		free (strings_by_ref[i]);
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		free (meta[i].discarded_codes);
+	}
+	free (meta);
+	free (strings_by_ref);
+	free (class_name_ref);
+	free (library_name_ref);
+	free (patch_wrapped_ref);
+	free (function_name_ref);
+	free (function_owner_ref);
+	free (function_data_ref);
+	free (function_code_index);
+	free (closure_parent_ref);
+	free (code_owner_ref_by_index);
+	free (code_owner_cid_by_index);
+	return true;
+fail:
+	if (ctx->verbose > 0) {
+		fprintf (stderr, "[r2flutter] modern scan failed cluster=%" PRIu64 " cid=%d off=0x%" PFMT64x "\n", current_cluster, current_cid, s.cursor);
+	}
+	for (ut64 i = 0; i < total_refs; i++) {
+		free (strings_by_ref[i]);
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		free (meta[i].discarded_codes);
+	}
+	free (meta);
+	free (strings_by_ref);
+	free (class_name_ref);
+	free (library_name_ref);
+	free (patch_wrapped_ref);
+	free (function_name_ref);
+	free (function_owner_ref);
+	free (function_data_ref);
+	free (function_code_index);
+	free (closure_parent_ref);
+	free (code_owner_ref_by_index);
+	free (code_owner_cid_by_index);
+	return false;
 }
 
 static void free_dart_string(void *p) {
@@ -1304,7 +3105,7 @@ static int deserialize_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_e
 			break;
 		}
 		uint32_t cid = (tags >> 12) & 0xFFFFF;
-		bool is_canonical = tags & 1;
+		bool is_canonical = ((tags >> 1) & 1) != 0;
 		if (ctx->verbose > 1) {
 			fprintf (stderr, "[r2flutter] Cluster %" PRIu64 ": cid=%u canonical=%d cursor=0x%" PFMT64x "\n", ci, cid, is_canonical, stream.cursor);
 		}
@@ -1549,6 +3350,9 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] data_image_base=0x%" PFMT64x " data_image_end=0x%" PFMT64x "\n", (ut64)data_image_base, (ut64)data_image_end);
 	}
+	if (modern_is_supported_snapshot (ctx)) {
+		scan_modern_names_from_clusters (ctx, cluster_start, cluster_end, nc, itlen);
+	}
 	ctx->name_by_ep = scan_code_names (ctx, data_image_base, data_image_end);
 	ctx->name_pool = collect_data_names (ctx, data_image_base, data_image_end);
 	if (!ctx->name_pool || r_list_length (ctx->name_pool) == 0) {
@@ -1577,7 +3381,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		goto beach;
 	}
 	ut64 table_addr = data_image_base + itdata;
-	if (on_it && emit_it_fixed (ctx, table_addr, data_image_base, itlen, max_entries, include_stubs, sym_by_addr, on_fn, fn_user, on_it, it_user) == 0) {
+	if (emit_it_fixed (ctx, table_addr, data_image_base, itlen, max_entries, include_stubs, sym_by_addr, on_fn, fn_user, on_it, it_user) == 0) {
 		goto beach;
 	}
 	for (int delta = -64; delta <= 64; delta += 4) {
@@ -1590,6 +3394,19 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	}
 	(void)emit_it_linear (ctx, itlen, max_entries, on_fn, fn_user, on_it, it_user);
 beach:
+	if (ctx->name_by_code_index) {
+		for (ut64 i = 0; i < ctx->name_by_code_index_count; i++) {
+			free (ctx->name_by_code_index[i]);
+		}
+		free (ctx->name_by_code_index);
+		ctx->name_by_code_index = NULL;
+		ctx->name_by_code_index_count = 0;
+	}
+	if (ctx->owner_kind_by_code_index) {
+		free (ctx->owner_kind_by_code_index);
+		ctx->owner_kind_by_code_index = NULL;
+		ctx->owner_kind_by_code_index_count = 0;
+	}
 	if (ctx->name_by_ep) {
 		ht_up_free (ctx->name_by_ep);
 		ctx->name_by_ep = NULL;
@@ -2569,7 +4386,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 				break;
 			}
 			uint32_t cid = (tags >> 12) & 0xFFFFF;
-			bool is_canonical = tags & 1;
+			bool is_canonical = ((tags >> 1) & 1) != 0;
 			(void)is_canonical;
 			if (ctx->verbose > 1) {
 				fprintf (stderr, "[r2flutter] Cluster %" PRIu64 ": cid=%u (Class=%d,Field=%d,String=%d)\n", ci2, cid, kClassCid, kFieldCid_extract, kOneByteStringCid);

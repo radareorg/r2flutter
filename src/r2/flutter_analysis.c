@@ -589,9 +589,22 @@ static RList *flutter_collect_entries(RCore *core, const DartApp *app, FlutterAn
 	return entries;
 }
 
+static RAnalFunction *flutter_get_function_at_or_in(RAnal *anal, ut64 addr) {
+	RAnalFunction *fcn = r_anal_get_function_at (anal, addr);
+	if (fcn) {
+		return fcn;
+	}
+	return r_anal_get_fcn_in (anal, addr, 0);
+}
+
 static void flutter_ensure_functions(RCore *core, RList *entries) {
 	if (!core || !core->anal || !entries) {
 		return;
+	}
+	RLogLevel old_level = r_log_get_level ();
+	bool restore_log_level = old_level > R_LOG_LEVEL_INFO;
+	if (restore_log_level) {
+		r_log_set_level (R_LOG_LEVEL_INFO);
 	}
 	RListIter *it;
 	ut64 *addrp;
@@ -599,9 +612,12 @@ static void flutter_ensure_functions(RCore *core, RList *entries) {
 		if (!addrp || !*addrp) {
 			continue;
 		}
-		if (!r_anal_get_fcn_in (core->anal, *addrp, 0)) {
+		if (!flutter_get_function_at_or_in (core->anal, *addrp)) {
 			r_core_cmdf (core, "af @ 0x%" PFMT64x, *addrp);
 		}
+	}
+	if (restore_log_level) {
+		r_log_set_level (old_level);
 	}
 }
 
@@ -1009,7 +1025,7 @@ static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, RList *
 		if (!addrp || !*addrp) {
 			continue;
 		}
-		RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, *addrp, 0);
+		RAnalFunction *fcn = flutter_get_function_at_or_in (core->anal, *addrp);
 		if (!fcn || ht_up_find (seen_fcns, fcn->addr, NULL)) {
 			continue;
 		}

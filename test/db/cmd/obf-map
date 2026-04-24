@@ -4,7 +4,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -j --dump-funcs --limit 3 --omfile custom/obf-map.txt bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"addr":73509,"name":"method.initState"},{"addr":81385,"name":"method.build"},{"addr":81391,"name":"method.teardown"}]
+[{"addr":59240,"name":"func.0000e768"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"func.0000e7a0"}]
 EOF
 RUN
 
@@ -14,8 +14,8 @@ CMDS=<<EOF
 !!../bin/r2flutter --dump-it --limit 2 --omfile custom/obf-map.txt bins/android/first 2>/dev/null
 EOF
 EXPECT=<<EOF
-# length=1089546 first_entry_with_code=0 canonical_stack_map_entries_offset=0
-0 0x66700 code method.initState
-1 0x66704 code method.build
+# length=1311 first_entry_with_code=0 canonical_stack_map_entries_offset=25731
+0 0x66768 code Object.noSuchMethod
+1 0x66794 code new NoSuchMethodError
 EOF
 RUN

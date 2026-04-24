@@ -4,10 +4,10 @@ CMDS=<<EOF
 !!../bin/r2flutter --limit 3 --dump-it bins/android/first 2>/dev/null
 EOF
 EXPECT=<<EOF
-# length=1089546 first_entry_with_code=0 canonical_stack_map_entries_offset=0
-0 0x66700 code method.fn_0
-1 0x66704 code method.fn_1
-2 0x66708 code method.fn_2
+# length=1311 first_entry_with_code=0 canonical_stack_map_entries_offset=25731
+0 0x66768 code Object.noSuchMethod
+1 0x66794 code new NoSuchMethodError
+2 0x667a0 code NoSuchMethodError._throwNew
 EOF
 RUN
 
@@ -17,7 +17,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -j --limit 2 --dump-it bins/android/first 2>/dev/null
 EOF
 EXPECT=<<EOF
-{"length":1089546,"first_entry_with_code":0,"canonical_stack_map_entries_offset":0,"entries":[{"index":0,"code_index":0,"address":419584,"pc_offset":0,"stack_map_offset":0,"kind":"code","name":"method.fn_0"},{"index":1,"code_index":1,"address":419588,"pc_offset":4,"stack_map_offset":0,"kind":"code","name":"method.fn_1"}]}
+{"length":1311,"first_entry_with_code":0,"canonical_stack_map_entries_offset":25731,"entries":[{"index":0,"code_index":0,"address":419688,"pc_offset":104,"stack_map_offset":11487,"kind":"code","name":"Object.noSuchMethod"},{"index":1,"code_index":1,"address":419732,"pc_offset":148,"stack_map_offset":10504,"kind":"code","name":"new NoSuchMethodError"}]}
 EOF
 RUN
 
@@ -28,10 +28,10 @@ CMDS=<<EOF
 EOF
 EXPECT=<<EOF
 # Dart InstructionTable entries
-# length=1089546 first_entry_with_code=0 canonical_stack_map_entries_offset=0
-# it[0] method.fn_0
-f it.code_0 = 0x66700
-# it[1] method.fn_1
-f it.code_1 = 0x66704
+# length=1311 first_entry_with_code=0 canonical_stack_map_entries_offset=25731
+# it[0] Object.noSuchMethod
+f it.code_0 = 0x66768
+# it[1] new NoSuchMethodError
+f it.code_1 = 0x66794
 EOF
 RUN

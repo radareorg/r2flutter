@@ -5,8 +5,8 @@
   "timeout": 30,
   "expect": {
     "contains": [
-      "method.fn_0",
-      "0x66700"
+      "Object.noSuchMethod",
+      "0x66768"
     ]
   }
 }

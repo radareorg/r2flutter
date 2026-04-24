@@ -80,6 +80,33 @@ In practice, scanning the snapshot cluster region for **runs** of valid Dart str
 
 This recovers structured packed strings from `android/mafia` while avoiding the need to fully model every non-string cluster.
 
+## InstructionsTable Data Lives Inside A String Object In The RO Image
+
+**Finding**: Modern AOT snapshots do not place `InstructionsTable::Data` directly at the `it_data_off` address inside the clustered blob.
+
+For current Android samples, the read-only image after the clustered snapshot starts with an `Image` header (`0x40` bytes), and the instruction-table bytes are wrapped in a large `OneByteString` object. The usable table header starts at that string payload:
+
+- object start: aligned `it_data` string in the RO image
+- payload start: `object + 0x10` on current 64-bit `HASH_IN_OBJECT_HEADER` builds
+- payload header: `canonical_stack_map_entries_offset`, `length`, `first_entry_with_code`, `padding`
+
+**Implication**: probing `it_data_off` as if it were already the `InstructionsTable::Data` header can collapse the table to a bogus 3-entry decode. A robust parser should scan the RO image strings for a payload whose header and entry array look like a real instruction table.
+
+## Sample `it_len` Does Not Equal The Real Code-Entry Count
+
+**Finding**: On the `poc/app/libapp.so` Dart `3.8.1` sample, the clustered header reports `it_len=2953`, but the real RO-image `InstructionsTable::Data` payload found in the wrapped `OneByteString` has `length=26413`.
+
+The recovered string object starts at `0x2e2fc0`, and its payload decodes the expected early entries:
+
+- index `0` -> `0x396900`
+- index `1` -> `0x3969c0`
+- index `42` -> `0x3980fc`
+- index `43` -> `0x398174`
+
+Those addresses match the reference outputs from blutter and unflutter for `DateTime.compareTo`, its dynamic variant, `_runMain`, and the `_runMain` anonymous closure.
+
+**Implication**: `cluster.it_len` is not a reliable upper bound for `--dump-funcs` on this sample. Function dumping should trust the decoded RO-image table length and should not cap itself to the smaller clustered-header value.
+
 ## `--use-name-pool` Must Stay Opt-In
 
 **Finding**: The name-pool fallback is useful for exploratory reversing, but it is too weak to enable by default because it can silently mislabel functions.
@@ -97,6 +124,23 @@ Why this is risky:
 - the resulting names look plausible enough to be mistaken for confirmed metadata
 
 Use `--use-name-pool` for manual triage only. The default synthetic `method.fn_*` names are intentionally less informative, but more honest.
+
+## Code-Slot Owner CID Must Gate The Name-Pool Fallback
+
+**Finding**: The InstructionsTable lists one slot per AOT Code object, and a large fraction of those slots are not user methods but allocate stubs (`Code.owner` is a `Class`), type-test stubs (`Code.owner` is an `AbstractType`), or VM stubs (`Code.owner` is null). On the `poc/app` Dart 3.8.1 sample roughly 2,700 slots out of 26,413 are allocate stubs.
+
+Prior behavior treated every un-named slot identically and consumed the next `name_pool` string, so each stub silently shifted every following name by one. Cross-checking against blutter's `addNames.py` showed about 54% of addresses had the wrong name for this reason alone.
+
+Fix: the Code-cluster reader now records the cluster cid of each slot's owner ref in `code_owner_cid_by_index[]` and exposes it on `DartCtx.owner_kind_by_code_index[]`. During naming:
+
+- owner cid equal to `Class` cid -> synthesize `stub.Allocate<ClassName>Stub`
+- owner cid equal to `Function` cid -> existing class+method naming path
+- owner ref of zero -> VM stub (no cluster provides a name on this pass)
+- any other non-zero cid -> best-effort `stub.TypeTest_<name>`
+
+`resolve_it_entry_name ()` then only advances `name_pool_idx` when the slot is `DART_OWNER_FUNCTION` or `DART_OWNER_UNKNOWN`. Stub slots emit stable synthetic names like `stub.vm_<index>` instead of stealing a pool entry.
+
+**Implication**: names stay aligned across the full IT even when `--use-name-pool` is enabled, and diffing the output against blutter's `ida_script/addNames.py` becomes meaningful again. Out-of-snapshot VM stubs (addresses before `iso_instr`) are still unnamed on this branch; matching them requires a separate per-version `OBJECT_STORE_STUB_CODE_LIST` / `VM_STUB_CODE_LIST` table and is intentionally left for a follow-up.
 
 ## Enum Recovery In `--dump-types` Is Heuristic But Useful
 
@@ -561,3 +605,78 @@ Local radare2 coding rules for this repo treat `r_str_newf ()` like `R_NEW`/`R_N
 ## Snapshot Hash Matching Should Use Exact String Equality
 
 `dart_version_from_hash ()` matches canonical 32-character MD5 strings from `known_hashes[]`. Using `strncmp (..., 32)` there reads like a prefix test and would also accept a longer input whose first 32 bytes happen to match. `strcmp ()` is the clearer exact-match form for this table lookup.
+
+## Minimal Offline Dart Runtime For Names
+
+For Dart `3.8.1` ARM64 AOT with compressed pointers, the current raw `Function` scan offsets in `src/lib/dart_pool_parse.c` are not aligned with the SDK layout. The important corrected offsets are:
+
+- `Function.entry_point = 0x08`
+- `Function.code = 0x2c`
+- `Function.kind_tag = 0x30`
+- `Code.owner = 0x38`
+- `Class.name = 0x08`
+- `ClosureData.parent_function = 0x0c`
+
+This is enough to justify a small read-only “REDART” layer inside `r2flutter`: parse tagged/compressed pointers, expose `Function`/`Code`/`Class`/`Library` accessors, port `String::ScrubName ()`, and then format names blutter-style. That gets us much closer to blutter’s semantics without embedding the Dart runtime or depending on the Dart toolchain.
+
+## `offsets.json` Arm64 AOT Invariants
+
+Re-checking the tagged SDK releases in `poc/dart-sdk/runtime/vm/compiler/runtime_offsets_extracted.h` shows that the arm64 AOT `Code` layout used by `offsets.json` is stable from Dart `2.10.0` through `3.10.7`:
+
+- `Code.entry_point` candidates stay `[0x08, 0x18, 0x10, 0x20]`
+- `Code.owner` stays `0x38`
+
+The owner-name side also stays simple across those tags when cross-checking `runtime/vm/raw_object.h`:
+
+- `Function.name = 0x18`
+- `Class.name = 0x08`
+
+That lets `offsets.json` grow by hash without inventing per-hash guesses: the missing hashes can all reuse the same source-backed arm64 AOT offsets, while `compressed_word_size` still follows the version/profile or the sample already recorded in-tree.
+
+## Dart `3.8.1` Cluster Parser Fixes For Full Function Naming
+
+Cross-checking `poc/unflutter-source/internal/cluster/*.go` against the current C parser exposed the real regressions behind the `--dump-funcs` mismatch on `poc/app/libapp.so` and the Android `mafia` sample:
+
+- object-header cluster tags use `CanonicalBit = 1`, not bit `0`
+- clustered unsigned integers use the Dart VLE terminator rules (`byte > 127`, final contribution `byte - 128`)
+- `Mint` alloc is not `count`-only: it is `count + count * ReadTagged64()`
+- many predefined CIDs above `Instance` are **not** instance clusters; `Double`, `LibraryPrefix`, `Closure`, `Map`, `ConstMap`, `Set`, `ConstSet`, `GrowableObjectArray`, ports, and related runtime helper objects stay on simple/ref-based formats
+- typed-data detection must only cover the real typed-data families (`TypedData`, `ExternalTypedData`, `TypedDataView`, and the internal `TypedDataInt8Array..ByteDataView` stride range), otherwise unrelated CIDs like `ConstMap` get misparsed as byte blobs
+- `Type`, `FunctionType`, `RecordType`, and `TypeParameter` fill layouts for modern object-header snapshots were shifted/mismatched and must follow the version-specific CID table rather than older hard-coded assumptions
+
+The naming side also needed one structural change borrowed from unflutter:
+
+- prefer `Code.owner` -> `Function` resolution over `Function.code_index` as the primary binding from instruction-table slot to method name
+
+That change fixes the main off-by-owner/name mismatches in practice. On the `mafia` sample it restores names like:
+
+- `method.DateTime.compareTo`
+- `method.DateTime.dyn:compareTo`
+- `method._anon_closure`
+
+Closure naming still needs the extra relation carried by `ClosureData`:
+
+- `ClosureData.parent_function` is the snapshot-side link that lets a closure code object be rendered as `_anon_closure` instead of inheriting the parent function name verbatim
+
+## Blutter Is Strictly Snapshot-Version Specific
+
+**Finding**: The bundled Blutter executable in this checkout only matches Dart `3.8.1`, Android arm64, snapshot `830f4f59e7969c70b595182826435c19`.
+
+The compatible `poc/app` sample runs successfully and produces object-pool dumps, IDA scripts, a Frida template, and 927 generated asm-backed Dart files. The generated files are useful as reconstructed navigation/disassembly, not as original Dart source.
+
+The local Android fixtures under `test/bins` are real Flutter AOT samples but need different Blutter builds:
+
+- `test/bins/android/first`: Dart `2.18.2`, snapshot `f91b8b03bf7f30a5e983fd19b23d978d`, no compressed pointers, expected executable name `blutter_dartvm2.18.2_android_arm64_no-compressed-ptrs`.
+- `test/bins/android/mafia`: Dart `3.9.0`, snapshot `97ff04a728735e6b6b098bdf983faaba`, expected executable name `blutter_dartvm3.9.0_android_arm64`.
+
+Directly running the Dart `3.8.1` executable on either fixture fails cleanly with `Wrong full snapshot version`. The iOS fixtures are Mach-O and are outside the current Blutter executable's ELF/Android support.
+
+Follow-up testing showed that `mafia` works after building `blutter_dartvm3.9.0_android_arm64`, producing about `173M` of output and 1980 generated asm files. The older `first` fixture is stricter: even after building Dart `2.18.2` no-analysis/no-compressed-pointers Blutter binaries for both Android and a patched Linux VM target, Dart rejects the snapshot because the snapshot feature string requires `no-tsan arm64 linux no-compressed-pointers` while the local Dart VM reports `no-asserts arm64-sysv no-compressed-pointers no-null-safety`.
+
+Rerunning the compatible `poc/app` target into a fresh directory produced the same file count and size. Byte diffs are mostly ASLR-dependent native/heap pointer values embedded in `pp.txt`, `objs.txt`, IDA structs, and asm comments; after normalizing those runtime addresses, representative app asm matched.
+
+## R2R Extras Must Load The Local Core Plugin
+
+The `test/db/extras` cases exercise the `r2flutter` command inside radare2, not only the standalone `bin/r2flutter` CLI. Running `r2r test/db/extras` from a checkout with no user-installed plugin leaves those commands unhandled, which looks like empty stdout instead of a parser failure. Keep the extras fixtures self-contained by loading `../src/r2/core_flutter.so` in their `CMDS` blocks, and make `make test-r2r` build `src/r2/core_flutter.so` before invoking r2r.
+
+`r2flutter -a` can internally ask radare2 to create functions for recovered Dart entrypoints. Some entrypoints are already present in radare2's exact-address function table before they have blocks, so checking only `r_anal_get_fcn_in ()` can miss them and trigger noisy duplicate-function warnings from `af`. Check `r_anal_get_function_at ()` first and suppress warning-level logs around the internal `af` loop; the user-facing analysis summary should remain the only plugin log line.

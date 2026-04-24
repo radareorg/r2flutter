@@ -54,8 +54,9 @@ clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)/r2flutter
 	$(MAKE) -C src/r2 clean
 
-test-r2r:
-	r2r -t 30 test/db
+test-r2r: $(BIN_FILE)
+	$(MAKE) -C src/r2
+	r2r -u -t 30 test/db
 
 test: $(BIN_FILE)
 	@$(MAKE) -C src/r2

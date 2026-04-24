@@ -4,9 +4,9 @@ CMDS=<<EOF
 !!../bin/r2flutter --dump-funcs --limit 3 bins/ios/AuthPass.app
 EOF
 EXPECT=<<EOF
-0x16dc70 method.fn_0
-0x16dc84 ppe:_
-0x16e1a2 method.fn_3
+0xfe28 func.0000fe28
+0xfed4 func.0000fed4
+0xff50 func.0000ff50
 EOF
 RUN
 
@@ -16,6 +16,6 @@ CMDS=<<EOF
 !!../bin/r2flutter -j --dump-funcs --limit 3 bins/ios/AuthPass.app
 EOF
 EXPECT=<<EOF
-[{"addr":1498224,"name":"method.fn_0"},{"addr":1498244,"name":"ppe:_"},{"addr":1499554,"name":"method.fn_3"}]
+[{"addr":65064,"name":"func.0000fe28"},{"addr":65236,"name":"func.0000fed4"},{"addr":65360,"name":"func.0000ff50"}]
 EOF
 RUN

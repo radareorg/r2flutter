@@ -4,8 +4,8 @@ CMDS=<<EOF
 !!../bin/r2flutter --dump-funcs --limit 3 bins/android/first 2>/dev/null
 EOF
 EXPECT=<<EOF
-0x66700 method.fn_0
-0x66704 method.fn_1
-0x66708 method.fn_2
+0x66768 Object.noSuchMethod
+0x66794 new_NoSuchMethodError
+0x667a0 NoSuchMethodError._throwNew
 EOF
 RUN
