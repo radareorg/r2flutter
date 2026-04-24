@@ -122,8 +122,9 @@ Blutter collapses them because it keeps a single `DartFnBase` per `Code` object 
 
 What to change:
 
-- During `modern_skip_fill_code`, preserve the `unchecked_entry_offset` for every main-count slot (currently the loop reads the six ref-ids and drops them on the floor). Store it on a new `ut32 *code_unchecked_entry_off_by_index[]`.
-- After IT decode, post-process: if entry `i+1` points at exactly `entry[i].address + unchecked_entry_off`, suppress it (or rename it to the canonical `dyn:` form and mark as an alias of `entry[i]`).
+- First prove the alias relationship from serialized data. A check against `test/bins/android/mafia` showed that the Code payloads for the early slots are `0` or `1`, so `payload_info >> 1` is zero for the `0x5b6b64` and `0x5b6c34` `dyn:` entries. That means the unchecked-offset idea above is not sufficient for this fixture as written.
+- Do not fold `dyn:` entries by name alone. That would make the count look better while hiding a parser gap.
+- Once a reliable Code-object relationship is available, post-process function-listing output only. Keep `--dump-it` as the raw InstructionsTable view.
 - Add a regression test on `test/bins/android/mafia` that pins the before/after count at `0x5b6b64` / `0x5b6c34` (currently both listed separately as `method.Duration.dyn:*`).
 
 Expected impact: -280 entries on `poc/app`, closer count-parity with blutter.

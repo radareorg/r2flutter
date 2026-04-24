@@ -2504,6 +2504,8 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 		free (ctx->owner_kind_by_code_index);
 		ctx->owner_kind_by_code_index = (ut8 *)calloc ((size_t)itlen, sizeof (ut8));
 		ctx->owner_kind_by_code_index_count = itlen;
+	} else {
+		memset (ctx->owner_kind_by_code_index, 0, (size_t)itlen * sizeof (ut8));
 	}
 	for (ut64 i = 0; i < num_clusters; i++) {
 		current_cluster = i;
@@ -2796,7 +2798,8 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 			// Allocate stub for a user class. Name it like blutter's
 			// Allocate<ClassName>Stub so cross-tool diffs line up.
 			const char *cls_name = class_name_ref[owner_ref] && class_name_ref[owner_ref] < total_refs
-				? strings_by_ref[class_name_ref[owner_ref]]: NULL;
+				? strings_by_ref[class_name_ref[owner_ref]]
+				: NULL;
 			if (R_STR_ISNOTEMPTY (cls_name)) {
 				full = r_str_newf ("stub.Allocate%sStub", cls_name);
 				if (full) {
@@ -6079,7 +6082,7 @@ static void collect_field_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 				}
 			}
 		}
-		if (!R_STR_ISNOTEMPTY (owner_name) || !R_STR_ISNOTEMPTY (field_name)) {
+		if (!owner_name[0] || !field_name[0]) {
 			continue;
 		}
 		char keybuf[320];
@@ -6154,7 +6157,7 @@ static void collect_method_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RLis
 				}
 			}
 		}
-		if (!R_STR_ISNOTEMPTY (owner_name)) {
+		if (!owner_name[0]) {
 			continue;
 		}
 		char *method_label = xref_join_names (owner_name, method_name);

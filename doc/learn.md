@@ -142,6 +142,16 @@ Fix: the Code-cluster reader now records the cluster cid of each slot's owner re
 
 **Implication**: names stay aligned across the full IT even when `--use-name-pool` is enabled, and diffing the output against blutter's `ida_script/addNames.py` becomes meaningful again. Out-of-snapshot VM stubs (addresses before `iso_instr`) are still unnamed on this branch; matching them requires a separate per-version `OBJECT_STORE_STUB_CODE_LIST` / `VM_STUB_CODE_LIST` table and is intentionally left for a follow-up.
 
+**Test invariant**: regression tests for this gate must run with `--use-name-pool`. The default path intentionally leaves the name pool disabled, so tests without that flag do not exercise the bug where allocate and type-test stubs consumed pool entries.
+
+## `dyn:` Trampolines Need A Better Signal Than Code Payload Info
+
+**Finding**: The proposed unchecked-entry-offset fold is not proven by the mafia fixture.
+
+On `test/bins/android/mafia`, the modern Code cluster payload for the early entries called out in `doc/functips.md` is only `0` or `1`, which decodes to `unchecked_offset = payload_info >> 1 == 0`. That does not explain `0x5b6b64` or `0x5b6c34`, even though both still look like dynamic-entry trampolines in the function listing.
+
+**Implication**: do not suppress `dyn:` rows by name or adjacency alone. Keep `--dump-it` raw, keep the visible `dyn:` entries in `--dump-funcs` until a real Code-object relationship is recovered, and test the current behavior so future changes can prove they are improving it rather than hiding it.
+
 ## Enum Recovery In `--dump-types` Is Heuristic But Useful
 
 **Finding**: Production AOT samples still do not expose enough `Class` metadata to recover enum declarations directly, but enum names and variants often survive as qualified strings such as `AppLifecycleState.resumed` plus a matching `AppLifecycleState.` marker.
