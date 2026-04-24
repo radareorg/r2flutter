@@ -18,6 +18,17 @@ typedef struct {
 	bool is_two_byte;
 } DartString;
 
+// Owner kind for each InstructionsTable slot / Code cluster entry.
+// Drives which naming fallback is allowed (e.g. name_pool is only safe for
+// FUNCTION-owned slots; CLASS/TYPE/VM_STUB slots must not consume the pool).
+typedef enum {
+	DART_OWNER_UNKNOWN = 0,
+	DART_OWNER_FUNCTION,
+	DART_OWNER_CLASS,
+	DART_OWNER_TYPE,
+	DART_OWNER_VM_STUB,
+} DartOwnerKind;
+
 typedef struct {
 	RCore *core;
 	ut64 vm_data;
@@ -30,6 +41,8 @@ typedef struct {
 	HtUP *name_by_ep;
 	char **name_by_code_index;
 	ut64 name_by_code_index_count;
+	ut8 *owner_kind_by_code_index;
+	ut64 owner_kind_by_code_index_count;
 	RList *name_pool;
 	int name_pool_idx;
 	RList *strings;

@@ -640,3 +640,20 @@ That change fixes the main off-by-owner/name mismatches in practice. On the `maf
 Closure naming still needs the extra relation carried by `ClosureData`:
 
 - `ClosureData.parent_function` is the snapshot-side link that lets a closure code object be rendered as `_anon_closure` instead of inheriting the parent function name verbatim
+
+## Blutter Is Strictly Snapshot-Version Specific
+
+**Finding**: The bundled Blutter executable in this checkout only matches Dart `3.8.1`, Android arm64, snapshot `830f4f59e7969c70b595182826435c19`.
+
+The compatible `poc/app` sample runs successfully and produces object-pool dumps, IDA scripts, a Frida template, and 927 generated asm-backed Dart files. The generated files are useful as reconstructed navigation/disassembly, not as original Dart source.
+
+The local Android fixtures under `test/bins` are real Flutter AOT samples but need different Blutter builds:
+
+- `test/bins/android/first`: Dart `2.18.2`, snapshot `f91b8b03bf7f30a5e983fd19b23d978d`, no compressed pointers, expected executable name `blutter_dartvm2.18.2_android_arm64_no-compressed-ptrs`.
+- `test/bins/android/mafia`: Dart `3.9.0`, snapshot `97ff04a728735e6b6b098bdf983faaba`, expected executable name `blutter_dartvm3.9.0_android_arm64`.
+
+Directly running the Dart `3.8.1` executable on either fixture fails cleanly with `Wrong full snapshot version`. The iOS fixtures are Mach-O and are outside the current Blutter executable's ELF/Android support.
+
+Follow-up testing showed that `mafia` works after building `blutter_dartvm3.9.0_android_arm64`, producing about `173M` of output and 1980 generated asm files. The older `first` fixture is stricter: even after building Dart `2.18.2` no-analysis/no-compressed-pointers Blutter binaries for both Android and a patched Linux VM target, Dart rejects the snapshot because the snapshot feature string requires `no-tsan arm64 linux no-compressed-pointers` while the local Dart VM reports `no-asserts arm64-sysv no-compressed-pointers no-null-safety`.
+
+Rerunning the compatible `poc/app` target into a fresh directory produced the same file count and size. Byte diffs are mostly ASLR-dependent native/heap pointer values embedded in `pp.txt`, `objs.txt`, IDA structs, and asm comments; after normalizing those runtime addresses, representative app asm matched.

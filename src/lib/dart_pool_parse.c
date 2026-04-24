@@ -580,14 +580,37 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 			}
 		}
 	}
-	if (!*out && ctx->use_name_pool && ctx->name_pool && entry->has_code && ctx->name_pool_idx < r_list_length (ctx->name_pool)) {
+	// Name-pool fallback is order-sensitive: pulling a name for slot N when
+	// slot N is actually a stub shifts every following name by one. Only
+	// consume the pool when the slot's owner is a regular Function (or the
+	// owner kind could not be determined at all). Slots known to be stubs
+	// must never advance the pool cursor.
+	ut8 owner_kind = DART_OWNER_UNKNOWN;
+	if (ctx && ctx->owner_kind_by_code_index && entry->code_index < ctx->owner_kind_by_code_index_count) {
+		owner_kind = ctx->owner_kind_by_code_index[entry->code_index];
+	}
+	bool pool_allowed = owner_kind == DART_OWNER_FUNCTION || owner_kind == DART_OWNER_UNKNOWN;
+	if (!*out && pool_allowed && ctx->use_name_pool && ctx->name_pool && entry->has_code && ctx->name_pool_idx < r_list_length (ctx->name_pool)) {
 		const char *pooln = (const char *)r_list_get_n (ctx->name_pool, ctx->name_pool_idx++);
 		if (pooln && *pooln) {
 			snprintf (out, outsz, "%s", pooln);
 		}
 	}
 	if (!*out) {
-		snprintf (out, outsz, "method.fn_%" PRIu64, (uint64_t)entry->code_index);
+		switch (owner_kind) {
+		case DART_OWNER_VM_STUB:
+			snprintf (out, outsz, "stub.vm_%" PRIu64, (uint64_t)entry->code_index);
+			break;
+		case DART_OWNER_CLASS:
+			snprintf (out, outsz, "stub.allocate_%" PRIu64, (uint64_t)entry->code_index);
+			break;
+		case DART_OWNER_TYPE:
+			snprintf (out, outsz, "stub.typetest_%" PRIu64, (uint64_t)entry->code_index);
+			break;
+		default:
+			snprintf (out, outsz, "method.fn_%" PRIu64, (uint64_t)entry->code_index);
+			break;
+		}
 	}
 	dart_obf_apply_buf (ctx, out, outsz);
 }
@@ -2417,7 +2440,11 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 	ut64 *function_code_index = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
 	ut64 *closure_parent_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
 	ut64 *code_owner_ref_by_index = (ut64 *)calloc ((size_t)itlen, sizeof (ut64));
-	if (!strings_by_ref || !class_name_ref || !library_name_ref || !patch_wrapped_ref || !function_name_ref || !function_owner_ref || !function_data_ref || !function_code_index || !closure_parent_ref || !code_owner_ref_by_index) {
+	// Per-slot owner cid: used to distinguish Function/Class/AbstractType/null
+	// owners so we can synthesize AllocateXStub / TypeStub / VMStub names
+	// instead of letting the name_pool fallback shift every later entry.
+	int *code_owner_cid_by_index = (int *)calloc ((size_t)itlen, sizeof (int));
+	if (!strings_by_ref || !class_name_ref || !library_name_ref || !patch_wrapped_ref || !function_name_ref || !function_owner_ref || !function_data_ref || !function_code_index || !closure_parent_ref || !code_owner_ref_by_index || !code_owner_cid_by_index) {
 		free (meta);
 		free (strings_by_ref);
 		free (class_name_ref);
@@ -2429,6 +2456,7 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 		free (function_code_index);
 		free (closure_parent_ref);
 		free (code_owner_ref_by_index);
+		free (code_owner_cid_by_index);
 		return false;
 	}
 	ClusterStream s = {
@@ -2471,6 +2499,11 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 		}
 		ctx->name_by_code_index = (char **)calloc ((size_t)itlen, sizeof (char *));
 		ctx->name_by_code_index_count = itlen;
+	}
+	if (!ctx->owner_kind_by_code_index || ctx->owner_kind_by_code_index_count != itlen) {
+		free (ctx->owner_kind_by_code_index);
+		ctx->owner_kind_by_code_index = (ut8 *)calloc ((size_t)itlen, sizeof (ut8));
+		ctx->owner_kind_by_code_index_count = itlen;
 	}
 	for (ut64 i = 0; i < num_clusters; i++) {
 		current_cluster = i;
@@ -2587,6 +2620,26 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 				}
 				if (slot != UT64_MAX && slot < itlen) {
 					code_owner_ref_by_index[slot] = owner_ref;
+					// Resolve the owner ref back to the cluster cid that
+					// allocated it; this tells us if the slot is a regular
+					// function, an allocate stub (owner is a Class), a type
+					// test stub (owner is an AbstractType), or a VM stub
+					// (owner_ref == 0, not in any cluster).
+					int owner_cid = 0;
+					if (owner_ref > 0) {
+						for (ut64 m = 0; m < num_clusters; m++) {
+							if (meta[m].count == 0) {
+								continue;
+							}
+							ut64 lo = meta[m].start_ref;
+							ut64 hi = lo + meta[m].count;
+							if (owner_ref >= lo && owner_ref < hi) {
+								owner_cid = meta[m].cid;
+								break;
+							}
+						}
+					}
+					code_owner_cid_by_index[slot] = owner_cid;
 				}
 			}
 			continue;
@@ -2711,25 +2764,73 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 		}
 	}
 	ut64 mapped = 0;
+	const int cid_class_v = modern_cid_class (ctx);
+	const int cid_function_v = modern_cid_function (ctx);
+	// Cluster cids for abstract-type owners (Type/FunctionType/RecordType).
+	// These live just past the Class/Function predefined cids; on Dart 3.8.x
+	// they are 112/113/114 in the VM but in the snapshot cluster-cid space
+	// they appear as modern_cid_function + N. Rather than hardcode, treat any
+	// non-Class non-Function owner as a type-test-like stub.
 	for (ut64 code_index = 0; code_index < itlen; code_index++) {
 		ut64 owner_ref = code_owner_ref_by_index[code_index];
-		if (!owner_ref || owner_ref >= total_refs || !function_name_ref[owner_ref]) {
-			continue;
+		int owner_cid = code_owner_cid_by_index[code_index];
+		ut8 kind = DART_OWNER_UNKNOWN;
+		char *full = NULL;
+		if (owner_ref == 0) {
+			// Code object with no owner in the cluster graph: these are
+			// precompiled VM stubs (runtime helpers). Mark the slot so the
+			// IT resolver doesn't burn a name-pool entry on it.
+			kind = DART_OWNER_VM_STUB;
+		} else if (owner_ref >= total_refs) {
+			// Out of range, leave unknown.
+		} else if (owner_cid == cid_function_v && function_name_ref[owner_ref]) {
+			const char *method_name = function_name_ref[owner_ref] < total_refs? strings_by_ref[function_name_ref[owner_ref]]: NULL;
+			ut64 data_ref = function_data_ref[owner_ref];
+			if (data_ref < total_refs && closure_parent_ref[data_ref]) {
+				method_name = "_anon_closure";
+			}
+			const char *owner_name = modern_resolve_ref_name (strings_by_ref, class_name_ref, library_name_ref, patch_wrapped_ref, function_name_ref, total_refs, function_owner_ref[owner_ref], 0);
+			full = modern_build_full_name (ctx, owner_name, method_name);
+			kind = DART_OWNER_FUNCTION;
+		} else if (owner_cid == cid_class_v) {
+			// Allocate stub for a user class. Name it like blutter's
+			// Allocate<ClassName>Stub so cross-tool diffs line up.
+			const char *cls_name = class_name_ref[owner_ref] && class_name_ref[owner_ref] < total_refs
+				? strings_by_ref[class_name_ref[owner_ref]]: NULL;
+			if (R_STR_ISNOTEMPTY (cls_name)) {
+				full = r_str_newf ("stub.Allocate%sStub", cls_name);
+				if (full) {
+					r_name_filter (full, 0);
+				}
+			}
+			kind = DART_OWNER_CLASS;
+		} else if (owner_cid > 0) {
+			// Non-Function, non-Class owner: most commonly a Type or
+			// FunctionType (type-test stub). Try to recover a readable name
+			// via modern_resolve_ref_name (walks class_name/library_name
+			// chains) and fall back to a generic tag.
+			const char *t_name = modern_resolve_ref_name (strings_by_ref, class_name_ref, library_name_ref, patch_wrapped_ref, function_name_ref, total_refs, owner_ref, 0);
+			if (R_STR_ISNOTEMPTY (t_name)) {
+				full = r_str_newf ("stub.TypeTest_%s", t_name);
+				if (full) {
+					r_name_filter (full, 0);
+				}
+			}
+			kind = DART_OWNER_TYPE;
 		}
-		const char *method_name = function_name_ref[owner_ref] < total_refs? strings_by_ref[function_name_ref[owner_ref]]: NULL;
-		ut64 data_ref = function_data_ref[owner_ref];
-		if (data_ref < total_refs && closure_parent_ref[data_ref]) {
-			method_name = "_anon_closure";
+		if (ctx->owner_kind_by_code_index && code_index < ctx->owner_kind_by_code_index_count) {
+			ctx->owner_kind_by_code_index[code_index] = kind;
 		}
-		const char *owner_name = modern_resolve_ref_name (strings_by_ref, class_name_ref, library_name_ref, patch_wrapped_ref, function_name_ref, total_refs, function_owner_ref[owner_ref], 0);
-		char *full = modern_build_full_name (ctx, owner_name, method_name);
-		modern_set_name_for_code_index (ctx, code_index, full);
+		if (full) {
+			modern_set_name_for_code_index (ctx, code_index, full);
+		}
 	}
 	for (ut64 ref = 1; ref < total_refs; ref++) {
 		if (!function_name_ref[ref] || function_code_index[ref] >= ctx->name_by_code_index_count) {
 			continue;
 		}
-		if (ctx->name_by_code_index[function_code_index[ref]]) {
+		ut64 ci = function_code_index[ref];
+		if (ctx->name_by_code_index[ci]) {
 			continue;
 		}
 		const char *method_name = function_name_ref[ref] < total_refs? strings_by_ref[function_name_ref[ref]]: NULL;
@@ -2739,7 +2840,10 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 		}
 		const char *owner_name = modern_resolve_ref_name (strings_by_ref, class_name_ref, library_name_ref, patch_wrapped_ref, function_name_ref, total_refs, function_owner_ref[ref], 0);
 		char *full = modern_build_full_name (ctx, owner_name, method_name);
-		modern_set_name_for_code_index (ctx, function_code_index[ref], full);
+		modern_set_name_for_code_index (ctx, ci, full);
+		if (ctx->owner_kind_by_code_index && ci < ctx->owner_kind_by_code_index_count) {
+			ctx->owner_kind_by_code_index[ci] = DART_OWNER_FUNCTION;
+		}
 	}
 	for (ut64 i = 0; i < ctx->name_by_code_index_count; i++) {
 		if (R_STR_ISNOTEMPTY (ctx->name_by_code_index[i])) {
@@ -2766,6 +2870,7 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 	free (function_code_index);
 	free (closure_parent_ref);
 	free (code_owner_ref_by_index);
+	free (code_owner_cid_by_index);
 	return true;
 fail:
 	if (ctx->verbose > 0) {
@@ -2788,6 +2893,7 @@ fail:
 	free (function_code_index);
 	free (closure_parent_ref);
 	free (code_owner_ref_by_index);
+	free (code_owner_cid_by_index);
 	return false;
 }
 
@@ -3295,6 +3401,11 @@ beach:
 		free (ctx->name_by_code_index);
 		ctx->name_by_code_index = NULL;
 		ctx->name_by_code_index_count = 0;
+	}
+	if (ctx->owner_kind_by_code_index) {
+		free (ctx->owner_kind_by_code_index);
+		ctx->owner_kind_by_code_index = NULL;
+		ctx->owner_kind_by_code_index_count = 0;
 	}
 	if (ctx->name_by_ep) {
 		ht_up_free (ctx->name_by_ep);
