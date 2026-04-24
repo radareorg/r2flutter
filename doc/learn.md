@@ -125,6 +125,23 @@ Why this is risky:
 
 Use `--use-name-pool` for manual triage only. The default synthetic `method.fn_*` names are intentionally less informative, but more honest.
 
+## Code-Slot Owner CID Must Gate The Name-Pool Fallback
+
+**Finding**: The InstructionsTable lists one slot per AOT Code object, and a large fraction of those slots are not user methods but allocate stubs (`Code.owner` is a `Class`), type-test stubs (`Code.owner` is an `AbstractType`), or VM stubs (`Code.owner` is null). On the `poc/app` Dart 3.8.1 sample roughly 2,700 slots out of 26,413 are allocate stubs.
+
+Prior behavior treated every un-named slot identically and consumed the next `name_pool` string, so each stub silently shifted every following name by one. Cross-checking against blutter's `addNames.py` showed about 54% of addresses had the wrong name for this reason alone.
+
+Fix: the Code-cluster reader now records the cluster cid of each slot's owner ref in `code_owner_cid_by_index[]` and exposes it on `DartCtx.owner_kind_by_code_index[]`. During naming:
+
+- owner cid equal to `Class` cid -> synthesize `stub.Allocate<ClassName>Stub`
+- owner cid equal to `Function` cid -> existing class+method naming path
+- owner ref of zero -> VM stub (no cluster provides a name on this pass)
+- any other non-zero cid -> best-effort `stub.TypeTest_<name>`
+
+`resolve_it_entry_name ()` then only advances `name_pool_idx` when the slot is `DART_OWNER_FUNCTION` or `DART_OWNER_UNKNOWN`. Stub slots emit stable synthetic names like `stub.vm_<index>` instead of stealing a pool entry.
+
+**Implication**: names stay aligned across the full IT even when `--use-name-pool` is enabled, and diffing the output against blutter's `ida_script/addNames.py` becomes meaningful again. Out-of-snapshot VM stubs (addresses before `iso_instr`) are still unnamed on this branch; matching them requires a separate per-version `OBJECT_STORE_STUB_CODE_LIST` / `VM_STUB_CODE_LIST` table and is intentionally left for a follow-up.
+
 ## Enum Recovery In `--dump-types` Is Heuristic But Useful
 
 **Finding**: Production AOT samples still do not expose enough `Class` metadata to recover enum declarations directly, but enum names and variants often survive as qualified strings such as `AppLifecycleState.resumed` plus a matching `AppLifecycleState.` marker.
