@@ -1,0 +1,16 @@
+{
+  "name": "dump-funcs-stub-naming",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "--dump-funcs", "bins/android/mafia/"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "0x5b6bf4 stub.AllocateDurationStub",
+      "stub.AllocateStringBufferStub",
+      "stub.typetest_"
+    ],
+    "not_contains": [
+      "0x5b6bf4 method.fn_"
+    ]
+  }
+}
