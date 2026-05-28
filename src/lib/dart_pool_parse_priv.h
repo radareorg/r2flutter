@@ -135,6 +135,9 @@ void dart_ctx_fini_layout(DartCtx *ctx, DartVerLayout *owned);
 int find_snapshots(DartCtx *ctx);
 int parse_snapshot_header(DartCtx *ctx, ut64 snapshot_base, ut64 *out_nb, ut64 *out_no, ut64 *out_nc, ut64 *out_itlen, ut64 *out_itdata, ut64 *out_total_len, ut64 *out_cluster_start);
 bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz);
+HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
+RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
+void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
 
 bool cs_read_u8(ClusterStream *s, ut8 *out);
 bool cs_read_u32(ClusterStream *s, uint32_t *out);
