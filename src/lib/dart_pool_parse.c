@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <r_core.h>
 #include <r_bin.h>
+#include <r_endian.h>
 #include <r_io.h>
 #include <r_util/r_json.h>
 #include <r_util/r_file.h>
@@ -99,19 +100,60 @@ typedef struct {
 	char *name;
 } DartPoolFunction;
 
+#define DART_SNAPSHOT_MAGIC 0xdcdcf5f5
+#define DART_SNAPSHOT_FIXED_SIZE (4 + 8 + 8)
+#define DART_SNAPSHOT_HASH_SIZE 32
+#define DART_SNAPSHOT_FEATURES_SCAN_MAX 2048
+
+typedef struct {
+	bool ok;
+	ut32 magic;
+	ut64 total_len;
+	ut64 kind;
+	char hash[33];
+	char flags[512];
+	ut64 nb;
+	ut64 no;
+	ut64 nc;
+	ut64 itlen;
+	ut64 itdata;
+	ut64 cluster_start;
+} DartSnapshotHeader;
+
 static bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len) {
 	if (!ctx || !ctx->core || !buf || len <= 0) {
 		return false;
 	}
 	int r = r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
-	return r > 0;
+	return r == len;
 }
-static bool read_uleb128_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_next) {
+
+static bool read_u32_at(DartCtx *ctx, ut64 addr, ut32 *out) {
+	ut8 buf[4];
+	if (!out || !read_mem (ctx, addr, buf, sizeof (buf))) {
+		return false;
+	}
+	*out = r_read_le32 (buf);
+	return true;
+}
+
+static bool read_u64_at(DartCtx *ctx, ut64 addr, ut64 *out) {
+	ut8 buf[8];
+	if (!out || !read_mem (ctx, addr, buf, sizeof (buf))) {
+		return false;
+	}
+	*out = r_read_le64 (buf);
+	return true;
+}
+
+typedef bool(*DartReadByteCb)(void *user, ut8 *out);
+
+static bool dart_read_unsigned_cb(DartReadByteCb read_byte, void *user, ut64 *out_val) {
 	ut64 v = 0;
 	int shift = 0;
 	for (int i = 0; i < 10; i++) {
 		ut8 b = 0;
-		if (!read_mem (ctx, addr + i, &b, 1)) {
+		if (!read_byte (user, &b)) {
 			return false;
 		}
 		if (b > 0x7f) {
@@ -119,15 +161,234 @@ static bool read_uleb128_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_ne
 			if (out_val) {
 				*out_val = v;
 			}
-			if (out_next) {
-				*out_next = addr + i + 1;
-			}
 			return true;
 		}
 		v |= ((ut64)b) << shift;
 		shift += 7;
 	}
 	return false;
+}
+
+typedef struct {
+	DartCtx *ctx;
+	ut64 addr;
+	int nread;
+} DartAddrReader;
+
+static bool dart_read_byte_at_cb(void *user, ut8 *out) {
+	DartAddrReader *reader = (DartAddrReader *)user;
+	if (!reader || !out) {
+		return false;
+	}
+	if (!read_mem (reader->ctx, reader->addr + reader->nread, out, 1)) {
+		return false;
+	}
+	reader->nread++;
+	return true;
+}
+
+static bool dart_read_unsigned_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_next) {
+	DartAddrReader reader = {
+		.ctx = ctx,
+		.addr = addr,
+		.nread = 0
+	};
+	if (!dart_read_unsigned_cb (dart_read_byte_at_cb, &reader, out_val)) {
+		return false;
+	}
+	if (out_next) {
+		*out_next = addr + reader.nread;
+	}
+	return true;
+}
+
+typedef struct {
+	const ut8 *buf;
+	ut64 size;
+	ut64 pos;
+} DartBufReader;
+
+static bool dart_read_byte_buf_cb(void *user, ut8 *out) {
+	DartBufReader *reader = (DartBufReader *)user;
+	if (!reader || !out || reader->pos >= reader->size) {
+		return false;
+	}
+	*out = reader->buf[reader->pos++];
+	return true;
+}
+
+static bool dart_read_unsigned_buf(const ut8 *buf, ut64 size, ut64 pos, ut64 *out_val, ut64 *out_next) {
+	if (!buf || pos >= size) {
+		return false;
+	}
+	DartBufReader reader = {
+		.buf = buf,
+		.size = size,
+		.pos = pos
+	};
+	if (!dart_read_unsigned_cb (dart_read_byte_buf_cb, &reader, out_val)) {
+		return false;
+	}
+	if (out_next) {
+		*out_next = reader.pos;
+	}
+	return true;
+}
+
+static char *dart_utf16le_to_utf8(const ut8 *buf, ut64 size) {
+	if (!buf || size < 2 || (size & 1)) {
+		return NULL;
+	}
+	RStrBuf sb;
+	r_strbuf_init (&sb);
+	for (ut64 pos = 0; pos + 1 < size; pos += 2) {
+		ut32 code = r_read_le16 (buf + pos);
+		if (!code || (code >= 0xd800 && code <= 0xdfff)) {
+			r_strbuf_fini (&sb);
+			return NULL;
+		}
+		if (code < 0x80) {
+			char ch = (char)code;
+			r_strbuf_append_n (&sb, &ch, 1);
+		} else if (code < 0x800) {
+			char tmp[2] = {
+				(char) (0xc0 | (code >> 6)),
+				(char) (0x80 | (code & 0x3f))
+			};
+			r_strbuf_append_n (&sb, tmp, 2);
+		} else {
+			char tmp[3] = {
+				(char) (0xe0 | (code >> 12)),
+				(char) (0x80 | ((code >> 6) & 0x3f)),
+				(char) (0x80 | (code & 0x3f))
+			};
+			r_strbuf_append_n (&sb, tmp, 3);
+		}
+	}
+	const char *utf8 = r_strbuf_get (&sb);
+	char *out = utf8? strdup (utf8): NULL;
+	r_strbuf_fini (&sb);
+	return out;
+}
+
+static bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out) {
+	if (!ctx || !base || !out) {
+		return false;
+	}
+	memset (out, 0, sizeof (*out));
+	ut8 hdr[DART_SNAPSHOT_FIXED_SIZE];
+	if (!read_mem (ctx, base, hdr, sizeof (hdr))) {
+		return false;
+	}
+	out->magic = r_read_le32 (hdr);
+	if (out->magic != DART_SNAPSHOT_MAGIC) {
+		return false;
+	}
+	out->total_len = r_read_le64 (hdr + 4) + 4;
+	out->kind = r_read_le64 (hdr + 12);
+	ut64 cursor = base + DART_SNAPSHOT_FIXED_SIZE;
+	if (!read_mem (ctx, cursor, out->hash, DART_SNAPSHOT_HASH_SIZE)) {
+		return false;
+	}
+	out->hash[DART_SNAPSHOT_HASH_SIZE] = '\0';
+	cursor += DART_SNAPSHOT_HASH_SIZE;
+	ut8 b = 0;
+	int scanned = 0;
+	while (scanned < DART_SNAPSHOT_FEATURES_SCAN_MAX) {
+		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
+			return false;
+		}
+		if (!b) {
+			break;
+		}
+		scanned++;
+	}
+	if (b) {
+		return false;
+	}
+	int tocopy = R_MIN (scanned, (int)sizeof (out->flags) - 1);
+	if (tocopy > 0 && !read_mem (ctx, cursor, (ut8 *)out->flags, tocopy)) {
+		return false;
+	}
+	out->flags[tocopy] = '\0';
+	cursor += (ut64)scanned + 1;
+	ut64 next = cursor;
+	if (!dart_read_unsigned_at (ctx, next, &out->nb, &next)) {
+		return false;
+	}
+	if (!dart_read_unsigned_at (ctx, next, &out->no, &next)) {
+		return false;
+	}
+	if (!dart_read_unsigned_at (ctx, next, &out->nc, &next)) {
+		return false;
+	}
+	if (!dart_read_unsigned_at (ctx, next, &out->itlen, &next)) {
+		return false;
+	}
+	if (!dart_read_unsigned_at (ctx, next, &out->itdata, &next)) {
+		return false;
+	}
+	out->cluster_start = next;
+	out->ok = true;
+	return true;
+}
+
+static bool dart_snapshot_header_read_buf(const ut8 *buf, ut64 size, DartSnapshotHeader *out) {
+	if (!buf || !out || size < DART_SNAPSHOT_FIXED_SIZE + DART_SNAPSHOT_HASH_SIZE + 1) {
+		return false;
+	}
+	memset (out, 0, sizeof (*out));
+	out->magic = r_read_le32 (buf);
+	if (out->magic != DART_SNAPSHOT_MAGIC) {
+		return false;
+	}
+	out->total_len = r_read_le64 (buf + 4) + 4;
+	if (out->total_len > size) {
+		return false;
+	}
+	out->kind = r_read_le64 (buf + 12);
+	ut64 cursor = DART_SNAPSHOT_FIXED_SIZE;
+	memcpy (out->hash, buf + cursor, DART_SNAPSHOT_HASH_SIZE);
+	out->hash[DART_SNAPSHOT_HASH_SIZE] = '\0';
+	cursor += DART_SNAPSHOT_HASH_SIZE;
+	int scanned = 0;
+	while (cursor + scanned < size && scanned < DART_SNAPSHOT_FEATURES_SCAN_MAX) {
+		if (!buf[cursor + scanned]) {
+			break;
+		}
+		scanned++;
+	}
+	if (cursor + scanned >= size || buf[cursor + scanned]) {
+		return false;
+	}
+	int tocopy = R_MIN (scanned, (int)sizeof (out->flags) - 1);
+	if (tocopy > 0) {
+		memcpy (out->flags, buf + cursor, (size_t)tocopy);
+	}
+	out->flags[tocopy] = '\0';
+	cursor += (ut64)scanned + 1;
+	ut64 next = cursor;
+	if (!dart_read_unsigned_buf (buf, size, next, &out->nb, &next)) {
+		return false;
+	}
+	if (!dart_read_unsigned_buf (buf, size, next, &out->no, &next)) {
+		return false;
+	}
+	if (!dart_read_unsigned_buf (buf, size, next, &out->nc, &next)) {
+		return false;
+	}
+	if (!dart_read_unsigned_buf (buf, size, next, &out->itlen, &next)) {
+		return false;
+	}
+	if (!dart_read_unsigned_buf (buf, size, next, &out->itdata, &next)) {
+		return false;
+	}
+	if (next >= out->total_len) {
+		return false;
+	}
+	out->cluster_start = next;
+	out->ok = true;
+	return true;
 }
 
 static bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz);
@@ -199,14 +460,14 @@ static bool read_heap_ptr(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 *o
 	}
 	if (ctx->compressed_word_size == 4) {
 		ut64 v64_abs = 0;
-		if (read_mem (ctx, addr, &v64_abs, sizeof (v64_abs))) {
+		if (read_u64_at (ctx, addr, &v64_abs)) {
 			if (v64_abs >= data_image_base && v64_abs < data_image_base + (1ULL << 34)) {
 				*out_abs = v64_abs;
 				return true;
 			}
 		}
 		ut32 v32 = 0;
-		if (!read_mem (ctx, addr, &v32, sizeof (v32))) {
+		if (!read_u32_at (ctx, addr, &v32)) {
 			return false;
 		}
 		const ut64 masks[] = { 0ULL, 1ULL, 3ULL, 7ULL };
@@ -224,7 +485,7 @@ static bool read_heap_ptr(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 *o
 		return false;
 	}
 	ut64 v64 = 0;
-	if (!read_mem (ctx, addr, &v64, sizeof (v64))) {
+	if (!read_u64_at (ctx, addr, &v64)) {
 		return false;
 	}
 	*out_abs = v64;
@@ -240,7 +501,7 @@ static bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz) 
 		return false;
 	}
 	for (int off = 0; off <= 16; off += 8) {
-		ut64 len_smi = *(ut64 *) (hdr + off + 8);
+		ut64 len_smi = r_read_le64 (hdr + off + 8);
 		ut64 len = 0;
 		if ((len_smi & 1ULL) == 0) {
 			len = len_smi >> 1;
@@ -317,7 +578,7 @@ static HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image
 	for (ut64 a = data_image_base; a + 0x30 < data_image_end; a += 16) {
 		for (int ie = 0; ie < lh.ep_offs_n; ie++) {
 			ut64 ep = 0;
-			if (!read_mem (ctx, a + lh.ep_offs[ie], &ep, sizeof (ep))) {
+			if (!read_u64_at (ctx, a + lh.ep_offs[ie], &ep)) {
 				continue;
 			}
 			if (ep < ctx->iso_instr) {
@@ -477,7 +738,7 @@ static void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 
 				continue;
 			}
 			ut64 addr = (ut64)strtoull (line, NULL, 16);
-			char s[128];
+			char s[128] = { 0 };
 			if (try_read_dart_string (ctx, addr, s, sizeof (s))) {
 				char *dup = strdup (s);
 				if (dup) {
@@ -637,8 +898,8 @@ static bool looks_like_it_entries(DartCtx *ctx, ut64 entries_addr, ut32 length) 
 		if (!read_mem (ctx, entries_addr + (ut64) (i * 8), ebuf, sizeof (ebuf))) {
 			return false;
 		}
-		ut32 pc_offset = *(ut32 *) (ebuf + 0);
-		ut32 sm_off = *(ut32 *) (ebuf + 4);
+		ut32 pc_offset = r_read_le32 (ebuf);
+		ut32 sm_off = r_read_le32 (ebuf + 4);
 		if (pc_offset < (1U << 28) && sm_off < (1U << 28)) {
 			sane++;
 		}
@@ -658,7 +919,7 @@ static bool read_it_data_header_from_string_object(DartCtx *ctx, ut64 obj_addr, 
 	if (!read_mem (ctx, obj_addr, objhdr, sizeof (objhdr))) {
 		return false;
 	}
-	ut64 tags = *(ut64 *)objhdr;
+	ut64 tags = r_read_le64 (objhdr);
 	ut32 cid = 0;
 	switch (ctx->layout->tag_style) {
 	case DART_TAG_STYLE_OBJECT_HEADER:
@@ -676,7 +937,7 @@ static bool read_it_data_header_from_string_object(DartCtx *ctx, ut64 obj_addr, 
 	if ((int)cid != string_cid) {
 		return false;
 	}
-	ut64 len_smi = *(ut64 *) (objhdr + 8);
+	ut64 len_smi = r_read_le64 (objhdr + 8);
 	if (len_smi & 1ULL) {
 		return false;
 	}
@@ -692,9 +953,9 @@ static bool read_it_data_header_from_string_object(DartCtx *ctx, ut64 obj_addr, 
 	if (!read_mem (ctx, payload_addr, hdr, sizeof (hdr))) {
 		return false;
 	}
-	ut32 canonical = *(ut32 *) (hdr + 0);
-	ut32 length = *(ut32 *) (hdr + 4);
-	ut32 first = *(ut32 *) (hdr + 8);
+	ut32 canonical = r_read_le32 (hdr);
+	ut32 length = r_read_le32 (hdr + 4);
+	ut32 first = r_read_le32 (hdr + 8);
 	if (!length || length > (1U << 24) || first > length) {
 		return false;
 	}
@@ -756,9 +1017,9 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 			if (!read_mem (ctx, addr, hdr, sizeof (hdr))) {
 				continue;
 			}
-			ut32 canonical = *(ut32 *) (hdr + 0);
-			ut32 length = *(ut32 *) (hdr + 4);
-			ut32 first = *(ut32 *) (hdr + 8);
+			ut32 canonical = r_read_le32 (hdr);
+			ut32 length = r_read_le32 (hdr + 4);
+			ut32 first = r_read_le32 (hdr + 8);
 			if (!length || length > (1U << 24) || first > length) {
 				continue;
 			}
@@ -806,9 +1067,9 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 		if (!read_mem (ctx, addr, hdr, sizeof (hdr))) {
 			continue;
 		}
-		ut32 canonical = *(ut32 *) (hdr + 0);
-		ut32 length = *(ut32 *) (hdr + 4);
-		ut32 first = *(ut32 *) (hdr + 8);
+		ut32 canonical = r_read_le32 (hdr);
+		ut32 length = r_read_le32 (hdr + 4);
+		ut32 first = r_read_le32 (hdr + 8);
 		if (length < 64 || length > (1U << 24) || first > length) {
 			continue;
 		}
@@ -904,9 +1165,9 @@ static int emit_it_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut
 		DartInstructionTableEntry entry = {
 			.index = idx,
 			.code_index = has_code? idx - hdr.first_entry_with_code: UT64_MAX,
-			.address = ctx->iso_instr + (ut64) (*(ut32 *) (ebuf + 0)),
-			.pc_offset = *(ut32 *) (ebuf + 0),
-			.stack_map_offset = *(ut32 *) (ebuf + 4),
+			.address = ctx->iso_instr + (ut64)r_read_le32 (ebuf),
+			.pc_offset = r_read_le32 (ebuf),
+			.stack_map_offset = r_read_le32 (ebuf + 4),
 			.has_code = has_code,
 			.name = name,
 };
@@ -924,10 +1185,10 @@ static int emit_it_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 ma
 	ut64 p = addr;
 	ut64 header_len = 0;
 	ut64 first_with_code = 0;
-	if (!read_uleb128_at (ctx, p, &header_len, &p)) {
+	if (!dart_read_unsigned_at (ctx, p, &header_len, &p)) {
 		return -1;
 	}
-	if (!read_uleb128_at (ctx, p, &first_with_code, &p)) {
+	if (!dart_read_unsigned_at (ctx, p, &first_with_code, &p)) {
 		return -1;
 	}
 	if (header_len == 0 || header_len > (1ULL << 26)) {
@@ -945,10 +1206,10 @@ static int emit_it_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 ma
 	for (ut64 idx = 0; idx < header_len; idx++) {
 		ut64 dpc = 0;
 		ut64 dsm = 0;
-		if (!read_uleb128_at (ctx, p, &dpc, &p)) {
+		if (!dart_read_unsigned_at (ctx, p, &dpc, &p)) {
 			return -1;
 		}
-		if (!read_uleb128_at (ctx, p, &dsm, &p)) {
+		if (!dart_read_unsigned_at (ctx, p, &dsm, &p)) {
 			return -1;
 		}
 		pc_acc += dpc;
@@ -978,63 +1239,21 @@ static int emit_it_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 ma
 }
 
 static bool looks_like_data_snapshot(DartCtx *ctx, ut64 base, ut64 *out_total_len) {
-	if (!ctx || !base) {
+	DartSnapshotHeader hdr;
+	if (!dart_snapshot_header_read (ctx, base, &hdr)) {
 		return false;
 	}
-	ut8 hdr[4 + 8 + 8];
-	if (!read_mem (ctx, base, hdr, sizeof (hdr))) {
+	if (hdr.nb == 0 || hdr.no == 0 || hdr.nc == 0) {
 		return false;
 	}
-	uint32_t magic = *(uint32_t *) (hdr + 0);
-	if (magic != 0xdcdcf5f5) {
+	if (hdr.itlen > (1ULL << 32)) {
 		return false;
 	}
-	uint64_t length_ex_magic = *(uint64_t *) (hdr + 4);
-	uint64_t total_len = length_ex_magic + 4;
-	ut64 cursor = base + 4 + 8 + 8;
-	const int max_scan = 2048;
-	ut8 b = 0;
-	int scanned = 0;
-	while (scanned < max_scan) {
-		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
-			return false;
-		}
-		if (b == '\0') {
-			break;
-		}
-		scanned++;
-	}
-	if (b != '\0') {
-		return false;
-	}
-	ut64 next = cursor + (ut64) (scanned + 1);
-	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, tmp = next;
-	if (!read_uleb128_at (ctx, tmp, &nb, &tmp)) {
-		return false;
-	}
-	if (!read_uleb128_at (ctx, tmp, &no, &tmp)) {
-		return false;
-	}
-	if (!read_uleb128_at (ctx, tmp, &nc, &tmp)) {
-		return false;
-	}
-	if (!read_uleb128_at (ctx, tmp, &itlen, &tmp)) {
-		return false;
-	}
-	if (!read_uleb128_at (ctx, tmp, &itdata, &tmp)) {
-		return false;
-	}
-	if (nb == 0 || no == 0 || nc == 0) {
-		return false;
-	}
-	if (itlen > (1ULL << 32)) {
-		return false;
-	}
-	if (itdata > (1ULL << 40)) {
+	if (hdr.itdata > (1ULL << 40)) {
 		return false;
 	}
 	if (out_total_len) {
-		*out_total_len = total_len;
+		*out_total_len = hdr.total_len;
 	}
 	return true;
 }
@@ -1113,15 +1332,14 @@ static void extract_snapshot_hash_flags(DartCtx *ctx, ut64 vm_data) {
 		return;
 	}
 	ctx->snapshot_hash[0] = '\0';
-	ut8 buf[20 + 32 + 256] = { 0 };
-	if (!read_mem (ctx, vm_data, buf, sizeof (buf))) {
+	DartSnapshotHeader hdr;
+	if (!dart_snapshot_header_read (ctx, vm_data, &hdr)) {
 		return;
 	}
-	memcpy (ctx->snapshot_hash, buf + 20, 32);
+	memcpy (ctx->snapshot_hash, hdr.hash, 32);
 	ctx->snapshot_hash[32] = '\0';
-	const char *flags = (const char *) (buf + 20 + 32);
 	if (ctx->verbose > 0) {
-		fprintf (stderr, "[r2flutter] snapshot_hash=%.*s flags=%.128s\n", 32, (const char *) (buf + 20), flags);
+		fprintf (stderr, "[r2flutter] snapshot_hash=%.*s flags=%.128s\n", 32, hdr.hash, hdr.flags);
 	}
 }
 
@@ -1129,11 +1347,11 @@ static void derive_layout_from_flags(DartCtx *ctx) {
 	if (!ctx || !ctx->vm_data) {
 		return;
 	}
-	ut8 buf[20 + 32 + 256] = { 0 };
-	if (!read_mem (ctx, ctx->vm_data, buf, sizeof (buf))) {
+	DartSnapshotHeader hdr;
+	if (!dart_snapshot_header_read (ctx, ctx->vm_data, &hdr)) {
 		return;
 	}
-	const char *flags = (const char *) (buf + 20 + 32);
+	const char *flags = hdr.flags;
 	bool has_compressed = strstr (flags, "compressed-pointer") != NULL;
 	bool has_no_compressed = strstr (flags, "no-compressed-pointer") != NULL ||
 		strstr (flags, "no-compressed") != NULL;
@@ -1196,30 +1414,17 @@ static bool cs_read_u32(ClusterStream *s, uint32_t *out) {
 	if (!s || !out || s->cursor + 4 > s->end) {
 		return false;
 	}
-	bool ok = read_mem (s->ctx, s->cursor, out, 4);
+	bool ok = read_u32_at (s->ctx, s->cursor, out);
 	s->cursor += 4;
 	return ok;
 }
 
+static bool dart_read_byte_stream_cb(void *user, ut8 *out) {
+	return cs_read_u8 ((ClusterStream *)user, out);
+}
+
 static bool cs_read_unsigned(ClusterStream *s, ut64 *out) {
-	ut64 v = 0;
-	int shift = 0;
-	for (int i = 0; i < 10; i++) {
-		ut8 b = 0;
-		if (!cs_read_u8 (s, &b)) {
-			return false;
-		}
-		if (b > 0x7f) {
-			v |= ((ut64) (b - 0x80)) << shift;
-			if (out) {
-				*out = v;
-			}
-			return true;
-		}
-		v |= ((ut64)b) << shift;
-		shift += 7;
-	}
-	return false;
+	return dart_read_unsigned_cb (dart_read_byte_stream_cb, s, out);
 }
 
 static bool cs_read_ref_id(ClusterStream *s, ut64 *out) {
@@ -2525,18 +2730,21 @@ static bool scan_modern_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut
 				bool is_two_byte = (encoded & 1) != 0;
 				if (is_two_byte) {
 					ut64 nbytes = length * 2;
+					if (nbytes > INT32_MAX) {
+						goto fail;
+					}
 					ut8 *raw = (ut8 *)calloc ((size_t)nbytes + 1, 1);
 					if (!raw || !cs_read_bytes (&s, raw, (int)nbytes)) {
 						free (raw);
 						goto fail;
 					}
-					char *value = (char *)calloc ((size_t)length + 1, 1);
-					for (ut64 k = 0; k < length; k++) {
-						value[k] = raw[k * 2];
-					}
+					char *value = dart_utf16le_to_utf8 (raw, nbytes);
 					free (raw);
 					strings_by_ref[ref] = value;
 				} else {
+					if (length > INT32_MAX) {
+						goto fail;
+					}
 					char *value = (char *)calloc ((size_t)length + 1, 1);
 					if (!value || !cs_read_bytes (&s, (ut8 *)value, (int)length)) {
 						free (value);
@@ -2947,6 +3155,10 @@ static int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_count
 			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] String too long: %" PRIu64 "\n", length);
 			}
+			ut64 skip_len = is_two_byte? length * 2: length;
+			if (!modern_skip_n_bytes (s, skip_len)) {
+				return -1;
+			}
 			continue;
 		}
 		DartString *ds = R_NEW0 (DartString);
@@ -2955,11 +3167,15 @@ static int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_count
 		ds->length = (int)length;
 		if (length > 0) {
 			if (is_two_byte) {
-				ds->value = (char *)malloc (length * 2 + 1);
-				if (ds->value && !cs_read_bytes (s, (ut8 *)ds->value, length * 2)) {
-					free (ds->value);
-					ds->value = NULL;
+				ut64 nbytes = length * 2;
+				ut8 *raw = (ut8 *)malloc ((size_t)nbytes);
+				if (!raw) {
+					return -1;
 				}
+				if (cs_read_bytes (s, raw, (int)nbytes)) {
+					ds->value = dart_utf16le_to_utf8 (raw, nbytes);
+				}
+				free (raw);
 			} else {
 				ds->value = (char *)malloc (length + 1);
 				if (ds->value) {
@@ -3194,63 +3410,21 @@ static int decode_pool_and_emit(DartCtx *ctx,
 		return -1;
 	}
 	const ut64 base = ctx->iso_data;
-	ut8 hdr[4 + 8 + 8];
-	if (!read_mem (ctx, base, hdr, sizeof (hdr))) {
+	DartSnapshotHeader sh;
+	if (!dart_snapshot_header_read (ctx, base, &sh)) {
 		eprintf ("Cannot read head\n");
 		return -1;
 	}
-	uint32_t magic = *(uint32_t *) (hdr + 0);
-	if (magic != 0xdcdcf5f5) {
-		fprintf (stderr, "[r2flutter] Unexpected snapshot magic at 0x%" PFMT64x "\n", (ut64)base);
-		return -1;
+	if (ctx->verbose > 1 && sh.flags[0]) {
+		eprintf ("[r2flutter] features: %s\n", sh.flags);
 	}
-	uint64_t length_ex_magic = *(uint64_t *) (hdr + 4);
-	uint64_t total_len = length_ex_magic + 4;
-	uint64_t kind = *(uint64_t *) (hdr + 12);
-	ut64 cursor = base + 4 + 8 + 8;
-	cursor += 32;
-	const int max_scan = 1024;
-	ut8 b = 0;
-	int scanned = 0;
-	while (scanned < max_scan) {
-		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
-			break;
-		}
-		if (b == '\0') {
-			break;
-		}
-		scanned++;
-	}
-	if (b != '\0') {
-		if (ctx->verbose > 0) {
-			eprintf ("[r2flutter] warning: could not find features terminator within %d bytes\n", max_scan);
-		}
-	} else if (ctx->verbose > 1) {
-		char feat[256];
-		memset (feat, 0, sizeof (feat));
-		int toshow = scanned > 255? 255: scanned;
-		if (read_mem (ctx, cursor, (ut8 *)feat, toshow)) {
-			eprintf ("[r2flutter] features: %s\n", feat);
-		}
-	}
-	cursor += (ut64) (scanned + 1);
-	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0;
-	ut64 next = cursor;
-	if (!read_uleb128_at (ctx, next, &nb, &next)) {
-		return -1;
-	}
-	if (!read_uleb128_at (ctx, next, &no, &next)) {
-		return -1;
-	}
-	if (!read_uleb128_at (ctx, next, &nc, &next)) {
-		return -1;
-	}
-	if (!read_uleb128_at (ctx, next, &itlen, &next)) {
-		return -1;
-	}
-	if (!read_uleb128_at (ctx, next, &itdata, &next)) {
-		return -1;
-	}
+	uint64_t total_len = sh.total_len;
+	uint64_t kind = sh.kind;
+	ut64 nb = sh.nb;
+	ut64 no = sh.no;
+	ut64 nc = sh.nc;
+	ut64 itlen = sh.itlen;
+	ut64 itdata = sh.itdata;
 	bool header_valid = (nc > 0 && nc < 1000000 && no > 0 && no < 10000000);
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] snapshot clustered header: base_objs=%" PRIu64 " objs=%" PRIu64 " clusters=%" PRIu64 " it_len=%" PRIu64 " it_data_off=%" PRIu64 " total_len=%" PRIu64 " valid=%d\n", (uint64_t)nb, (uint64_t)no, (uint64_t)nc, (uint64_t)itlen, (uint64_t)itdata, (uint64_t)total_len, header_valid);
@@ -3286,7 +3460,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	ctx->it_first_with_code = 0;
 	ctx->it_canonical_stack_map_offset = 0;
 
-	ut64 cluster_start = next;
+	ut64 cluster_start = sh.cluster_start;
 	ut64 cluster_end = base + total_len;
 	if (nc > 0 && nc < 5000 && no < 500000 && cluster_start < cluster_end) {
 		int deser_rc = deserialize_clusters (ctx, cluster_start, cluster_end, nc, ctx->iso_instr);
@@ -3496,7 +3670,7 @@ static int find_snapshots(DartCtx *ctx) {
 					break;
 				}
 				for (int j2 = 0; j2 + 4 <= toread; j2 += 4) {
-					uint32_t val = *(uint32_t *) (buf + j2);
+					uint32_t val = r_read_le32 (buf + j2);
 					if (val == kMagic) {
 						if (found_cnt < (int) (sizeof (found_addrs) / sizeof (found_addrs[0]))) {
 							found_addrs[found_cnt++] = addr + j2;
@@ -3524,7 +3698,7 @@ static int find_snapshots(DartCtx *ctx) {
 			if (r_io_read_at (core->io, found_addrs[i] + 4, hdr2, sizeof (hdr2)) < 1) {
 				continue;
 			}
-			ut64 total_len = *(uint64_t *) (hdr2 + 0) + 4;
+			ut64 total_len = r_read_le64 (hdr2) + 4;
 			ut64 classified_len = 0;
 			bool is_data = looks_like_data_snapshot (ctx, found_addrs[i], &classified_len);
 			if (is_data) {
@@ -3731,6 +3905,22 @@ void dart_class_list_free(RList *list) {
 	r_list_free (list);
 }
 
+static DartFieldInfo *dart_field_info_clone(const DartFieldInfo *fi) {
+	if (!fi) {
+		return NULL;
+	}
+	DartFieldInfo *out = R_NEW0 (DartFieldInfo);
+	out->name = fi->name? strdup (fi->name): NULL;
+	out->type_name = fi->type_name? strdup (fi->type_name): NULL;
+	out->offset = fi->offset;
+	out->flags = fi->flags;
+	out->type_ref = fi->type_ref;
+	out->ref_id = fi->ref_id;
+	out->name_ref = fi->name_ref;
+	out->owner_ref = fi->owner_ref;
+	return out;
+}
+
 typedef enum {
 	kFieldCid_extract = 10,
 	kLibraryCid_extract = 12,
@@ -3851,6 +4041,25 @@ static void free_library_info(void *p) {
 		free (li->uri);
 		free (li);
 	}
+}
+
+static char *dup_ref_string(DartCtx *ctx, ut64 ref) {
+	if (!ctx || !ctx->refs || ref == 0 || ref >= ctx->refs_count) {
+		return NULL;
+	}
+	DartString *ds = (DartString *)ctx->refs[ref];
+	if (!ds || R_STR_ISEMPTY (ds->value)) {
+		return NULL;
+	}
+	return strdup (ds->value);
+}
+
+static char *dup_ref_string_obf(DartCtx *ctx, ut64 ref) {
+	char *value = dup_ref_string (ctx, ref);
+	if (value) {
+		dart_obf_apply (ctx, &value);
+	}
+	return value;
 }
 
 typedef struct {
@@ -4232,14 +4441,7 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 			continue;
 		}
 		if (!ci->name && ci->name_ref > 0 && ci->name_ref < ctx->refs_count) {
-			void *ref = ctx->refs[ci->name_ref];
-			if (ref) {
-				DartString *ds = (DartString *)ref;
-				if (ds->value) {
-					ci->name = strdup (ds->value);
-					dart_obf_apply (ctx, &ci->name);
-				}
-			}
+			ci->name = dup_ref_string_obf (ctx, ci->name_ref);
 		}
 		if (ci->super_class_ref > 0 && ci->super_class_ref < ctx->refs_count) {
 			void *ref = ctx->refs[ci->super_class_ref];
@@ -4255,9 +4457,11 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 			void *ref = ctx->refs[ci->library_ref];
 			if (ref) {
 				LibraryInfo *lib = (LibraryInfo *)ref;
+				if (!lib->uri) {
+					lib->uri = dup_ref_string_obf (ctx, lib->name_ref);
+				}
 				if (lib->uri) {
 					ci->library_name = strdup (lib->uri);
-					dart_obf_apply (ctx, &ci->library_name);
 				}
 			}
 		}
@@ -4271,29 +4475,14 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 			continue;
 		}
 		if (!fi->name && fi->name_ref > 0 && fi->name_ref < ctx->refs_count) {
-			void *ref = ctx->refs[fi->name_ref];
-			if (ref) {
-				DartString *ds = (DartString *)ref;
-				if (ds->value) {
-					fi->name = strdup (ds->value);
-					dart_obf_apply (ctx, &fi->name);
-				}
-			}
+			fi->name = dup_ref_string_obf (ctx, fi->name_ref);
 		}
 		if (fi->owner_ref > 0 && fi->owner_ref < ctx->refs_count) {
 			void *ref = ctx->refs[fi->owner_ref];
 			if (ref) {
 				DartClassInfo *owner = (DartClassInfo *)ref;
 				if (owner->fields) {
-					DartFieldInfo *fi_copy = R_NEW0 (DartFieldInfo);
-					fi_copy->ref_id = fi->ref_id;
-					fi_copy->name = fi->name? strdup (fi->name): NULL;
-					fi_copy->type_name = fi->type_name? strdup (fi->type_name): NULL;
-					fi_copy->offset = fi->offset;
-					fi_copy->flags = fi->flags;
-					fi_copy->type_ref = fi->type_ref;
-					fi_copy->name_ref = fi->name_ref;
-					fi_copy->owner_ref = fi->owner_ref;
+					DartFieldInfo *fi_copy = dart_field_info_clone (fi);
 					r_list_append (owner->fields, fi_copy);
 				}
 			}
@@ -4302,47 +4491,17 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 }
 
 static int parse_snapshot_header(DartCtx *ctx, ut64 snapshot_base, ut64 *out_nb, ut64 *out_no, ut64 *out_nc, ut64 *out_itlen, ut64 *out_itdata, ut64 *out_total_len, ut64 *out_cluster_start) {
-	ut8 hdr[4 + 8 + 8];
-	if (!read_mem (ctx, snapshot_base, hdr, sizeof (hdr))) {
+	DartSnapshotHeader hdr;
+	if (!dart_snapshot_header_read (ctx, snapshot_base, &hdr)) {
 		return -1;
 	}
-	uint32_t magic = *(uint32_t *) (hdr + 0);
-	if (magic != 0xdcdcf5f5) {
-		return -1;
-	}
-	uint64_t length_ex_magic = *(uint64_t *) (hdr + 4);
-	*out_total_len = length_ex_magic + 4;
-	ut64 cursor = snapshot_base + 4 + 8 + 8 + 32;
-	const int max_scan = 1024;
-	ut8 b = 0;
-	int scanned = 0;
-	while (scanned < max_scan) {
-		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
-			break;
-		}
-		if (b == '\0') {
-			break;
-		}
-		scanned++;
-	}
-	cursor += (ut64) (scanned + 1);
-	ut64 next = cursor;
-	if (!read_uleb128_at (ctx, next, out_nb, &next)) {
-		return -1;
-	}
-	if (!read_uleb128_at (ctx, next, out_no, &next)) {
-		return -1;
-	}
-	if (!read_uleb128_at (ctx, next, out_nc, &next)) {
-		return -1;
-	}
-	if (!read_uleb128_at (ctx, next, out_itlen, &next)) {
-		return -1;
-	}
-	if (!read_uleb128_at (ctx, next, out_itdata, &next)) {
-		return -1;
-	}
-	*out_cluster_start = next;
+	*out_nb = hdr.nb;
+	*out_no = hdr.no;
+	*out_nc = hdr.nc;
+	*out_itlen = hdr.itlen;
+	*out_itdata = hdr.itdata;
+	*out_total_len = hdr.total_len;
+	*out_cluster_start = hdr.cluster_start;
 	return 0;
 }
 
@@ -4499,12 +4658,6 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	return class_list;
 }
 
-RList *dart_pool_get_class_hierarchy(DartCtx *ctx, ut64 class_ref) {
-	(void)ctx;
-	(void)class_ref;
-	return r_list_newf (free);
-}
-
 static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end) {
 	if (!ctx || !ctx->core || !class_list || data_start >= data_end) {
 		return;
@@ -4527,7 +4680,7 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 		if (!read_mem (ctx, pos, hdr, sizeof (hdr))) {
 			continue;
 		}
-		ut64 header = *(ut64 *)hdr;
+		ut64 header = r_read_le64 (hdr);
 		ut32 obj_cid = (header >> 12) & 0xFFFFF;
 		if ((int)obj_cid != cid_field) {
 			continue;
@@ -4535,15 +4688,15 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 		ut64 name_ptr = 0, owner_ptr = 0;
 		ut32 kind_bits = 0, offset_val = 0;
 		if (use_compressed) {
-			name_ptr = *(ut32 *) (hdr + 8);
-			owner_ptr = *(ut32 *) (hdr + 12);
-			kind_bits = *(ut32 *) (hdr + 24);
-			offset_val = *(ut32 *) (hdr + 28);
+			name_ptr = r_read_le32 (hdr + 8);
+			owner_ptr = r_read_le32 (hdr + 12);
+			kind_bits = r_read_le32 (hdr + 24);
+			offset_val = r_read_le32 (hdr + 28);
 		} else {
-			name_ptr = *(ut64 *) (hdr + 8);
-			owner_ptr = *(ut64 *) (hdr + 16);
-			kind_bits = *(ut32 *) (hdr + 40);
-			offset_val = *(ut32 *) (hdr + 44);
+			name_ptr = r_read_le64 (hdr + 8);
+			owner_ptr = r_read_le64 (hdr + 16);
+			kind_bits = r_read_le32 (hdr + 40);
+			offset_val = r_read_le32 (hdr + 44);
 		}
 		if (name_ptr == 0 || owner_ptr == 0) {
 			continue;
@@ -4561,7 +4714,7 @@ static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 da
 		if (owner_addr >= data_start && owner_addr < data_end) {
 			ut8 owner_hdr[32];
 			if (read_mem (ctx, owner_addr, owner_hdr, sizeof (owner_hdr))) {
-				ut64 owner_name_ptr = use_compressed? *(ut32 *) (owner_hdr + 8): *(ut64 *) (owner_hdr + 8);
+				ut64 owner_name_ptr = use_compressed? r_read_le32 (owner_hdr + 8): r_read_le64 (owner_hdr + 8);
 				ut64 owner_name_addr = use_compressed? (data_start + (owner_name_ptr & ~3ULL)): owner_name_ptr;
 				if (owner_name_addr >= data_start && owner_name_addr < data_end) {
 					try_read_dart_string (ctx, owner_name_addr, owner_name, sizeof (owner_name));
@@ -4638,7 +4791,7 @@ static ut32 extract_cid_from_header(DartCtx *ctx, ut64 header) {
 static bool read_object_pointer(DartCtx *ctx, const ut8 *buf, ut32 off, bool use_compressed, ut64 data_base, ut64 data_end, bool restrict_range, ut64 *out_addr) {
 	(void)ctx;
 	if (use_compressed) {
-		ut32 rel = *(const ut32 *) (buf + off);
+		ut32 rel = r_read_le32 (buf + off);
 		ut64 addr = data_base + ((ut64)rel & ~3ULL);
 		if (addr < data_base || addr >= data_end) {
 			if (restrict_range) {
@@ -4648,7 +4801,7 @@ static bool read_object_pointer(DartCtx *ctx, const ut8 *buf, ut32 off, bool use
 		*out_addr = addr;
 		return true;
 	}
-	ut64 addr = *(const ut64 *) (buf + off);
+	ut64 addr = r_read_le64 (buf + off);
 	if (!addr) {
 		return false;
 	}
@@ -4736,12 +4889,12 @@ static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 d
 		if (!read_mem (ctx, pos, buf, sizeof (buf))) {
 			continue;
 		}
-		ut64 header = *(ut64 *)buf;
+		ut64 header = r_read_le64 (buf);
 		ut32 cid = extract_cid_from_header (ctx, header);
 		if ((int)cid != cid_function) {
 			continue;
 		}
-		ut64 entry = *(ut64 *) (buf + fl.entry_off);
+		ut64 entry = r_read_le64 (buf + fl.entry_off);
 		if (!entry || entry == UT64_MAX) {
 			continue;
 		}
@@ -4785,13 +4938,10 @@ static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 d
 			continue;
 		}
 		DartMethodInfo *mi = R_NEW0 (DartMethodInfo);
-		if (!mi) {
-			continue;
-		}
 		mi->entry_point = entry;
 		mi->name = strdup (method_name);
 		mi->owner_name = strdup (owner_name);
-		mi->kind_tag = *(uint32_t *) (buf + fl.kind_tag_off);
+		mi->kind_tag = r_read_le32 (buf + fl.kind_tag_off);
 		ht_up_insert (seen_ep, entry, mi);
 		r_list_append (owner_ci->methods, mi);
 		if (ctx->verbose > 1) {
@@ -4807,12 +4957,6 @@ static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 d
 	}
 	ht_up_free (seen_ep);
 	ht_pp_free (class_by_name);
-}
-
-RList *dart_pool_extract_fields(DartCtx *ctx, ut64 class_ref) {
-	(void)ctx;
-	(void)class_ref;
-	return r_list_newf ((RListFree)dart_field_info_free);
 }
 
 static void dump_class_json(PJ *pj, const DartClassInfo *ci) {
@@ -5209,95 +5353,12 @@ typedef struct {
 	char *value;
 } PackedStringRecord;
 
-typedef struct {
-	bool ok;
-	ut64 total_len;
-	ut64 cluster_start;
-} PackedSnapshotHeader;
-
 static void packed_string_record_fini(PackedStringRecord *rec) {
 	if (!rec) {
 		return;
 	}
 	free (rec->value);
 	rec->value = NULL;
-}
-
-static bool read_dart_unsigned_buf(const ut8 *buf, ut64 size, ut64 pos, ut64 *out_val, ut64 *out_next) {
-	if (!buf || pos >= size) {
-		return false;
-	}
-	ut8 b = buf[pos++];
-	if (b > 0x7f) {
-		if (out_val) {
-			*out_val = b - 0x80;
-		}
-		if (out_next) {
-			*out_next = pos;
-		}
-		return true;
-	}
-	ut64 value = 0;
-	int shift = 0;
-	for (;;) {
-		value |= ((ut64)b) << shift;
-		shift += 7;
-		if (pos >= size) {
-			return false;
-		}
-		b = buf[pos++];
-		if (b > 0x7f) {
-			value |= ((ut64) (b - 0x80)) << shift;
-			if (out_val) {
-				*out_val = value;
-			}
-			if (out_next) {
-				*out_next = pos;
-			}
-			return true;
-		}
-	}
-}
-
-static bool read_packed_snapshot_header(const ut8 *buf, ut64 size, PackedSnapshotHeader *out) {
-	if (!buf || !out || size < 4 + 8 + 8 + 32 + 1) {
-		return false;
-	}
-	memset (out, 0, sizeof (*out));
-	uint32_t magic = *(const uint32_t *)buf;
-	if (magic != 0xdcdcf5f5) {
-		return false;
-	}
-	ut64 total_len = *(const ut64 *) (buf + 4) + 4;
-	if (total_len > size) {
-		return false;
-	}
-	ut64 cursor = 4 + 8 + 8 + 32;
-	int scanned = 0;
-	while (cursor + scanned < size && scanned < 1024) {
-		if (buf[cursor + scanned] == '\0') {
-			break;
-		}
-		scanned++;
-	}
-	if (cursor + scanned >= size || buf[cursor + scanned] != '\0') {
-		return false;
-	}
-	cursor += (ut64) (scanned + 1);
-	ut64 next = cursor;
-	ut64 dummy = 0;
-	for (int i = 0; i < 5; i++) {
-		if (!read_dart_unsigned_buf (buf, size, next, &dummy, &next)) {
-			return false;
-		}
-	}
-	if (next >= total_len) {
-		return false;
-	}
-	out->ok = true;
-	out->total_len = total_len;
-	out->cluster_start = next;
-	return true;
 }
 
 static void append_string_info(RList *list, HtUP *seen_addrs, const char *value, ut32 len, ut32 flags, ut64 addr, DartStringCategory cat, ut64 *ref_counter) {
@@ -5360,9 +5421,7 @@ static bool decode_utf16le_unit(const ut8 *buf, ut64 size, ut64 idx, ut32 *out) 
 	if (idx + 1 >= size) {
 		return false;
 	}
-	uint16_t lo = buf[idx];
-	uint16_t hi = buf[idx + 1];
-	ut32 code = (hi << 8) | lo;
+	ut32 code = r_read_le16 (buf + idx);
 	if (!code) {
 		return false;
 	}
@@ -5433,7 +5492,7 @@ static bool utf16le_has_ascii_profile(const ut8 *buf, ut64 start, ut64 end) {
 static bool parse_packed_string_record_any(const ut8 *buf, ut64 size, ut64 pos, ut64 *out_next) {
 	ut64 encoded = 0;
 	ut64 next = 0;
-	if (!read_dart_unsigned_buf (buf, size, pos, &encoded, &next)) {
+	if (!dart_read_unsigned_buf (buf, size, pos, &encoded, &next)) {
 		return false;
 	}
 	ut64 length = encoded >> 1;
@@ -5457,7 +5516,7 @@ static bool parse_packed_string_record_text(const ut8 *buf, ut64 size, ut64 pos,
 	memset (out, 0, sizeof (*out));
 	ut64 encoded = 0;
 	ut64 payload_off = 0;
-	if (!read_dart_unsigned_buf (buf, size, pos, &encoded, &payload_off)) {
+	if (!dart_read_unsigned_buf (buf, size, pos, &encoded, &payload_off)) {
 		return false;
 	}
 	ut64 length = encoded >> 1;
@@ -5566,10 +5625,10 @@ static void scan_packed_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, 
 	if (!read_mem (ctx, snapshot_base, hdrbuf, sizeof (hdrbuf))) {
 		return;
 	}
-	if (*(const ut32 *)hdrbuf != 0xdcdcf5f5) {
+	if (r_read_le32 (hdrbuf) != DART_SNAPSHOT_MAGIC) {
 		return;
 	}
-	ut64 total_len = *(const ut64 *) (hdrbuf + 4) + 4;
+	ut64 total_len = r_read_le64 (hdrbuf + 4) + 4;
 	if (total_len < sizeof (hdrbuf) || total_len > (64ULL << 20)) {
 		return;
 	}
@@ -5581,8 +5640,8 @@ static void scan_packed_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, 
 		free (buf);
 		return;
 	}
-	PackedSnapshotHeader hdr = { 0 };
-	if (!read_packed_snapshot_header (buf, total_len, &hdr)) {
+	DartSnapshotHeader hdr;
+	if (!dart_snapshot_header_read_buf (buf, total_len, &hdr)) {
 		free (buf);
 		return;
 	}
@@ -6043,7 +6102,7 @@ static void collect_field_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 		if (!read_mem (ctx, pos, hdr, sizeof (hdr))) {
 			continue;
 		}
-		ut64 header = *(ut64 *)hdr;
+		ut64 header = r_read_le64 (hdr);
 		ut32 obj_cid = (header >> 12) & 0xFFFFF;
 		if ((int)obj_cid != cid_field) {
 			continue;
@@ -6051,13 +6110,13 @@ static void collect_field_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 		ut64 name_ptr = 0, owner_ptr = 0;
 		ut32 offset_val = 0;
 		if (use_compressed) {
-			name_ptr = *(ut32 *) (hdr + 8);
-			owner_ptr = *(ut32 *) (hdr + 12);
-			offset_val = *(ut32 *) (hdr + 28);
+			name_ptr = r_read_le32 (hdr + 8);
+			owner_ptr = r_read_le32 (hdr + 12);
+			offset_val = r_read_le32 (hdr + 28);
 		} else {
-			name_ptr = *(ut64 *) (hdr + 8);
-			owner_ptr = *(ut64 *) (hdr + 16);
-			offset_val = *(ut32 *) (hdr + 44);
+			name_ptr = r_read_le64 (hdr + 8);
+			owner_ptr = r_read_le64 (hdr + 16);
+			offset_val = r_read_le32 (hdr + 44);
 		}
 		if (!name_ptr || !owner_ptr) {
 			continue;
@@ -6072,7 +6131,7 @@ static void collect_field_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 		if (owner_addr >= data_start && owner_addr < data_end) {
 			ut8 owner_hdr[32];
 			if (read_mem (ctx, owner_addr, owner_hdr, sizeof (owner_hdr))) {
-				ut64 owner_name_ptr = use_compressed? *(ut32 *) (owner_hdr + 8): *(ut64 *) (owner_hdr + 8);
+				ut64 owner_name_ptr = use_compressed? r_read_le32 (owner_hdr + 8): r_read_le64 (owner_hdr + 8);
 				ut64 owner_name_addr = use_compressed? (data_start + (owner_name_ptr & ~3ULL)): owner_name_ptr;
 				if (owner_name_addr >= data_start && owner_name_addr < data_end) {
 					read_string_safe (ctx, owner_name_addr, owner_name, sizeof (owner_name));
@@ -6118,12 +6177,12 @@ static void collect_method_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RLis
 		if (!read_mem (ctx, pos, buf, sizeof (buf))) {
 			continue;
 		}
-		ut64 header = *(ut64 *)buf;
+		ut64 header = r_read_le64 (buf);
 		ut32 cid = extract_cid_from_header (ctx, header);
 		if ((int)cid != cid_function) {
 			continue;
 		}
-		ut64 entry = *(ut64 *) (buf + fl.entry_off);
+		ut64 entry = r_read_le64 (buf + fl.entry_off);
 		if (!entry || entry == UT64_MAX) {
 			continue;
 		}
@@ -6392,80 +6451,6 @@ char *dart_pool_dump_xrefs(DartCtx *ctx, int fmt) {
 	return out;
 }
 
-typedef struct {
-	bool ok;
-	uint32_t magic;
-	uint64_t total_len;
-	uint64_t kind;
-	char hash[33];
-	char flags[512];
-	ut64 nb;
-	ut64 no;
-	ut64 nc;
-	ut64 itlen;
-	ut64 itdata;
-} SnapshotHeader;
-
-static SnapshotHeader read_snapshot_hdr(DartCtx *ctx, ut64 base) {
-	SnapshotHeader hdr = { 0 };
-	if (!ctx || !base) {
-		return hdr;
-	}
-	ut8 buf[4 + 8 + 8];
-	if (!read_mem (ctx, base, buf, sizeof (buf))) {
-		return hdr;
-	}
-	hdr.magic = *(uint32_t *) (buf + 0);
-	if (hdr.magic != 0xdcdcf5f5) {
-		return hdr;
-	}
-	uint64_t length_ex_magic = *(uint64_t *) (buf + 4);
-	hdr.total_len = length_ex_magic + 4;
-	hdr.kind = *(uint64_t *) (buf + 12);
-	ut64 cursor = base + 4 + 8 + 8;
-	ut8 hashbuf[32];
-	if (read_mem (ctx, cursor, hashbuf, 32)) {
-		memcpy (hdr.hash, hashbuf, 32);
-		hdr.hash[32] = '\0';
-	}
-	cursor += 32;
-	int scanned = 0;
-	ut8 b = 0;
-	while (scanned < 1024) {
-		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
-			break;
-		}
-		if (b == '\0') {
-			break;
-		}
-		scanned++;
-	}
-	int tocopy = scanned < (int) (sizeof (hdr.flags) - 1)? scanned: (int) (sizeof (hdr.flags) - 1);
-	if (tocopy > 0) {
-		read_mem (ctx, cursor, (ut8 *)hdr.flags, tocopy);
-	}
-	hdr.flags[tocopy] = '\0';
-	cursor += (ut64) (scanned + 1);
-	ut64 next = cursor;
-	if (!read_uleb128_at (ctx, next, &hdr.nb, &next)) {
-		return hdr;
-	}
-	if (!read_uleb128_at (ctx, next, &hdr.no, &next)) {
-		return hdr;
-	}
-	if (!read_uleb128_at (ctx, next, &hdr.nc, &next)) {
-		return hdr;
-	}
-	if (!read_uleb128_at (ctx, next, &hdr.itlen, &next)) {
-		return hdr;
-	}
-	if (!read_uleb128_at (ctx, next, &hdr.itdata, &next)) {
-		return hdr;
-	}
-	hdr.ok = true;
-	return hdr;
-}
-
 static int prepare_header_data(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
 		return -1;
@@ -6490,7 +6475,8 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	const char *version = dart_version_from_hash (ctx->snapshot_hash);
 	if (fmt == 'j') {
 		ut64 header_addr = ctx->iso_data? ctx->iso_data: ctx->vm_data;
-		SnapshotHeader sh = read_snapshot_hdr (ctx, header_addr);
+		DartSnapshotHeader sh = { 0 };
+		dart_snapshot_header_read (ctx, header_addr, &sh);
 		PJ *pj = pj_new ();
 		if (!pj) {
 			return strdup ("{\"error\":\"Failed to create JSON\"}");
@@ -6605,7 +6591,8 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		if (!addrs[si]) {
 			continue;
 		}
-		SnapshotHeader sh = read_snapshot_hdr (ctx, addrs[si]);
+		DartSnapshotHeader sh = { 0 };
+		dart_snapshot_header_read (ctx, addrs[si], &sh);
 		if (!sh.ok) {
 			r_strbuf_appendf (sb, "\n%s Snapshot: failed to read header at 0x%" PFMT64x "\n", labels[si], (ut64)addrs[si]);
 			continue;

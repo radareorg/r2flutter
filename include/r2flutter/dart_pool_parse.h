@@ -135,8 +135,6 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt);
 // ============================================================================
 
 RList *dart_pool_extract_classes(DartCtx *ctx);
-RList *dart_pool_extract_fields(DartCtx *ctx, ut64 class_ref);
-RList *dart_pool_get_class_hierarchy(DartCtx *ctx, ut64 class_ref);
 char *dart_pool_dump_classes(DartCtx *ctx, int fmt);
 
 // Free functions
