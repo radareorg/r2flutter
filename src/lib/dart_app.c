@@ -1,11 +1,14 @@
 /* r2flutter - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
 
 #include <ctype.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <r_core.h>
 #include <r_list.h>
+#include <r_util/r_buf.h>
+#include <r_util/r_file.h>
 #include <r_util/r_name.h>
 #include <r_util/r_str.h>
 #include "../../include/r2flutter/dart_app.h"
@@ -15,6 +18,14 @@
 extern int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
 
 typedef unsigned long long ull;
+
+enum {
+	DART_MACHO_MH_MAGIC_64 = 0xfeedfacf,
+	DART_MACHO_FAT_MAGIC = 0xcafebabe,
+	DART_MACHO_FAT_MAGIC_64 = 0xcafebabf,
+	DART_MACHO_LC_NOTE = 0x31,
+	DART_MACHO_CPU_TYPE_ARM64 = 0x0100000c,
+};
 
 enum {
 	DART_FN_KIND_REGULAR = 0,
@@ -58,6 +69,180 @@ static const DartOpNameMap op_name_map[] = {
 	{ "<<", "shal" },
 	{ NULL, NULL }
 };
+
+static bool buf_range_fits(ut64 off, ut64 size, ut64 fsize) {
+	return size && off <= fsize && size <= fsize - off;
+}
+
+static bool buf_looks_like_macho64_at(RBuffer *b, ut64 off) {
+	return r_buf_read_le32_at (b, off) == DART_MACHO_MH_MAGIC_64;
+}
+
+static bool find_dart_note_in_macho(RBuffer *b, ut64 fsize, ut64 macho_off, DartAppEmbeddedPayload *out) {
+	if (!buf_looks_like_macho64_at (b, macho_off)) {
+		return false;
+	}
+	ut32 ncmds = r_buf_read_le32_at (b, macho_off + 16);
+	ut32 sizeofcmds = r_buf_read_le32_at (b, macho_off + 20);
+	ut64 cmds = macho_off + 32;
+	if (!buf_range_fits (cmds, sizeofcmds, fsize)) {
+		return false;
+	}
+	ut64 end = cmds + sizeofcmds;
+	ut64 cur = cmds;
+	for (ut32 i = 0; i < ncmds && cur + 8 <= end; i++) {
+		ut32 cmd = r_buf_read_le32_at (b, cur);
+		ut32 cmdsize = r_buf_read_le32_at (b, cur + 4);
+		if (cmdsize < 8 || cur + cmdsize > end) {
+			return false;
+		}
+		if (cmd == DART_MACHO_LC_NOTE && cmdsize >= 40) {
+			char owner[17] = { 0 };
+			if (r_buf_read_at (b, cur + 8, (ut8 *)owner, 16) != 16) {
+				return false;
+			}
+			if (!strcmp (owner, "__dart_app_snap")) {
+				ut64 payload_off = r_buf_read_le64_at (b, cur + 24);
+				ut64 payload_size = r_buf_read_le64_at (b, cur + 32);
+				ut64 abs_payload = payload_off;
+				if (!buf_range_fits (abs_payload, payload_size, fsize) ||
+					!buf_looks_like_macho64_at (b, abs_payload)) {
+					ut64 slice_relative = macho_off + payload_off;
+					if (!buf_range_fits (slice_relative, payload_size, fsize) ||
+						!buf_looks_like_macho64_at (b, slice_relative)) {
+						return false;
+					}
+					abs_payload = slice_relative;
+				}
+				memset (out, 0, sizeof (*out));
+				r_str_ncpy (out->owner, owner, sizeof (out->owner));
+				out->payload_offset = abs_payload;
+				out->payload_size = payload_size;
+				out->macho_offset = macho_off;
+				return true;
+			}
+		}
+		cur += cmdsize;
+	}
+	return false;
+}
+
+static bool find_dart_note_in_fat_macho(RBuffer *b, ut64 fsize, bool fat64, DartAppEmbeddedPayload *out) {
+	ut32 nfat = r_buf_read_be32_at (b, 4);
+	if (!nfat || nfat > 64) {
+		return false;
+	}
+	const ut64 arch_size = fat64? 32: 20;
+	for (int pass = 0; pass < 2; pass++) {
+		for (ut32 i = 0; i < nfat; i++) {
+			ut64 arch_off = 8 + ((ut64)i * arch_size);
+			if (!buf_range_fits (arch_off, arch_size, fsize)) {
+				return false;
+			}
+			ut32 cputype = r_buf_read_be32_at (b, arch_off);
+			if (pass == 0 && cputype != DART_MACHO_CPU_TYPE_ARM64) {
+				continue;
+			}
+			ut64 slice_off = fat64? r_buf_read_be64_at (b, arch_off + 8): r_buf_read_be32_at (b, arch_off + 8);
+			ut64 slice_size = fat64? r_buf_read_be64_at (b, arch_off + 16): r_buf_read_be32_at (b, arch_off + 12);
+			if (!buf_range_fits (slice_off, slice_size, fsize)) {
+				continue;
+			}
+			if (find_dart_note_in_macho (b, fsize, slice_off, out)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool dart_app_find_macho_embedded_dart(const char *path, DartAppEmbeddedPayload *out) {
+	if (R_STR_ISEMPTY (path) || !out) {
+		return false;
+	}
+	memset (out, 0, sizeof (*out));
+	RBuffer *b = r_buf_new_file (path, O_RDONLY, 0);
+	if (!b) {
+		return false;
+	}
+	ut64 fsize = r_buf_size (b);
+	bool found = false;
+	if (fsize >= 32) {
+		ut32 le_magic = r_buf_read_le32_at (b, 0);
+		ut32 be_magic = r_buf_read_be32_at (b, 0);
+		if (le_magic == DART_MACHO_MH_MAGIC_64) {
+			found = find_dart_note_in_macho (b, fsize, 0, out);
+		} else if (be_magic == DART_MACHO_FAT_MAGIC || be_magic == DART_MACHO_FAT_MAGIC_64) {
+			found = find_dart_note_in_fat_macho (b, fsize, be_magic == DART_MACHO_FAT_MAGIC_64, out);
+		}
+	}
+	r_unref (b);
+	return found;
+}
+
+static FILE *try_open_temp_path(char *tmpname, char **out_path) {
+	FILE *out = tmpname? fopen (tmpname, "wb"): NULL;
+	if (out) {
+		*out_path = tmpname;
+		return out;
+	}
+	free (tmpname);
+	return NULL;
+}
+
+static FILE *open_payload_temp(char **out_path) {
+	FILE *out = try_open_temp_path (r_file_temp ("r2flutter-dart-app-snap"), out_path);
+	if (!out) {
+		char *name = r_str_newf ("r2flutter-dart-app-snap.%" PFMT64x, (ut64)r_time_now ());
+		char *path = name? r_file_new (P_tmpdir, name, NULL): NULL;
+		free (name);
+		out = try_open_temp_path (path, out_path);
+	}
+	return out;
+}
+
+char *dart_app_extract_embedded_payload(const char *path, const DartAppEmbeddedPayload *payload) {
+	if (R_STR_ISEMPTY (path) || !payload || !payload->payload_size) {
+		return NULL;
+	}
+	FILE *in = fopen (path, "rb");
+	if (!in) {
+		R_LOG_ERROR ("Cannot open input file: %s", path);
+		return NULL;
+	}
+	char *tmpname = NULL;
+	FILE *out = open_payload_temp (&tmpname);
+	if (!out) {
+		R_LOG_ERROR ("Cannot open temporary output file");
+		fclose (in);
+		return NULL;
+	}
+	bool ok = fseeko (in, (off_t)payload->payload_offset, SEEK_SET) == 0;
+	ut64 remaining = payload->payload_size;
+	ut8 buf[65536];
+	while (ok && remaining > 0) {
+		size_t want = remaining > sizeof (buf)? sizeof (buf): (size_t)remaining;
+		size_t got = fread (buf, 1, want, in);
+		if (got != want || fwrite (buf, 1, got, out) != got) {
+			ok = false;
+			break;
+		}
+		remaining -= got;
+	}
+	if (fclose (out) != 0) {
+		ok = false;
+	}
+	fclose (in);
+	if (!ok) {
+		R_LOG_ERROR ("Failed to copy embedded payload from 0x%" PFMT64x " size 0x%" PFMT64x,
+			payload->payload_offset,
+			payload->payload_size);
+		r_file_rm (tmpname);
+		free (tmpname);
+		return NULL;
+	}
+	return tmpname;
+}
 
 static void free_dart_function(void *p) {
 	DartFunction *fn = (DartFunction *)p;

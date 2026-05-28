@@ -2,6 +2,47 @@
 
 This document summarizes key technical findings discovered during the implementation of class extraction features in r2flutter.
 
+## macOS `dart compile exe` Uses An `LC_NOTE` Inner Mach-O
+
+**Finding**: Standalone macOS binaries produced by `dart compile exe` are a two-level container: the outer executable is the statically linked Dart VM, and the actual AOT app is an ARM64 Mach-O dylib stored as opaque bytes in an `LC_NOTE` named `__dart_app_snap`.
+
+The note gives a raw file offset and size. The inner Mach-O then exposes the usual four Dart snapshot symbols:
+
+- `_kDartVmSnapshotInstructions`
+- `_kDartVmSnapshotData`
+- `_kDartIsolateSnapshotInstructions`
+- `_kDartIsolateSnapshotData`
+
+Static tools that only map `LC_SEGMENT_64` commands will analyze the Dart VM shell and miss the app code entirely. `r2flutter` should therefore treat `__dart_app_snap` as a first-class snapshot container: detect the note in the outer Mach-O, extract or virtually map the inner Mach-O, and run the existing snapshot discovery on that inner image.
+
+**Implementation implications**:
+
+- add a Mach-O `LC_NOTE` scanner for `__dart_app_snap`
+- expose a CLI/action that identifies standalone Dart executables and reports the embedded payload offset/size
+- support transparent analysis of the inner Mach-O instead of requiring users to manually carve it out
+- keep address reporting explicit: recovered app functions are relative to the inner Mach-O / isolate instructions, while outer-process runtime addresses need an extra mapping step
+- add a regression fixture for an outer `dart compile exe` binary, not only the existing `test/bins/macos/hello/hello.aot` inner Mach-O
+
+**Platform note**: The analyzed Dart `3.11.4_macos_arm64` standalone sample uses `no-compressed-pointers`, unlike Android Flutter AOT builds. The snapshot feature string should drive pointer-width decisions instead of assuming all modern non-iOS targets use compressed pointers.
+
+## macOS Standalone Dart Has Useful Hunting Signals
+
+**Finding**: The most reliable static indicator for standalone macOS Dart AOT executables is the `LC_NOTE` owner string `__dart_app_snap`. Secondary indicators are the Dart VM strings/symbols such as `kDartVmSnapshotData`, `kDartIsolateSnapshotData`, `Dart VM`, and `DART_VM_OPTIONS`.
+
+Flutter macOS apps differ structurally: their Dart app snapshot lives in `App.framework`, and the outer app usually depends on `FlutterMacOS.framework`. A standalone `dart compile exe` binary has no Flutter framework dependency.
+
+**Implementation implications**:
+
+- `--dump-header` JSON should include container metadata such as `container:"macho-lc-note"`, `note_owner:"__dart_app_snap"`, `payload_offset`, and `payload_size` when present
+- a future `--triage` mode can report `standalone-dart-macos` vs `flutter-macos-app` based on `LC_NOTE`, snapshot symbols, and Flutter framework imports
+- string triage should prioritize the inner Mach-O object pool; this is where hardcoded URLs, paths, and keys appear even when the outer VM binary looks uninteresting
+
+## `LC_NOTE` Reflective Loading Affects Dynamic Assumptions
+
+**Finding**: The macOS standalone Dart runtime loads the inner Mach-O manually from `LC_NOTE`, maps executable memory with `MAP_JIT`, and does not register the payload through dyld. As a result, the app code may not appear in normal module lists or dependency views.
+
+**Implication**: `r2flutter` should not rely on dynamic module enumeration or loader-provided module boundaries for this format. The static file offset in `LC_NOTE` is the stable source of truth, and any Frida/r2 script output should document that hooks need to account for anonymous runtime mappings.
+
 ## Field Flags Can Reuse Raw `kind_bits`
 
 **Finding**: `DartFieldInfo.flags` does not need a second packed enum layout.

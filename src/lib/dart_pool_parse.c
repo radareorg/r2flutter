@@ -3470,14 +3470,13 @@ static int find_snapshots(DartCtx *ctx) {
 		return 0;
 	}
 
-	RList *sections = r_bin_get_sections (core->bin);
+	RVecRBinSection *sections = r_bin_get_sections_vec (core->bin);
 	const uint32_t kMagic = 0xdcdcf5f5;
 	ut64 found_addrs[32];
 	int found_cnt = 0;
 	if (sections) {
-		RListIter *it;
 		RBinSection *sec;
-		r_list_foreach (sections, it, sec) {
+		R_VEC_FOREACH (sections, sec) {
 			if (!sec || !sec->vaddr || !sec->vsize) {
 				continue;
 			}
@@ -5613,13 +5612,12 @@ static void scan_snapshot_region(DartCtx *ctx, ut64 start, ut64 size, RList *lis
 	if (end <= start) {
 		return;
 	}
-	RBinObject *bobj = r_bin_cur_object (ctx->core->bin);
-	if (!bobj || !bobj->sections) {
+	RVecRBinSection *sections = r_bin_get_sections_vec (ctx->core->bin);
+	if (!sections) {
 		return;
 	}
-	RListIter *iter;
 	RBinSection *sec;
-	r_list_foreach (bobj->sections, iter, sec) {
+	R_VEC_FOREACH (sections, sec) {
 		if (!should_scan_section (sec)) {
 			continue;
 		}
@@ -5764,8 +5762,8 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 	if (!seen_addrs) {
 		return string_list;
 	}
-	RBinObject *bobj = r_bin_cur_object (ctx->core->bin);
-	if (!bobj || !bobj->sections) {
+	RVecRBinSection *sections = r_bin_get_sections_vec (ctx->core->bin);
+	if (!sections) {
 		ht_up_free (seen_addrs);
 		return string_list;
 	}
@@ -5797,9 +5795,8 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 		}
 		dart_ctx_fini_layout (ctx, layout_owned);
 	}
-	RListIter *iter;
 	RBinSection *sec;
-	r_list_foreach (bobj->sections, iter, sec) {
+	R_VEC_FOREACH (sections, sec) {
 		if (!should_scan_section (sec)) {
 			continue;
 		}
@@ -6505,6 +6502,16 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		pj_kn (pj, "vm_instr", ctx->vm_instr);
 		pj_kn (pj, "iso_data", ctx->iso_data);
 		pj_kn (pj, "iso_instr", ctx->iso_instr);
+		if (ctx->container_kind[0]) {
+			pj_k (pj, "container");
+			pj_o (pj);
+			pj_ks (pj, "kind", ctx->container_kind);
+			pj_ks (pj, "note_owner", ctx->container_note_owner);
+			pj_kn (pj, "payload_offset", ctx->container_payload_offset);
+			pj_kn (pj, "payload_size", ctx->container_payload_size);
+			pj_kn (pj, "macho_offset", ctx->container_macho_offset);
+			pj_end (pj);
+		}
 		pj_k (pj, "cluster");
 		pj_o (pj);
 		pj_kn (pj, "base", sh.nb);
@@ -6547,13 +6554,17 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		r_strbuf_appendf (sb, "'f dart.vm_instr = 0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
 		r_strbuf_appendf (sb, "'f dart.iso_data = 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
 		r_strbuf_appendf (sb, "'f dart.iso_instr = 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+		if (ctx->container_kind[0]) {
+			r_strbuf_appendf (sb, "'f dart.container_payload = 0x%" PFMT64x "\n", (ut64)ctx->container_payload_offset);
+			r_strbuf_appendf (sb, "'f dart.container_payload_size = 0x%" PFMT64x "\n", (ut64)ctx->container_payload_size);
+		}
 		// Add comments with metadata
 		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart snapshot hash: %s\n", (ut64)ctx->vm_data, ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
 		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart version: %s\n", (ut64)ctx->vm_data, version? version: "unknown");
 		if (ctx->layout) {
 			const DartVerLayout *l = ctx->layout;
 			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", (ut64)ctx->vm_data, dart_tag_style_to_string (l->tag_style));
-			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Alignment: %d, CWS: %d\n", (ut64)ctx->vm_data, l->max_alignment, l->compressed_word_size);
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Alignment: %d, CWS: %d\n", (ut64)ctx->vm_data, l->max_alignment, ctx->compressed_word_size);
 		}
 		return r_strbuf_drain (sb);
 	}
@@ -6566,7 +6577,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	if (ctx->layout) {
 		const DartVerLayout *l = ctx->layout;
 		r_strbuf_appendf (sb, "tag_style:     %s\n", dart_tag_style_to_string_verbose (l->tag_style));
-		r_strbuf_appendf (sb, "cws:           %d\n", l->compressed_word_size);
+		r_strbuf_appendf (sb, "cws:           %d\n", ctx->compressed_word_size);
 		r_strbuf_appendf (sb, "alignment:     %d\n", l->max_alignment);
 		r_strbuf_appendf (sb, "header_fields: %d\n", l->header_fields);
 		r_strbuf_appendf (sb, "it_capacity:   %" PRIu64 "\n", (uint64_t)l->it_cap);
@@ -6578,6 +6589,15 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	r_strbuf_appendf (sb, "vm_instr:      0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
 	r_strbuf_appendf (sb, "iso_data:      0x%" PFMT64x "\n", (ut64)ctx->iso_data);
 	r_strbuf_appendf (sb, "iso_instr:     0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+	if (ctx->container_kind[0]) {
+		r_strbuf_appendf (sb, "\nContainer\n");
+		r_strbuf_appendf (sb, "---------\n");
+		r_strbuf_appendf (sb, "kind:          %s\n", ctx->container_kind);
+		r_strbuf_appendf (sb, "note_owner:    %s\n", ctx->container_note_owner[0]? ctx->container_note_owner: "(unknown)");
+		r_strbuf_appendf (sb, "payload_off:   0x%" PFMT64x "\n", (ut64)ctx->container_payload_offset);
+		r_strbuf_appendf (sb, "payload_size:  %" PRIu64 " bytes\n", (uint64_t)ctx->container_payload_size);
+		r_strbuf_appendf (sb, "macho_off:     0x%" PFMT64x "\n", (ut64)ctx->container_macho_offset);
+	}
 
 	ut64 addrs[2] = { ctx->vm_data, ctx->iso_data };
 	const char *labels[2] = { "VM", "Isolate" };

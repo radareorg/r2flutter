@@ -1,6 +1,7 @@
 build/
 bin
 *.o
+*.d
 *.so
 *.dylib
 *.swp

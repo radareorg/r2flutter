@@ -35,6 +35,11 @@ typedef struct {
 	ut64 vm_instr;
 	ut64 iso_data;
 	ut64 iso_instr;
+	char container_kind[32];
+	char container_note_owner[17];
+	ut64 container_payload_offset;
+	ut64 container_payload_size;
+	ut64 container_macho_offset;
 	char snapshot_hash[33];
 	const DartVerLayout *layout;
 	int compressed_word_size;

@@ -46,7 +46,23 @@ static void print_usage(const char *argv0) {
 	printf (usage_text, argv0);
 }
 
-static char *find_libapp(const char *s) {
+static void free_resolved_path(char *path, bool extracted_inner) {
+	if (extracted_inner) {
+		r_file_rm (path);
+	}
+	free (path);
+}
+
+static void set_embedded_payload_ctx(DartCtx *dctx, const DartAppEmbeddedPayload *payload) {
+	r_str_ncpy (dctx->container_kind, "macho-lc-note", sizeof (dctx->container_kind));
+	r_str_ncpy (dctx->container_note_owner, payload->owner, sizeof (dctx->container_note_owner));
+	dctx->container_payload_offset = payload->payload_offset;
+	dctx->container_payload_size = payload->payload_size;
+	dctx->container_macho_offset = payload->macho_offset;
+}
+
+static char *resolve_input_path(const char *s, DartCtx *dctx, bool *extracted_inner) {
+	*extracted_inner = false;
 	if (r_file_is_directory (s)) {
 		char *candidate = r_str_newf ("%s/libapp.so", s); // Android
 		if (r_file_exists (candidate)) {
@@ -58,6 +74,20 @@ static char *find_libapp(const char *s) {
 			return candidate;
 		}
 	} else if (r_file_exists (s)) {
+		DartAppEmbeddedPayload payload;
+		if (dart_app_find_macho_embedded_dart (s, &payload)) {
+			char *inner = dart_app_extract_embedded_payload (s, &payload);
+			if (!inner) {
+				R_LOG_ERROR ("Failed to extract embedded Dart Mach-O from: %s", s);
+				return NULL;
+			}
+			set_embedded_payload_ctx (dctx, &payload);
+			*extracted_inner = true;
+			if (dctx->verbose) {
+				fprintf (stderr, "[r2flutter] extracted %s payload 0x%" PFMT64x "..0x%" PFMT64x " to %s\n", payload.owner, payload.payload_offset, payload.payload_offset + payload.payload_size, inner);
+			}
+			return inner;
+		}
 		return strdup (s);
 	}
 	return NULL;
@@ -149,7 +179,8 @@ int main(int argc, char **argv) {
 	}
 	dart_obf_fini (&dctx);
 
-	char *libapp_path = find_libapp (libapp_path_in);
+	bool extracted_inner = false;
+	char *libapp_path = resolve_input_path (libapp_path_in, &dctx, &extracted_inner);
 	if (!libapp_path) {
 		R_LOG_ERROR ("File or directory does not exist: %s", libapp_path_in);
 		return 1;
@@ -158,14 +189,14 @@ int main(int argc, char **argv) {
 	RCore *core = r_core_new ();
 	if (!core) {
 		R_LOG_ERROR ("Failed to create radare2 core");
-		free (libapp_path);
+		free_resolved_path (libapp_path, extracted_inner);
 		return 1;
 	}
 
 	if (!r_core_file_open (core, libapp_path, 0, 0)) {
 		R_LOG_ERROR ("Failed to open file: %s", libapp_path);
 		r_core_free (core);
-		free (libapp_path);
+		free_resolved_path (libapp_path, extracted_inner);
 		return 1;
 	}
 	r_core_bin_load (core, NULL, 0);
@@ -176,7 +207,7 @@ int main(int argc, char **argv) {
 	if (!app) {
 		R_LOG_ERROR ("Failed to create DartApp");
 		r_core_free (core);
-		free (libapp_path);
+		free_resolved_path (libapp_path, extracted_inner);
 		return 1;
 	}
 
@@ -241,7 +272,7 @@ int main(int argc, char **argv) {
 	dart_app_free (app);
 	dart_obf_fini (&dctx);
 	r_core_free (core);
-	free (libapp_path);
+	free_resolved_path (libapp_path, extracted_inner);
 
 	return ret;
 }
