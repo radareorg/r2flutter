@@ -1,0 +1,37 @@
+NAME=dump-it-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter --limit 3 --dump-it bins/android/mafia 2>/dev/null
+EOF
+EXPECT=<<EOF
+# length=37258 first_entry_with_code=0 canonical_stack_map_entries_offset=827131
+0 0x5b69c0 code method.DateTime.compareTo
+1 0x5b6aa4 code method.Duration.compareTo
+2 0x5b6b64 code method.Duration.dyn:_
+EOF
+RUN
+
+NAME=json-it-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j --limit 2 --dump-it bins/android/mafia 2>/dev/null
+EOF
+EXPECT=<<EOF
+{"length":37258,"first_entry_with_code":0,"canonical_stack_map_entries_offset":827131,"entries":[{"index":0,"code_index":0,"address":5990848,"pc_offset":128,"stack_map_offset":762000,"kind":"code","name":"method.DateTime.compareTo"},{"index":1,"code_index":1,"address":5991076,"pc_offset":356,"stack_map_offset":762043,"kind":"code","name":"method.Duration.compareTo"}]}
+EOF
+RUN
+
+NAME=r2-it-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -r --limit 2 --dump-it bins/android/mafia 2>/dev/null
+EOF
+EXPECT=<<EOF
+# Dart InstructionTable entries
+# length=37258 first_entry_with_code=0 canonical_stack_map_entries_offset=827131
+# it[0] method.DateTime.compareTo
+f it.code_0 = 0x5b69c0
+# it[1] method.Duration.compareTo
+f it.code_1 = 0x5b6aa4
+EOF
+RUN
