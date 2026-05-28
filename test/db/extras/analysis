@@ -1,5 +1,6 @@
 NAME=analysis android
 FILE=bins/android/first/libapp.so
+ARGS=-e bin.relocs.apply=true
 CMDS=<<EOF
 r2flutter -a
 f~dart.class
