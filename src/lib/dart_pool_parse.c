@@ -1700,33 +1700,11 @@ static int modern_typed_data_element_size(DartCtx *ctx, int cid) {
 }
 
 static bool modern_is_simple_alloc_cid(int cid) {
-	switch (cid) {
-	case 46:
-	case 57:
-	case 62:
-	case 64:
-	case 65:
-	case 66:
-	case 74:
-	case 75:
-	case 76:
-	case 77:
-	case 78:
-	case 79:
-	case 80:
-	case 81:
-	case 83:
-	case 84:
-	case 85:
-	case 86:
-	case 87:
-	case 88:
-	case 89:
-	case 92:
-		return true;
-	default:
-		return false;
-	}
+	return cid == 46 || cid == 57 || cid == 62 ||
+		(cid >= 64 && cid <= 66) ||
+		(cid >= 74 && cid <= 81) ||
+		(cid >= 83 && cid <= 89) ||
+		cid == 92;
 }
 
 static bool modern_skip_n_bytes(ClusterStream *s, ut64 len) {
@@ -1991,17 +1969,9 @@ static bool modern_skip_alloc(ClusterStream *s, DartCtx *ctx, ModernClusterMeta 
 	}
 }
 
-static ModernFillSpec modern_fill_spec_unknown(void) {
+static ModernFillSpec modern_fill_spec_make(ModernFillKind kind, int num_refs, int name_idx, int owner_idx, int scalar_count, ModernScalarOp a, ModernScalarOp b, ModernScalarOp c, ModernScalarOp d) {
 	ModernFillSpec spec = { 0 };
-	spec.kind = MODERN_FILL_UNKNOWN;
-	spec.name_idx = -1;
-	spec.owner_idx = -1;
-	return spec;
-}
-
-static ModernFillSpec modern_fill_spec_refs(int num_refs, int name_idx, int owner_idx, int scalar_count, ModernScalarOp a, ModernScalarOp b, ModernScalarOp c, ModernScalarOp d) {
-	ModernFillSpec spec = { 0 };
-	spec.kind = MODERN_FILL_REFS;
+	spec.kind = kind;
 	spec.num_refs = num_refs;
 	spec.name_idx = name_idx;
 	spec.owner_idx = owner_idx;
@@ -2021,187 +1991,53 @@ static ModernFillSpec modern_fill_spec_refs(int num_refs, int name_idx, int owne
 	return spec;
 }
 
+static ModernFillSpec modern_fill_spec_kind(ModernFillKind kind) {
+	return modern_fill_spec_make (kind, 0, -1, -1, 0, 0, 0, 0, 0);
+}
+
+static ModernFillSpec modern_fill_spec_unknown(void) {
+	return modern_fill_spec_kind (MODERN_FILL_UNKNOWN);
+}
+
+static ModernFillSpec modern_fill_spec_refs(int num_refs, int name_idx, int owner_idx, int scalar_count, ModernScalarOp a, ModernScalarOp b, ModernScalarOp c, ModernScalarOp d) {
+	return modern_fill_spec_make (MODERN_FILL_REFS, num_refs, name_idx, owner_idx, scalar_count, a, b, c, d);
+}
+
+typedef struct {
+	int cid;
+	ModernFillKind kind;
+	int num_refs;
+	int name_idx;
+	int owner_idx;
+	int scalar_count;
+	ModernScalarOp scalars[4];
+} ModernFillSpecRule;
+
+static ModernFillSpec modern_fill_spec_from_rule(const ModernFillSpecRule *rule) {
+	return modern_fill_spec_make (rule->kind, rule->num_refs, rule->name_idx, rule->owner_idx, rule->scalar_count, rule->scalars[0], rule->scalars[1], rule->scalars[2], rule->scalars[3]);
+}
+
 static ModernFillSpec modern_get_fill_spec(DartCtx *ctx, int cid) {
 	if (cid == modern_cid_string (ctx) || cid == modern_cid_one_byte_string (ctx) || cid == modern_cid_two_byte_string (ctx)) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_NONE;
-		spec.name_idx = -1;
-		spec.owner_idx = -1;
-		return spec;
+		return modern_fill_spec_kind (MODERN_FILL_NONE);
 	}
 	if (cid == modern_cid_class (ctx)) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_CLASS;
-		spec.num_refs = 13;
-		spec.name_idx = 0;
-		spec.owner_idx = -1;
-		return spec;
+		return modern_fill_spec_make (MODERN_FILL_CLASS, 13, 0, -1, 0, 0, 0, 0, 0);
 	}
 	if (cid == modern_cid_function (ctx)) {
 		return modern_fill_spec_refs (4, 0, 1, 2, MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_TAGGED32, 0, 0);
 	}
-	if (cid == 8) {
-		return modern_fill_spec_refs (4, -1, -1, 0, 0, 0, 0, 0);
-	}
 	if (cid == modern_cid_mint (ctx)) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_NONE;
-		spec.name_idx = -1;
-		spec.owner_idx = -1;
-		return spec;
-	}
-	if (cid == 16) {
-		return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
-	}
-	if (cid == 62) {
-		return modern_fill_spec_refs (0, -1, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
-	}
-	if (cid == 64 || cid == 65) {
-		return modern_fill_spec_refs (0, -1, -1, 4, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32);
-	}
-	if (cid == 66) {
-		return modern_fill_spec_refs (0, -1, -1, 2, MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64, 0, 0);
-	}
-	if (cid == 6) {
-		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
-	}
-	if (cid == 9) {
-		return modern_fill_spec_refs (2, -1, -1, 1, MODERN_SCALAR_UNSIGNED, 0, 0, 0);
-	}
-	if (cid == 10) {
-		return modern_fill_spec_refs (4, -1, -1, 2, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8, 0, 0);
-	}
-	if (cid == 11) {
-		return modern_fill_spec_refs (4, 0, 1, 2, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_REFID, 0, 0);
-	}
-	if (cid == 12) {
-		return modern_fill_spec_refs (1, 0, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
-	}
-	if (cid == 13) {
-		return modern_fill_spec_refs (10, 0, -1, 4, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_INT8, MODERN_SCALAR_UINT8);
-	}
-	if (cid == 14) {
-		return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
-	}
-	if (cid == 15) {
-		return modern_fill_spec_refs (9, -1, -1, 0, 0, 0, 0, 0);
+		return modern_fill_spec_kind (MODERN_FILL_NONE);
 	}
 	if (cid == modern_cid_code (ctx)) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_CODE;
-		spec.name_idx = -1;
-		spec.owner_idx = -1;
-		return spec;
+		return modern_fill_spec_kind (MODERN_FILL_CODE);
 	}
 	if (cid == modern_cid_object_pool (ctx)) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_OBJECT_POOL;
-		spec.name_idx = -1;
-		spec.owner_idx = -1;
-		return spec;
+		return modern_fill_spec_kind (MODERN_FILL_OBJECT_POOL);
 	}
 	if (cid == modern_cid_array (ctx) || cid == modern_cid_immutable_array (ctx)) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_ARRAY;
-		return spec;
-	}
-	if (cid == 17) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_WEAK_ARRAY;
-		return spec;
-	}
-	if (cid == 47) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_TYPE_ARGUMENTS;
-		return spec;
-	}
-	if (cid == 28) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_EXCEPTION_HANDLERS;
-		return spec;
-	}
-	if (cid == 29) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_CONTEXT;
-		return spec;
-	}
-	if (cid == 30) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_CONTEXT_SCOPE;
-		return spec;
-	}
-	if (cid == 24 || cid == 25 || cid == 26) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_INLINE_BYTES;
-		return spec;
-	}
-	if (cid == 31) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_NONE;
-		spec.name_idx = -1;
-		spec.owner_idx = -1;
-		return spec;
-	}
-	if (cid == 32) {
-		return modern_fill_spec_refs (1, -1, -1, 2, MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64, 0, 0);
-	}
-	if (cid == 33) {
-		return modern_fill_spec_refs (2, 0, -1, 1, MODERN_SCALAR_BOOL, 0, 0, 0);
-	}
-	if (cid == 34) {
-		return modern_fill_spec_refs (0, -1, -1, 2, MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64, 0, 0);
-	}
-	if (cid == 35) {
-		return modern_fill_spec_refs (2, 0, -1, 1, MODERN_SCALAR_BOOL, 0, 0, 0);
-	}
-	if (cid == 36) {
-		return modern_fill_spec_refs (3, -1, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
-	}
-	if (cid == 37) {
-		return modern_fill_spec_refs (4, -1, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
-	}
-	if (cid == 38) {
-		return modern_fill_spec_refs (1, -1, -1, 2, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, 0, 0);
-	}
-	if (cid == 39) {
-		return modern_fill_spec_refs (1, -1, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
-	}
-	if (cid == 42) {
-		return modern_fill_spec_refs (4, -1, -1, 3, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL, MODERN_SCALAR_INT8, 0);
-	}
-	if (cid == 43) {
-		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
-	}
-	if (cid == 46) {
-		return modern_fill_spec_refs (2, 0, -1, 2, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL, 0, 0);
-	}
-	if (cid == 48) {
-		return modern_fill_spec_refs (3, -1, -1, 1, MODERN_SCALAR_UNSIGNED, 0, 0, 0);
-	}
-	if (cid == 49) {
-		return modern_fill_spec_refs (3, -1, -1, 1, MODERN_SCALAR_UNSIGNED, 0, 0, 0);
-	}
-	if (cid == 50) {
-		return modern_fill_spec_refs (6, -1, -1, 3, MODERN_SCALAR_UINT8, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, 0);
-	}
-	if (cid == 51) {
-		return modern_fill_spec_refs (4, -1, -1, 1, MODERN_SCALAR_UINT8, 0, 0, 0);
-	}
-	if (cid == 52) {
-		return modern_fill_spec_refs (3, -1, -1, 3, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8, 0);
-	}
-	if (cid == 57) {
-		return modern_fill_spec_refs (6, -1, -1, 0, 0, 0, 0, 0);
-	}
-	if (cid == 67) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_RECORD;
-		return spec;
-	}
-	if (cid == 68) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_TYPED_DATA;
-		return spec;
+		return modern_fill_spec_kind (MODERN_FILL_ARRAY);
 	}
 	if (cid == modern_cid_typed_data_view (ctx)) {
 		return modern_fill_spec_refs (3, -1, -1, 0, 0, 0, 0, 0);
@@ -2210,68 +2046,87 @@ static ModernFillSpec modern_get_fill_spec(DartCtx *ctx, int cid) {
 		return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
 	}
 	if (cid == modern_cid_typed_data (ctx) || cid == 1) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_TYPED_DATA;
-		return spec;
+		return modern_fill_spec_kind (MODERN_FILL_TYPED_DATA);
 	}
 	int typed_rem = 0;
 	if (modern_typed_data_internal_kind (ctx, cid, &typed_rem)) {
 		if (typed_rem == 0) {
-			ModernFillSpec spec = { 0 };
-			spec.kind = MODERN_FILL_TYPED_DATA;
-			return spec;
+			return modern_fill_spec_kind (MODERN_FILL_TYPED_DATA);
 		}
 		if (typed_rem == 1) {
 			return modern_fill_spec_refs (3, -1, -1, 0, 0, 0, 0, 0);
 		}
-		if (typed_rem != 0) {
-			return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
-		}
-	}
-	if (cid == 74) {
-		return modern_fill_spec_refs (0, -1, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
-	}
-	if (cid == 75) {
-		return modern_fill_spec_refs (1, -1, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
-	}
-	if (cid == 76) {
-		return modern_fill_spec_refs (0, -1, -1, 2, MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64, 0, 0);
-	}
-	if (cid == 77) {
-		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
-	}
-	if (cid == 78) {
-		return modern_fill_spec_refs (2, -1, -1, 1, MODERN_SCALAR_TAGGED32, 0, 0, 0);
-	}
-	if (cid == 79) {
-		return modern_fill_spec_refs (6, -1, -1, 3, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_INT8, 0);
-	}
-	if (cid == 80 || cid == 81) {
-		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
-	}
-	if (cid == 83) {
-		return modern_fill_spec_refs (2, -1, -1, 0, 0, 0, 0, 0);
-	}
-	if (cid == 84) {
-		return modern_fill_spec_refs (1, 0, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
-	}
-	if (cid == 85) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_NONE;
-		spec.name_idx = -1;
-		spec.owner_idx = -1;
-		return spec;
-	}
-	if (cid == 86 || cid == 87 || cid == 88 || cid == 89) {
-		return modern_fill_spec_refs (5, -1, -1, 0, 0, 0, 0, 0);
+		return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
 	}
 	if (cid == modern_cid_growable_array (ctx)) {
 		return modern_fill_spec_refs (3, -1, -1, 0, 0, 0, 0, 0);
 	}
+	static const ModernFillSpecRule rules[] = {
+		{ 6, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
+		{ 8, MODERN_FILL_REFS, 4, -1, -1, 0, { 0 } },
+		{ 9, MODERN_FILL_REFS, 2, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
+		{ 10, MODERN_FILL_REFS, 4, -1, -1, 2, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8 } },
+		{ 11, MODERN_FILL_REFS, 4, 0, 1, 2, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_REFID } },
+		{ 12, MODERN_FILL_REFS, 1, 0, -1, 1, { MODERN_SCALAR_TAGGED32 } },
+		{ 13, MODERN_FILL_REFS, 10, 0, -1, 4, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_INT8, MODERN_SCALAR_UINT8 } },
+		{ 14, MODERN_FILL_REFS, 1, -1, -1, 0, { 0 } },
+		{ 15, MODERN_FILL_REFS, 9, -1, -1, 0, { 0 } },
+		{ 16, MODERN_FILL_REFS, 1, -1, -1, 0, { 0 } },
+		{ 17, MODERN_FILL_WEAK_ARRAY, 0, -1, -1, 0, { 0 } },
+		{ 24, MODERN_FILL_INLINE_BYTES, 0, -1, -1, 0, { 0 } },
+		{ 25, MODERN_FILL_INLINE_BYTES, 0, -1, -1, 0, { 0 } },
+		{ 26, MODERN_FILL_INLINE_BYTES, 0, -1, -1, 0, { 0 } },
+		{ 28, MODERN_FILL_EXCEPTION_HANDLERS, 0, -1, -1, 0, { 0 } },
+		{ 29, MODERN_FILL_CONTEXT, 0, -1, -1, 0, { 0 } },
+		{ 30, MODERN_FILL_CONTEXT_SCOPE, 0, -1, -1, 0, { 0 } },
+		{ 31, MODERN_FILL_NONE, 0, -1, -1, 0, { 0 } },
+		{ 32, MODERN_FILL_REFS, 1, -1, -1, 2, { MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64 } },
+		{ 33, MODERN_FILL_REFS, 2, 0, -1, 1, { MODERN_SCALAR_BOOL } },
+		{ 34, MODERN_FILL_REFS, 0, -1, -1, 2, { MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64 } },
+		{ 35, MODERN_FILL_REFS, 2, 0, -1, 1, { MODERN_SCALAR_BOOL } },
+		{ 36, MODERN_FILL_REFS, 3, -1, -1, 1, { MODERN_SCALAR_TAGGED32 } },
+		{ 37, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_TAGGED32 } },
+		{ 38, MODERN_FILL_REFS, 1, -1, -1, 2, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32 } },
+		{ 39, MODERN_FILL_REFS, 1, -1, -1, 1, { MODERN_SCALAR_TAGGED32 } },
+		{ 42, MODERN_FILL_REFS, 4, -1, -1, 3, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL, MODERN_SCALAR_INT8 } },
+		{ 43, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
+		{ 46, MODERN_FILL_REFS, 2, 0, -1, 2, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL } },
+		{ 47, MODERN_FILL_TYPE_ARGUMENTS, 0, -1, -1, 0, { 0 } },
+		{ 48, MODERN_FILL_REFS, 3, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
+		{ 49, MODERN_FILL_REFS, 3, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
+		{ 50, MODERN_FILL_REFS, 6, -1, -1, 3, { MODERN_SCALAR_UINT8, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32 } },
+		{ 51, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_UINT8 } },
+		{ 52, MODERN_FILL_REFS, 3, -1, -1, 3, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8 } },
+		{ 57, MODERN_FILL_REFS, 6, -1, -1, 0, { 0 } },
+		{ 62, MODERN_FILL_REFS, 0, -1, -1, 1, { MODERN_SCALAR_TAGGED64 } },
+		{ 64, MODERN_FILL_REFS, 0, -1, -1, 4, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32 } },
+		{ 65, MODERN_FILL_REFS, 0, -1, -1, 4, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32 } },
+		{ 66, MODERN_FILL_REFS, 0, -1, -1, 2, { MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64 } },
+		{ 67, MODERN_FILL_RECORD, 0, -1, -1, 0, { 0 } },
+		{ 68, MODERN_FILL_TYPED_DATA, 0, -1, -1, 0, { 0 } },
+		{ 74, MODERN_FILL_REFS, 0, -1, -1, 1, { MODERN_SCALAR_TAGGED64 } },
+		{ 75, MODERN_FILL_REFS, 1, -1, -1, 1, { MODERN_SCALAR_TAGGED64 } },
+		{ 76, MODERN_FILL_REFS, 0, -1, -1, 2, { MODERN_SCALAR_TAGGED64, MODERN_SCALAR_TAGGED64 } },
+		{ 77, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
+		{ 78, MODERN_FILL_REFS, 2, -1, -1, 1, { MODERN_SCALAR_TAGGED32 } },
+		{ 79, MODERN_FILL_REFS, 6, -1, -1, 3, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_INT8 } },
+		{ 80, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
+		{ 81, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
+		{ 83, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
+		{ 84, MODERN_FILL_REFS, 1, 0, -1, 1, { MODERN_SCALAR_TAGGED64 } },
+		{ 85, MODERN_FILL_NONE, 0, -1, -1, 0, { 0 } },
+		{ 86, MODERN_FILL_REFS, 5, -1, -1, 0, { 0 } },
+		{ 87, MODERN_FILL_REFS, 5, -1, -1, 0, { 0 } },
+		{ 88, MODERN_FILL_REFS, 5, -1, -1, 0, { 0 } },
+		{ 89, MODERN_FILL_REFS, 5, -1, -1, 0, { 0 } },
+};
+	for (size_t i = 0; i < R_ARRAY_SIZE (rules); i++) {
+		if (rules[i].cid == cid) {
+			return modern_fill_spec_from_rule (&rules[i]);
+		}
+	}
 	if (cid >= 45) {
-		ModernFillSpec spec = { 0 };
-		spec.kind = MODERN_FILL_INSTANCE;
-		return spec;
+		return modern_fill_spec_kind (MODERN_FILL_INSTANCE);
 	}
 	return modern_fill_spec_unknown ();
 }
@@ -4658,93 +4513,6 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	return class_list;
 }
 
-static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end) {
-	if (!ctx || !ctx->core || !class_list || data_start >= data_end) {
-		return;
-	}
-	ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 8;
-	bool use_compressed = (ctx->compressed_word_size == 4);
-	int cid_field = kFieldCid;
-	int field_count = 0;
-	int max_fields = 5000;
-	HtPP *class_by_name = ht_pp_new0 ();
-	RListIter *it;
-	DartClassInfo *ci;
-	r_list_foreach (class_list, it, ci) {
-		if (ci && ci->name) {
-			ht_pp_insert (class_by_name, ci->name, ci);
-		}
-	}
-	for (ut64 pos = data_start; pos < data_end - 48 && field_count < max_fields; pos += kAlign) {
-		ut8 hdr[48];
-		if (!read_mem (ctx, pos, hdr, sizeof (hdr))) {
-			continue;
-		}
-		ut64 header = r_read_le64 (hdr);
-		ut32 obj_cid = (header >> 12) & 0xFFFFF;
-		if ((int)obj_cid != cid_field) {
-			continue;
-		}
-		ut64 name_ptr = 0, owner_ptr = 0;
-		ut32 kind_bits = 0, offset_val = 0;
-		if (use_compressed) {
-			name_ptr = r_read_le32 (hdr + 8);
-			owner_ptr = r_read_le32 (hdr + 12);
-			kind_bits = r_read_le32 (hdr + 24);
-			offset_val = r_read_le32 (hdr + 28);
-		} else {
-			name_ptr = r_read_le64 (hdr + 8);
-			owner_ptr = r_read_le64 (hdr + 16);
-			kind_bits = r_read_le32 (hdr + 40);
-			offset_val = r_read_le32 (hdr + 44);
-		}
-		if (name_ptr == 0 || owner_ptr == 0) {
-			continue;
-		}
-		char field_name[128] = { 0 };
-		ut64 name_addr = use_compressed? (data_start + (name_ptr & ~3ULL)): name_ptr;
-		if (name_addr >= data_start && name_addr < data_end) {
-			if (!try_read_dart_string (ctx, name_addr, field_name, sizeof (field_name))) {
-				snprintf (field_name, sizeof (field_name), "field_%d", field_count);
-			}
-		}
-		dart_obf_apply_buf (ctx, field_name, sizeof (field_name));
-		char owner_name[128] = { 0 };
-		ut64 owner_addr = use_compressed? (data_start + (owner_ptr & ~3ULL)): owner_ptr;
-		if (owner_addr >= data_start && owner_addr < data_end) {
-			ut8 owner_hdr[32];
-			if (read_mem (ctx, owner_addr, owner_hdr, sizeof (owner_hdr))) {
-				ut64 owner_name_ptr = use_compressed? r_read_le32 (owner_hdr + 8): r_read_le64 (owner_hdr + 8);
-				ut64 owner_name_addr = use_compressed? (data_start + (owner_name_ptr & ~3ULL)): owner_name_ptr;
-				if (owner_name_addr >= data_start && owner_name_addr < data_end) {
-					try_read_dart_string (ctx, owner_name_addr, owner_name, sizeof (owner_name));
-				}
-			}
-		}
-		dart_obf_apply_buf (ctx, owner_name, sizeof (owner_name));
-		if (owner_name[0] && field_name[0]) {
-			field_count++;
-			DartClassInfo *owner_ci = (DartClassInfo *)ht_pp_find (class_by_name, owner_name, NULL);
-			if (owner_ci && owner_ci->fields) {
-				DartFieldInfo *fi = R_NEW0 (DartFieldInfo);
-				fi->name = strdup (field_name);
-				fi->offset = offset_val;
-				fi->flags = kind_bits;
-				r_list_append (owner_ci->fields, fi);
-				if (ctx->verbose > 1) {
-					fprintf (stderr, "[r2flutter] Found field: %s.%s offset=0x%x\n", owner_name, field_name, offset_val);
-				}
-			} else if (ctx->verbose > 1 && field_count < 64) {
-				fprintf (stderr, "[r2flutter] field owner miss: %s.%s\n", owner_name, field_name);
-			}
-		}
-	}
-	ht_pp_free (class_by_name);
-	if (ctx->verbose > 0) {
-		fprintf (stderr, "[r2flutter] Scanned %d fields from data image\n", field_count);
-	}
-}
-
 typedef struct {
 	ut32 entry_off;
 	ut32 unchecked_off;
@@ -4820,6 +4588,159 @@ static bool read_string_safe(DartCtx *ctx, ut64 addr, char *out, int outsz) {
 	return true;
 }
 
+typedef struct {
+	char name[128];
+	char owner_name[128];
+	ut32 flags;
+	ut32 offset;
+} DartScannedField;
+
+static bool read_data_image_field(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_end, int fallback_index, bool allow_fallback_name, bool apply_obf, DartScannedField *field) {
+	if (!ctx || !field || pos >= data_end || data_end - pos < 48) {
+		return false;
+	}
+	ut8 hdr[48];
+	if (!read_mem (ctx, pos, hdr, sizeof (hdr))) {
+		return false;
+	}
+	ut64 header = r_read_le64 (hdr);
+	if ((int) ((header >> 12) & 0xFFFFF) != kFieldCid) {
+		return false;
+	}
+	bool use_compressed = ctx->compressed_word_size == 4;
+	ut64 name_ptr = use_compressed? r_read_le32 (hdr + 8): r_read_le64 (hdr + 8);
+	ut64 owner_ptr = use_compressed? r_read_le32 (hdr + 12): r_read_le64 (hdr + 16);
+	if (!name_ptr || !owner_ptr) {
+		return false;
+	}
+	memset (field, 0, sizeof (*field));
+	field->flags = use_compressed? r_read_le32 (hdr + 24): r_read_le32 (hdr + 40);
+	field->offset = use_compressed? r_read_le32 (hdr + 28): r_read_le32 (hdr + 44);
+	ut64 name_addr = use_compressed? data_start + (name_ptr & ~3ULL): name_ptr;
+	if (name_addr < data_start || name_addr >= data_end) {
+		return false;
+	}
+	if (!try_read_dart_string (ctx, name_addr, field->name, sizeof (field->name))) {
+		if (!allow_fallback_name) {
+			return false;
+		}
+		snprintf (field->name, sizeof (field->name), "field_%d", fallback_index);
+	}
+	ut64 owner_addr = use_compressed? data_start + (owner_ptr & ~3ULL): owner_ptr;
+	if (owner_addr < data_start || owner_addr >= data_end) {
+		return false;
+	}
+	ut8 owner_hdr[32];
+	if (!read_mem (ctx, owner_addr, owner_hdr, sizeof (owner_hdr))) {
+		return false;
+	}
+	ut64 owner_name_ptr = use_compressed? r_read_le32 (owner_hdr + 8): r_read_le64 (owner_hdr + 8);
+	ut64 owner_name_addr = use_compressed? data_start + (owner_name_ptr & ~3ULL): owner_name_ptr;
+	if (owner_name_addr < data_start || owner_name_addr >= data_end || !try_read_dart_string (ctx, owner_name_addr, field->owner_name, sizeof (field->owner_name))) {
+		return false;
+	}
+	if (apply_obf) {
+		dart_obf_apply_buf (ctx, field->name, sizeof (field->name));
+		dart_obf_apply_buf (ctx, field->owner_name, sizeof (field->owner_name));
+	}
+	return field->name[0] && field->owner_name[0];
+}
+
+static void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end) {
+	if (!ctx || !ctx->core || !class_list || data_start >= data_end) {
+		return;
+	}
+	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 8;
+	int field_count = 0;
+	int max_fields = 5000;
+	HtPP *class_by_name = ht_pp_new0 ();
+	RListIter *it;
+	DartClassInfo *ci;
+	r_list_foreach (class_list, it, ci) {
+		if (ci && ci->name) {
+			ht_pp_insert (class_by_name, ci->name, ci);
+		}
+	}
+	for (ut64 pos = data_start; pos + 48 <= data_end && field_count < max_fields; pos += align) {
+		DartScannedField field;
+		if (!read_data_image_field (ctx, pos, data_start, data_end, field_count, true, true, &field)) {
+			continue;
+		}
+		field_count++;
+		DartClassInfo *owner_ci = (DartClassInfo *)ht_pp_find (class_by_name, field.owner_name, NULL);
+		if (owner_ci && owner_ci->fields) {
+			DartFieldInfo *fi = R_NEW0 (DartFieldInfo);
+			fi->name = strdup (field.name);
+			fi->offset = field.offset;
+			fi->flags = field.flags;
+			r_list_append (owner_ci->fields, fi);
+			if (ctx->verbose > 1) {
+				fprintf (stderr, "[r2flutter] Found field: %s.%s offset=0x%x\n", field.owner_name, field.name, field.offset);
+			}
+		} else if (ctx->verbose > 1 && field_count < 64) {
+			fprintf (stderr, "[r2flutter] field owner miss: %s.%s\n", field.owner_name, field.name);
+		}
+	}
+	ht_pp_free (class_by_name);
+	if (ctx->verbose > 0) {
+		fprintf (stderr, "[r2flutter] Scanned %d fields from data image\n", field_count);
+	}
+}
+
+typedef struct {
+	char name[128];
+	char owner_name[128];
+	ut64 entry;
+	ut32 kind_tag;
+} DartScannedMethod;
+
+static bool read_data_image_method(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_end, const DartFunctionLayout *fl, bool apply_obf, DartScannedMethod *method) {
+	if (!ctx || !ctx->layout || !fl || !method || pos >= data_end || data_end - pos <= fl->kind_tag_off + 8) {
+		return false;
+	}
+	ut8 buf[128];
+	if (!read_mem (ctx, pos, buf, sizeof (buf))) {
+		return false;
+	}
+	int cid_function = ctx->layout->cid_function? ctx->layout->cid_function: kFunctionCid;
+	if ((int)extract_cid_from_header (ctx, r_read_le64 (buf)) != cid_function) {
+		return false;
+	}
+	ut64 entry = r_read_le64 (buf + fl->entry_off);
+	if (!entry || entry == UT64_MAX || entry < ctx->iso_instr || entry > (ctx->iso_instr + (1ULL << 28))) {
+		return false;
+	}
+	bool use_compressed = ctx->compressed_word_size == 4;
+	memset (method, 0, sizeof (*method));
+	method->entry = entry;
+	method->kind_tag = r_read_le32 (buf + fl->kind_tag_off);
+	ut64 name_addr = 0;
+	if (!read_object_pointer (ctx, buf, fl->name_off, use_compressed, data_start, data_end, true, &name_addr) || !read_string_safe (ctx, name_addr, method->name, sizeof (method->name))) {
+		return false;
+	}
+	ut64 owner_addr = 0;
+	if (!read_object_pointer (ctx, buf, fl->owner_off, use_compressed, data_start, data_end, false, &owner_addr)) {
+		return false;
+	}
+	if (owner_addr) {
+		ut8 owner_buf[32];
+		if (read_mem (ctx, owner_addr, owner_buf, sizeof (owner_buf))) {
+			ut64 owner_name_ptr = 0;
+			if (read_object_pointer (ctx, owner_buf, fl->class_name_off, use_compressed, data_start, data_end, true, &owner_name_ptr)) {
+				read_string_safe (ctx, owner_name_ptr, method->owner_name, sizeof (method->owner_name));
+			}
+		}
+	}
+	if (!method->owner_name[0]) {
+		return false;
+	}
+	if (apply_obf) {
+		dart_obf_apply_buf (ctx, method->name, sizeof (method->name));
+		dart_obf_apply_buf (ctx, method->owner_name, sizeof (method->owner_name));
+	}
+	return true;
+}
+
 static const char *method_kind_name(uint32_t kind_tag) {
 	static const char *kNames[] = {
 		"RegularFunction",
@@ -4852,7 +4773,6 @@ static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 d
 	if (!ctx->layout) {
 		return;
 	}
-	bool use_compressed = (ctx->compressed_word_size == 4);
 	DartFunctionLayout fl;
 	init_function_layout (ctx, &fl);
 	HtPP *class_by_name = ht_pp_new0 ();
@@ -4879,73 +4799,32 @@ static void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 d
 	if (!align) {
 		align = 8;
 	}
-	int cid_function = ctx->layout->cid_function? ctx->layout->cid_function: kFunctionCid;
 	ut64 methods_found = 0;
 	const ut64 max_methods = 30000;
-	char method_name[128];
-	char owner_name[128];
 	for (ut64 pos = data_start; pos + fl.kind_tag_off + 8 < data_end; pos += align) {
-		ut8 buf[128];
-		if (!read_mem (ctx, pos, buf, sizeof (buf))) {
+		DartScannedMethod method;
+		if (!read_data_image_method (ctx, pos, data_start, data_end, &fl, true, &method)) {
 			continue;
 		}
-		ut64 header = r_read_le64 (buf);
-		ut32 cid = extract_cid_from_header (ctx, header);
-		if ((int)cid != cid_function) {
-			continue;
-		}
-		ut64 entry = r_read_le64 (buf + fl.entry_off);
-		if (!entry || entry == UT64_MAX) {
-			continue;
-		}
-		if (entry < ctx->iso_instr || entry > (ctx->iso_instr + (1ULL << 28))) {
-			continue;
-		}
-		if (ht_up_find (seen_ep, entry, NULL)) {
-			continue;
-		}
-		ut64 name_addr = 0;
-		if (!read_object_pointer (ctx, buf, fl.name_off, use_compressed, data_start, data_end, true, &name_addr)) {
-			continue;
-		}
-		if (!read_string_safe (ctx, name_addr, method_name, sizeof (method_name))) {
-			continue;
-		}
-		dart_obf_apply_buf (ctx, method_name, sizeof (method_name));
-		ut64 owner_addr = 0;
-		if (!read_object_pointer (ctx, buf, fl.owner_off, use_compressed, data_start, data_end, false, &owner_addr)) {
-			continue;
-		}
-		owner_name[0] = '\0';
-		if (owner_addr) {
-			ut8 owner_buf[32];
-			if (read_mem (ctx, owner_addr, owner_buf, sizeof (owner_buf))) {
-				ut64 owner_name_ptr = 0;
-				if (read_object_pointer (ctx, owner_buf, fl.class_name_off, use_compressed, data_start, data_end, true, &owner_name_ptr)) {
-					read_string_safe (ctx, owner_name_ptr, owner_name, sizeof (owner_name));
-				}
-			}
-		}
-		dart_obf_apply_buf (ctx, owner_name, sizeof (owner_name));
-		if (!*owner_name) {
+		if (ht_up_find (seen_ep, method.entry, NULL)) {
 			continue;
 		}
 		if (ctx->verbose > 1 && methods_found < 64) {
-			fprintf (stderr, "[r2flutter] method candidate %s.%s\n", owner_name, method_name);
+			fprintf (stderr, "[r2flutter] method candidate %s.%s\n", method.owner_name, method.name);
 		}
-		DartClassInfo *owner_ci = ht_pp_find (class_by_name, owner_name, NULL);
+		DartClassInfo *owner_ci = ht_pp_find (class_by_name, method.owner_name, NULL);
 		if (!owner_ci || !owner_ci->methods) {
 			continue;
 		}
 		DartMethodInfo *mi = R_NEW0 (DartMethodInfo);
-		mi->entry_point = entry;
-		mi->name = strdup (method_name);
-		mi->owner_name = strdup (owner_name);
-		mi->kind_tag = r_read_le32 (buf + fl.kind_tag_off);
-		ht_up_insert (seen_ep, entry, mi);
+		mi->entry_point = method.entry;
+		mi->name = strdup (method.name);
+		mi->owner_name = strdup (method.owner_name);
+		mi->kind_tag = method.kind_tag;
+		ht_up_insert (seen_ep, method.entry, mi);
 		r_list_append (owner_ci->methods, mi);
 		if (ctx->verbose > 1) {
-			fprintf (stderr, "[r2flutter] method %s.%s @0x%" PFMT64x "\n", owner_name, method_name, (ut64)entry);
+			fprintf (stderr, "[r2flutter] method %s.%s @0x%" PFMT64x "\n", method.owner_name, method.name, method.entry);
 		}
 		methods_found++;
 		if (methods_found >= max_methods) {
@@ -5068,14 +4947,14 @@ static void append_enum_values(RStrBuf *sb, const DartClassInfo *ci) {
 }
 
 static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool type_view) {
+	if (!ci || !ci->name) {
+		return;
+	}
 	const bool emit_r2 = fmt == 'r';
 	const bool emit_enum_literal = type_view &&
 		(ci->flags & DART_CLASS_ENUM) &&
 		ci->enums &&
 		r_list_length (ci->enums) > 0;
-	if (!ci || !ci->name) {
-		return;
-	}
 	if (emit_r2) {
 		char safe_name[256];
 		snprintf (safe_name, sizeof (safe_name), "%s", ci->name);
@@ -6092,65 +5971,24 @@ static void collect_field_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 	if (!ctx || !ctx->core || !xrefs || data_start >= data_end || xref_limit_reached (*count, limit)) {
 		return;
 	}
-	ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 8;
-	bool use_compressed = ctx->compressed_word_size == 4;
-	int cid_field = kFieldCid;
+	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 8;
 	int field_count = 0;
 	const int max_fields = 5000;
-	for (ut64 pos = data_start; pos < data_end - 48 && field_count < max_fields && !xref_limit_reached (*count, limit); pos += kAlign) {
-		ut8 hdr[48];
-		if (!read_mem (ctx, pos, hdr, sizeof (hdr))) {
-			continue;
-		}
-		ut64 header = r_read_le64 (hdr);
-		ut32 obj_cid = (header >> 12) & 0xFFFFF;
-		if ((int)obj_cid != cid_field) {
-			continue;
-		}
-		ut64 name_ptr = 0, owner_ptr = 0;
-		ut32 offset_val = 0;
-		if (use_compressed) {
-			name_ptr = r_read_le32 (hdr + 8);
-			owner_ptr = r_read_le32 (hdr + 12);
-			offset_val = r_read_le32 (hdr + 28);
-		} else {
-			name_ptr = r_read_le64 (hdr + 8);
-			owner_ptr = r_read_le64 (hdr + 16);
-			offset_val = r_read_le32 (hdr + 44);
-		}
-		if (!name_ptr || !owner_ptr) {
-			continue;
-		}
-		char field_name[128] = { 0 };
-		ut64 name_addr = use_compressed? (data_start + (name_ptr & ~3ULL)): name_ptr;
-		if (name_addr >= data_start && name_addr < data_end && !try_read_dart_string (ctx, name_addr, field_name, sizeof (field_name))) {
-			continue;
-		}
-		char owner_name[128] = { 0 };
-		ut64 owner_addr = use_compressed? (data_start + (owner_ptr & ~3ULL)): owner_ptr;
-		if (owner_addr >= data_start && owner_addr < data_end) {
-			ut8 owner_hdr[32];
-			if (read_mem (ctx, owner_addr, owner_hdr, sizeof (owner_hdr))) {
-				ut64 owner_name_ptr = use_compressed? r_read_le32 (owner_hdr + 8): r_read_le64 (owner_hdr + 8);
-				ut64 owner_name_addr = use_compressed? (data_start + (owner_name_ptr & ~3ULL)): owner_name_ptr;
-				if (owner_name_addr >= data_start && owner_name_addr < data_end) {
-					read_string_safe (ctx, owner_name_addr, owner_name, sizeof (owner_name));
-				}
-			}
-		}
-		if (!owner_name[0] || !field_name[0]) {
+	for (ut64 pos = data_start; pos + 48 <= data_end && field_count < max_fields && !xref_limit_reached (*count, limit); pos += align) {
+		DartScannedField field;
+		if (!read_data_image_field (ctx, pos, data_start, data_end, 0, false, false, &field)) {
 			continue;
 		}
 		char keybuf[320];
-		snprintf (keybuf, sizeof (keybuf), "%s.%s@0x%x", owner_name, field_name, offset_val);
+		snprintf (keybuf, sizeof (keybuf), "%s.%s@0x%x", field.owner_name, field.name, field.offset);
 		if (r_list_find (seen_fields, keybuf, (RListComparator)strcmp)) {
 			continue;
 		}
 		r_list_append (seen_fields, strdup (keybuf));
-		char *field_label = xref_join_names (owner_name, field_name);
-		append_xref_info (xrefs, count, limit, "data-image", "field.owner", "field", field_label, 0, 0, "class", owner_name, 0, 0);
-		DartStringInfo *field_si = xref_find_string (strings_by_value, field_name);
-		append_xref_info (xrefs, count, limit, "data-image", "field.name", "field", field_label, 0, 0, "string", field_name, 0, field_si? field_si->address: 0);
+		char *field_label = xref_join_names (field.owner_name, field.name);
+		append_xref_info (xrefs, count, limit, "data-image", "field.owner", "field", field_label, 0, 0, "class", field.owner_name, 0, 0);
+		DartStringInfo *field_si = xref_find_string (strings_by_value, field.name);
+		append_xref_info (xrefs, count, limit, "data-image", "field.name", "field", field_label, 0, 0, "string", field.name, 0, field_si? field_si->address: 0);
 		free (field_label);
 		field_count++;
 	}
@@ -6160,68 +5998,28 @@ static void collect_method_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RLis
 	if (!ctx || !ctx->core || !ctx->layout || !xrefs || data_start >= data_end || xref_limit_reached (*count, limit)) {
 		return;
 	}
-	bool use_compressed = ctx->compressed_word_size == 4;
 	DartFunctionLayout fl;
 	init_function_layout (ctx, &fl);
 	ut64 align = ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 8;
 	if (!align) {
 		align = 8;
 	}
-	int cid_function = ctx->layout->cid_function? ctx->layout->cid_function: kFunctionCid;
 	ut64 methods_found = 0;
 	const ut64 max_methods = 30000;
-	char method_name[128];
-	char owner_name[128];
 	for (ut64 pos = data_start; pos + fl.kind_tag_off + 8 < data_end && methods_found < max_methods && !xref_limit_reached (*count, limit); pos += align) {
-		ut8 buf[128];
-		if (!read_mem (ctx, pos, buf, sizeof (buf))) {
+		DartScannedMethod method;
+		if (!read_data_image_method (ctx, pos, data_start, data_end, &fl, false, &method)) {
 			continue;
 		}
-		ut64 header = r_read_le64 (buf);
-		ut32 cid = extract_cid_from_header (ctx, header);
-		if ((int)cid != cid_function) {
+		if (ht_up_find (seen_ep, method.entry, NULL)) {
 			continue;
 		}
-		ut64 entry = r_read_le64 (buf + fl.entry_off);
-		if (!entry || entry == UT64_MAX) {
-			continue;
-		}
-		if (entry < ctx->iso_instr || entry > (ctx->iso_instr + (1ULL << 28))) {
-			continue;
-		}
-		if (ht_up_find (seen_ep, entry, NULL)) {
-			continue;
-		}
-		ut64 name_addr = 0;
-		if (!read_object_pointer (ctx, buf, fl.name_off, use_compressed, data_start, data_end, true, &name_addr)) {
-			continue;
-		}
-		if (!read_string_safe (ctx, name_addr, method_name, sizeof (method_name))) {
-			continue;
-		}
-		ut64 owner_addr = 0;
-		if (!read_object_pointer (ctx, buf, fl.owner_off, use_compressed, data_start, data_end, false, &owner_addr)) {
-			continue;
-		}
-		owner_name[0] = '\0';
-		if (owner_addr) {
-			ut8 owner_buf[32];
-			if (read_mem (ctx, owner_addr, owner_buf, sizeof (owner_buf))) {
-				ut64 owner_name_ptr = 0;
-				if (read_object_pointer (ctx, owner_buf, fl.class_name_off, use_compressed, data_start, data_end, true, &owner_name_ptr)) {
-					read_string_safe (ctx, owner_name_ptr, owner_name, sizeof (owner_name));
-				}
-			}
-		}
-		if (!owner_name[0]) {
-			continue;
-		}
-		char *method_label = xref_join_names (owner_name, method_name);
-		append_xref_info (xrefs, count, limit, "data-image", "method.owner", "method", method_label, 0, 0, "class", owner_name, 0, 0);
-		DartStringInfo *method_si = xref_find_string (strings_by_value, method_name);
-		append_xref_info (xrefs, count, limit, "data-image", "method.name", "method", method_label, 0, 0, "string", method_name, 0, method_si? method_si->address: 0);
-		append_xref_info (xrefs, count, limit, "data-image", "method.entry", "method", method_label, 0, 0, "code", method_label, 0, entry);
-		ht_up_insert (seen_ep, entry, (void *)1);
+		char *method_label = xref_join_names (method.owner_name, method.name);
+		append_xref_info (xrefs, count, limit, "data-image", "method.owner", "method", method_label, 0, 0, "class", method.owner_name, 0, 0);
+		DartStringInfo *method_si = xref_find_string (strings_by_value, method.name);
+		append_xref_info (xrefs, count, limit, "data-image", "method.name", "method", method_label, 0, 0, "string", method.name, 0, method_si? method_si->address: 0);
+		append_xref_info (xrefs, count, limit, "data-image", "method.entry", "method", method_label, 0, 0, "code", method_label, 0, method.entry);
+		ht_up_insert (seen_ep, method.entry, (void *)1);
 		free (method_label);
 		methods_found++;
 	}

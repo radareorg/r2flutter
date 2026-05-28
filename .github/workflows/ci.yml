@@ -16,7 +16,7 @@ jobs:
     - name: Installing radare2 ${{ env.R2V }}
       uses: radareorg/github-actions@v2
       with:
-        version: ${{ env.R2V }}
+        from-git: true
     - name: Building r2flutter
       run: make && make user-install
     - name: Basic Testing
