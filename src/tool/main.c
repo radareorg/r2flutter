@@ -193,7 +193,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	if (!r_core_file_open (core, libapp_path, 0, 0)) {
+	if (!r_core_file_open (core, libapp_path, R_PERM_R, 0)) {
 		R_LOG_ERROR ("Failed to open file: %s", libapp_path);
 		r_core_free (core);
 		free_resolved_path (libapp_path, extracted_inner);

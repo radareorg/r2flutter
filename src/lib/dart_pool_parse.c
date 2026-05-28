@@ -335,7 +335,7 @@ static RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_i
 		if (toread <= 0) {
 			break;
 		}
-		if (r_io_read_at (ctx->core->io, addr, buf, toread) != toread) {
+		if (!read_mem (ctx, addr, buf, toread)) {
 			break;
 		}
 		for (int i = 0; i + 8 < toread; i++) {
@@ -403,10 +403,9 @@ static void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 
 				}
 			} else {
 				ut8 buf[128];
-				int n = r_io_read_at (ctx->core->io, addr, buf, sizeof (buf));
-				if (n > 0) {
+				if (read_mem (ctx, addr, buf, sizeof (buf))) {
 					char s2[128];
-					int z = extract_printable_string (buf, 0, n, s2, sizeof (s2));
+					int z = extract_printable_string (buf, 0, sizeof (buf), s2, sizeof (s2));
 					if (z > 5) {
 						char *dup2 = strdup (s2);
 						if (dup2) {
@@ -852,7 +851,7 @@ int find_snapshots(DartCtx *ctx) {
 				if (toread <= 0) {
 					break;
 				}
-				if (r_io_read_at (core->io, addr, buf, toread) != toread) {
+				if (!read_mem (ctx, addr, buf, toread)) {
 					break;
 				}
 				for (int j2 = 0; j2 + 4 <= toread; j2 += 4) {
@@ -881,7 +880,7 @@ int find_snapshots(DartCtx *ctx) {
 		int instr_cnt = 0;
 		for (int i = 0; i < found_cnt; i++) {
 			ut8 hdr2[16];
-			if (r_io_read_at (core->io, found_addrs[i] + 4, hdr2, sizeof (hdr2)) < 1) {
+			if (!read_mem (ctx, found_addrs[i] + 4, hdr2, sizeof (hdr2))) {
 				continue;
 			}
 			ut64 total_len = r_read_le64 (hdr2) + 4;

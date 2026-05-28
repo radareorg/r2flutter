@@ -6,8 +6,7 @@ bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len) {
 	if (!ctx || !ctx->core || !buf || len <= 0) {
 		return false;
 	}
-	int r = r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
-	return r == len;
+	return r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
 }
 
 bool read_u32_at(DartCtx *ctx, ut64 addr, ut32 *out) {
