@@ -1794,6 +1794,181 @@ static void append_interfaces_text(RStrBuf *sb, const DartClassInfo *ci) {
 	}
 }
 
+static char *class_export_name(const char *name) {
+	char *safe = r_str_newf ("dart_%s", R_STR_ISNOTEMPTY (name)? name: "unknown");
+	r_name_filter (safe, 0);
+	for (char *p = safe; *p; p++) {
+		if (*p == '.') {
+			*p = '_';
+		}
+	}
+	if (R_STR_ISEMPTY (safe)) {
+		free (safe);
+		return strdup ("dart_unknown");
+	}
+	return safe;
+}
+
+static char *member_export_name(const char *name, const char *fallback) {
+	char *safe = strdup (R_STR_ISNOTEMPTY (name)? name: fallback);
+	r_name_filter (safe, 0);
+	for (char *p = safe; *p; p++) {
+		if (*p == '.') {
+			*p = '_';
+		}
+	}
+	if (R_STR_ISEMPTY (safe)) {
+		free (safe);
+		return strdup (fallback);
+	}
+	return safe;
+}
+
+static ut64 method_export_addr(const DartMethodInfo *mi) {
+	if (!mi || !mi->entry_point) {
+		return 0;
+	}
+	return mi->entry_point & 1ULL? mi->entry_point - 1: mi->entry_point;
+}
+
+#define DART_FUNCTION_STATIC_BIT (1U << 16)
+
+static bool method_is_static(const DartMethodInfo *mi) {
+	if (!mi) {
+		return false;
+	}
+	if (mi->kind_tag & DART_FUNCTION_STATIC_BIT) {
+		return true;
+	}
+	return !strcmp (method_kind_name (mi->kind_tag), "ImplicitStaticGetter");
+}
+
+static bool method_has_receiver(const DartClassInfo *ci, const DartMethodInfo *mi) {
+	if (!ci || !mi || method_is_static (mi)) {
+		return false;
+	}
+	switch (mi->kind_tag & 0x1f) {
+	case 0: /* RegularFunction */
+	case 3: /* GetterFunction */
+	case 4: /* SetterFunction */
+	case 5: /* Constructor */
+	case 6: /* ImplicitGetter */
+	case 7: /* ImplicitSetter */
+	case 10: /* MethodExtractor */
+	case 11: /* NoSuchMethodDispatcher */
+	case 12: /* InvokeFieldDispatcher */
+	case 14: /* DynamicInvocationForwarder */
+	case 16: /* RecordFieldGetter */
+		return true;
+	default:
+		return false;
+	}
+}
+
+static const char *method_mode_name(const DartMethodInfo *mi) {
+	if (!mi) {
+		return "unknown";
+	}
+	const bool is_static = method_is_static (mi);
+	const char *kind = method_kind_name (mi->kind_tag);
+	if (!strcmp (kind, "Constructor")) {
+		return is_static? "factory": "constructor";
+	}
+	return is_static? "static": "instance";
+}
+
+static char *method_dyncc(const DartClassInfo *ci, const DartMethodInfo *mi) {
+	return r_str_newf ("dyncc:x0+8,^:x0%s", method_has_receiver (ci, mi)? "!T0": "");
+}
+
+static void append_comment_cmd(RStrBuf *sb, ut64 addr, const char *msg) {
+	if (!sb || !addr || R_STR_ISEMPTY (msg)) {
+		return;
+	}
+	char *b64 = r_base64_encode_dyn ((const ut8 *)msg, strlen (msg));
+	if (!b64) {
+		return;
+	}
+	r_strbuf_appendf (sb, "CCu base64:%s @ 0x%" PFMT64x "\n", b64, addr);
+	free (b64);
+}
+
+static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci) {
+	if (!sb || !ci || R_STR_ISEMPTY (ci->name)) {
+		return;
+	}
+	char *class_name = class_export_name (ci->name);
+	r_strbuf_appendf (sb, "# r2 class %s original=%s\n", class_name, ci->name);
+	r_strbuf_appendf (sb, "ic+%s @ 0\n", class_name);
+	r_strbuf_appendf (sb, "ac %s\n", class_name);
+	if (R_STR_ISNOTEMPTY (ci->super_class_name)) {
+		char *super_name = class_export_name (ci->super_class_name);
+		r_strbuf_appendf (sb, "ac %s\n", super_name);
+		r_strbuf_appendf (sb, "acb %s %s 0\n", class_name, super_name);
+		free (super_name);
+	}
+	if (ci->interfaces) {
+		RListIter *iit;
+		DartInterfaceInfo *ii;
+		r_list_foreach (ci->interfaces, iit, ii) {
+			if (!ii || R_STR_ISEMPTY (ii->name)) {
+				continue;
+			}
+			char *iface_name = class_export_name (ii->name);
+			r_strbuf_appendf (sb, "# interface %s implements %s\n", class_name, ii->name);
+			r_strbuf_appendf (sb, "ac %s\n", iface_name);
+			r_strbuf_appendf (sb, "acb %s %s 0\n", class_name, iface_name);
+			free (iface_name);
+		}
+	}
+	if (ci->fields) {
+		RListIter *fit;
+		DartFieldInfo *fi;
+		r_list_foreach (ci->fields, fit, fi) {
+			if (!fi || R_STR_ISEMPTY (fi->name)) {
+				continue;
+			}
+			r_strbuf_appendf (sb, "# field %s.%s +0x%x type=%s %s%s%s%s\n", class_name, fi->name, fi->offset, R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic", (fi->flags & DART_FIELD_STATIC)? "static": "instance", (fi->flags & DART_FIELD_FINAL)? " final": "", (fi->flags & DART_FIELD_CONST)? " const": "", (fi->flags & DART_FIELD_LATE)? " late": "");
+		}
+	}
+	if (ci->methods) {
+		RListIter *mit;
+		DartMethodInfo *mi;
+		r_list_foreach (ci->methods, mit, mi) {
+			if (!mi || R_STR_ISEMPTY (mi->name)) {
+				continue;
+			}
+			char *method_name = member_export_name (mi->name, "method");
+			char *cc = method_dyncc (ci, mi);
+			ut64 addr = method_export_addr (mi);
+			r_strbuf_appendf (sb, "# method %s.%s kind=%s mode=%s cc=%s", class_name, method_name, method_kind_name (mi->kind_tag), method_mode_name (mi), cc);
+			if (R_STR_ISNOTEMPTY (mi->signature)) {
+				r_strbuf_appendf (sb, " signature=%s", mi->signature);
+			}
+			r_strbuf_append (sb, "\n");
+			if (addr) {
+				r_strbuf_appendf (sb, "ic+%s.%s @ 0x%" PFMT64x "\n", class_name, method_name, addr);
+				r_strbuf_appendf (sb, "acm %s %s 0x%" PFMT64x "\n", class_name, method_name, addr);
+				r_strbuf_appendf (sb, "af @ 0x%" PFMT64x "\n", addr);
+				r_strbuf_appendf (sb, "afc %s @ 0x%" PFMT64x "\n", cc, addr);
+				char *msg = r_str_newf ("dart: method %s.%s kind=%s mode=%s cc=%s%s%s",
+					ci->name,
+					mi->name,
+					method_kind_name (mi->kind_tag),
+					method_mode_name (mi),
+					cc,
+					R_STR_ISNOTEMPTY (mi->signature)? " signature=": "",
+					R_STR_ISNOTEMPTY (mi->signature)? mi->signature: "");
+				append_comment_cmd (sb, addr, msg);
+				free (msg);
+			}
+			free (cc);
+			free (method_name);
+		}
+	}
+	free (class_name);
+}
+
 static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool type_view) {
 	if (!ci || !ci->name) {
 		return;
@@ -1807,6 +1982,11 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool 
 		char safe_name[256];
 		snprintf (safe_name, sizeof (safe_name), "%s", ci->name);
 		r_name_filter (safe_name, 0);
+		for (char *p = safe_name; *p; p++) {
+			if (*p == '.') {
+				*p = '_';
+			}
+		}
 		if (emit_enum_literal) {
 			r_strbuf_appendf (sb, "# enum %s", ci->name);
 			append_enum_values (sb, ci);
@@ -1950,6 +2130,12 @@ char *dart_pool_dump_classes(DartCtx *ctx, int fmt) {
 	DartClassInfo *ci;
 	r_list_foreach (classes, it, ci) {
 		dump_class_text (sb, ci, fmt, type_view);
+	}
+	if (fmt == 'r') {
+		r_strbuf_append (sb, "# Dart class symbols and analysis metadata\n");
+		r_list_foreach (classes, it, ci) {
+			dump_class_r2_metadata (sb, ci);
+		}
 	}
 	dart_class_list_free (classes);
 	return r_strbuf_drain (sb);

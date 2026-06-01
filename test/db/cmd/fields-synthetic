@@ -103,3 +103,18 @@ metadata class.name class TestInterface [ref=13] -> string TestInterface [ref=10
 metadata class.library class TestInterface [ref=13] -> library package:test [ref=11]
 EOF
 RUN
+
+NAME=r2-fields-synthetic-class-metadata
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -r -c bins/synthetic/field_snapshot.bin 2>/dev/null | grep -E '^(# Dart class symbols|ic\+dart_TestClass @ 0|ac dart_TestClass$|acb dart_TestClass dart_TestInterface 0|# field dart_TestClass.callback|# method dart_TestClass.compute)'
+EOF
+EXPECT=<<EOF
+# Dart class symbols and analysis metadata
+ic+dart_TestClass @ 0
+ac dart_TestClass
+acb dart_TestClass dart_TestInterface 0
+# field dart_TestClass.callback +0x28 type=(int) => String instance
+# method dart_TestClass.compute kind=RegularFunction mode=instance cc=dyncc:x0+8,^:x0!T0 signature=(int) => String
+EOF
+RUN
