@@ -19,6 +19,7 @@ For this project, an "xref" is any stable relationship such as:
 - class -> name string
 - class -> library
 - class -> superclass
+- class -> interface type
 - field -> owner class
 - field -> name string
 - field -> type object
@@ -44,9 +45,10 @@ These do not all come from the same source.
 | Class -> name string | `Class.name_` or strings | Sometimes | No | Implemented, often heuristic in release builds |
 | Class -> library | `Class.library_` | Yes if cluster survives | No | Metadata exists, URI resolution incomplete |
 | Class -> superclass | `Class.super_type_` / class ref | Yes if cluster survives | No | Implemented for surviving class metadata |
+| Class -> interface | `Class.interfaces_` array of type refs | Yes if class/array/type metadata survives | No | Implemented for surviving metadata |
 | Field -> owner class | `Field.owner_` | Yes | No | Implemented |
 | Field -> name string | `Field.name_` | Yes | No | Implemented |
-| Field -> type | `Field.type_` | Yes | No | Ref captured, name resolution not implemented |
+| Field -> type | `Field.type_` | Yes | No | Implemented for direct, generic, type-parameter, and simple function types |
 | String -> address/value | string cluster or raw/packed bytes | Yes | No | Implemented |
 | String -> metadata users | reverse of `name_ref`/`owner_ref`/etc. | Yes | No | Not populated yet |
 | Code -> object-pool slot | `ldr ..., [x27, #imm]` and peers | No | Yes | Offset collection implemented |
@@ -77,6 +79,7 @@ When a `Class` cluster is present, the useful links are:
 - `Class.name_ref` -> string object
 - `Class.library_ref` -> library object
 - `Class.super_class_ref` -> parent class
+- `Class.interfaces_ref` -> array of interface `Type` refs
 - class flags -> abstract / enum / mixin
 - layout metadata -> instance size, type parameter count, type-argument offset
 
@@ -85,6 +88,7 @@ This is enough to recover:
 - class name
 - library ownership
 - inheritance edge
+- `implements` edges when the interface array and type refs survive
 - a partial type/layout view
 
 Important limitation:
@@ -95,7 +99,7 @@ Important limitation:
 So:
 
 - `class -> name` is often still recoverable
-- `class -> library` and `class -> superclass` are only reliable when the class metadata itself survives
+- `class -> library`, `class -> superclass`, and `class -> interface` are only reliable when the class metadata itself survives
 
 ### Field Xrefs
 
@@ -126,7 +130,8 @@ Current limitation:
 
 So `field -> type` exists in metadata and can often be rendered now, while
 cluster-backed `method -> signature` edges are emitted when Function metadata
-survives.
+survives. Class interface arrays are also emitted as `class -> interface type`
+edges when the class, array, and type metadata survive.
 
 ### Method / Function Xrefs
 

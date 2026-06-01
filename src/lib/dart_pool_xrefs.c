@@ -239,6 +239,18 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 				append_xref_info (xrefs, &count, limit, "metadata", "class.super", "class", ci->name, ci->ref_id, 0, "class", super_name, ci->super_class_ref, 0);
 				free (super_name);
 			}
+			if (ci->interfaces) {
+				RListIter *iit;
+				DartInterfaceInfo *ii;
+				r_list_foreach (ci->interfaces, iit, ii) {
+					if (!ii || (ii->type_ref == 0 && R_STR_ISEMPTY (ii->name)) || xref_limit_reached (count, limit)) {
+						continue;
+					}
+					char *interface_name = ii->name? strdup (ii->name): xref_ref_label ("type", ii->type_ref);
+					append_xref_info (xrefs, &count, limit, "metadata", "class.interface", "class", ci->name, ci->ref_id, 0, "type", interface_name, ii->type_ref, 0);
+					free (interface_name);
+				}
+			}
 			if (ci->fields) {
 				RListIter *fit;
 				DartFieldInfo *fi;

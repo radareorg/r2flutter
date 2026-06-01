@@ -338,13 +338,13 @@ This removes the worst false positives from `-s` without sacrificing the real Da
 
 There are three distinct layers:
 
-- **snapshot metadata xrefs**: serialized ref-id links such as `Class.name_ref`, `Class.library_ref`, `Class.super_class_ref`, `Field.owner_ref`, `Field.name_ref`, and `Field.type_ref`
+- **snapshot metadata xrefs**: serialized ref-id links such as `Class.name_ref`, `Class.library_ref`, `Class.super_class_ref`, `Class.interfaces_ref`, `Field.owner_ref`, `Field.name_ref`, and `Field.type_ref`
 - **data-image object xrefs**: raw `Function` and `Field` objects that can still be scanned in release builds even when full class metadata is missing
 - **code xrefs**: object-pool loads, field-offset accesses, and call edges that only appear in disassembly
 
 Practical implication:
 
-- `object -> name/owner/super` style links are often dumpable from the binary without disassembly
+- `object -> name/owner/super/interface` style links are often dumpable from the binary without disassembly
 - `function uses string/class/field/method` style links generally require code analysis
 
 Current gaps:
@@ -355,6 +355,9 @@ Current gaps:
   links now resolve simple `Type` objects, `TypeArguments` for generic field
   types, `TypeParameter` placeholders like `X0`, and simple `FunctionType`
   signatures such as `(int) => String`
+- class interface arrays now resolve through small `Array` and `Type` records
+  when metadata survives, producing `implements` text/JSON and
+  `class.interface` xrefs
 
 The repo now exposes the currently recoverable subset through:
 
@@ -369,9 +372,9 @@ The new dumper intentionally stops at metadata/data-image edges. Disassembly-der
 missing, xrefs absent". The implemented surface is split across several
 confidence layers:
 
-- cluster metadata can recover class names, superclass/library refs, flags,
-  layout counters, and Field owner/name refs when those serialized objects
-  survive
+- cluster metadata can recover class names, superclass/library/interface refs,
+  flags, layout counters, and Field owner/name refs when those serialized
+  objects survive
 - data-image scans can attach raw Field and Function objects back to recovered
   classes by owner/name
 - string fallback recovers many type-looking names but does not carry reliable
@@ -380,11 +383,12 @@ confidence layers:
   handles some disassembly-derived annotations
 
 The most valuable next work is therefore not "add field extraction" from
-scratch. It is resolving interface arrays, populating reverse string
-references, and decoding object-pool entries so PP-offset observations can
-become real `code -> object` xrefs. Field attachment, generic field type
-rendering, type-parameter field types, function-shaped field types, and
-cluster-backed method signatures now have direct synthetic text/JSON/xref
+scratch. It is production coverage for these metadata paths, populating reverse
+string references, documenting/recovering mixin application chains, and
+decoding object-pool entries so PP-offset observations can become real
+`code -> object` xrefs. Field attachment, generic field type rendering,
+type-parameter field types, function-shaped field types, class interface edges,
+and cluster-backed method signatures now have direct synthetic text/JSON/xref
 coverage.
 
 ## `r2flutter -a` Uses Live `RCore` Metadata But Keeps PP Resolution Conservative

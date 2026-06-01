@@ -5,6 +5,8 @@
   "timeout": 10,
   "expect": {
     "contains": [
+      "class.interface class TestClass",
+      "type TestInterface",
       "field.type field TestClass.items",
       "type List<int>",
       "field.type field TestClass.genericItems",

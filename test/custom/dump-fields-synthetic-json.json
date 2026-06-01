@@ -6,6 +6,8 @@
   "expect": {
     "contains": [
       "\"name\":\"TestClass\"",
+      "\"interfaces\":[{\"ref\":23,\"class_ref\":13,\"name\":\"TestInterface\"}]",
+      "\"name\":\"TestInterface\"",
       "\"fields\":[{\"name\":\"fieldA\"",
       "\"type\":\"int\"",
       "\"offset\":16",

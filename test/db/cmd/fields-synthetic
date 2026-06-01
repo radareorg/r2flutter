@@ -4,7 +4,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -c bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
-class TestClass (size=48)
+class TestClass implements TestInterface (size=48)
   library: package:test
   fields:
     +0x10 int fieldA
@@ -13,6 +13,8 @@ class TestClass (size=48)
     +0x28 (int) => String callback
   methods:
     0x00000000 compute (int) => String (RegularFunction)
+class TestInterface (size=0)
+  library: package:test
 
 EOF
 RUN
@@ -23,7 +25,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -j -c bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"ref":11,"name":"TestClass","library":{"ref":10,"name":"package:test"},"layout":{"instance_size":48,"type_params":1,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false},"fields":[{"name":"fieldA","type":"int","offset":16,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"items","type":"List<int>","offset":24,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"genericItems","type":"List<X0>","offset":32,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"callback","type":"(int) => String","offset":40,"flags":{"static":false,"final":false,"const":false,"late":false}}],"methods":[{"name":"compute","entry":0,"owner":"TestClass","signature":"(int) => String","kind_tag":0,"kind":"RegularFunction"}]}]
+[{"ref":12,"name":"TestClass","library":{"ref":11,"name":"package:test"},"interfaces":[{"ref":23,"class_ref":13,"name":"TestInterface"}],"layout":{"instance_size":48,"type_params":1,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false},"fields":[{"name":"fieldA","type":"int","offset":16,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"items","type":"List<int>","offset":24,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"genericItems","type":"List<X0>","offset":32,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"callback","type":"(int) => String","offset":40,"flags":{"static":false,"final":false,"const":false,"late":false}}],"methods":[{"name":"compute","entry":0,"owner":"TestClass","signature":"(int) => String","kind_tag":0,"kind":"RegularFunction"}]},{"ref":13,"name":"TestInterface","library":{"ref":11,"name":"package:test"},"layout":{"instance_size":0,"type_params":0,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false}}]
 EOF
 RUN
 
@@ -33,22 +35,25 @@ CMDS=<<EOF
 !!../bin/r2flutter -x bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
-metadata class.name class TestClass [ref=11] -> string TestClass [ref=2]
-metadata class.library class TestClass [ref=11] -> library package:test [ref=10]
-metadata field.owner field TestClass.fieldA [ref=21] -> class TestClass [ref=11]
-metadata field.name field TestClass.fieldA [ref=21] -> string fieldA [ref=4]
-metadata field.type field TestClass.fieldA [ref=21] -> type int [ref=16]
-metadata field.owner field TestClass.items [ref=22] -> class TestClass [ref=11]
-metadata field.name field TestClass.items [ref=22] -> string items [ref=6]
-metadata field.type field TestClass.items [ref=22] -> type List<int> [ref=17]
-metadata field.owner field TestClass.genericItems [ref=23] -> class TestClass [ref=11]
-metadata field.name field TestClass.genericItems [ref=23] -> string genericItems [ref=7]
-metadata field.type field TestClass.genericItems [ref=23] -> type List<X0> [ref=18]
-metadata field.owner field TestClass.callback [ref=24] -> class TestClass [ref=11]
-metadata field.name field TestClass.callback [ref=24] -> string callback [ref=8]
-metadata field.type field TestClass.callback [ref=24] -> type (int) => String [ref=20]
-metadata method.owner method TestClass.compute [ref=25] -> class TestClass [ref=11]
-metadata method.name method TestClass.compute [ref=25] -> string compute [ref=9]
-metadata method.signature method TestClass.compute [ref=25] -> type (int) => String [ref=20]
+metadata class.name class TestClass [ref=12] -> string TestClass [ref=2]
+metadata class.library class TestClass [ref=12] -> library package:test [ref=11]
+metadata class.interface class TestClass [ref=12] -> type TestInterface [ref=23]
+metadata field.owner field TestClass.fieldA [ref=25] -> class TestClass [ref=12]
+metadata field.name field TestClass.fieldA [ref=25] -> string fieldA [ref=4]
+metadata field.type field TestClass.fieldA [ref=25] -> type int [ref=19]
+metadata field.owner field TestClass.items [ref=26] -> class TestClass [ref=12]
+metadata field.name field TestClass.items [ref=26] -> string items [ref=6]
+metadata field.type field TestClass.items [ref=26] -> type List<int> [ref=20]
+metadata field.owner field TestClass.genericItems [ref=27] -> class TestClass [ref=12]
+metadata field.name field TestClass.genericItems [ref=27] -> string genericItems [ref=7]
+metadata field.type field TestClass.genericItems [ref=27] -> type List<X0> [ref=21]
+metadata field.owner field TestClass.callback [ref=28] -> class TestClass [ref=12]
+metadata field.name field TestClass.callback [ref=28] -> string callback [ref=8]
+metadata field.type field TestClass.callback [ref=28] -> type (int) => String [ref=24]
+metadata method.owner method TestClass.compute [ref=29] -> class TestClass [ref=12]
+metadata method.name method TestClass.compute [ref=29] -> string compute [ref=9]
+metadata method.signature method TestClass.compute [ref=29] -> type (int) => String [ref=24]
+metadata class.name class TestInterface [ref=13] -> string TestInterface [ref=10]
+metadata class.library class TestInterface [ref=13] -> library package:test [ref=11]
 EOF
 RUN

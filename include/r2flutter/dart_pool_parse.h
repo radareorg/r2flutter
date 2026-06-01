@@ -78,6 +78,7 @@ typedef struct DartClassInfo {
 	char *library_name;
 	ut64 library_ref;
 	ut64 super_class_ref;
+	ut64 interfaces_ref;
 	char *super_class_name;
 	ut32 instance_size;
 	ut32 type_argument_offset;
@@ -89,6 +90,12 @@ typedef struct DartClassInfo {
 	RList *methods;
 	ut64 name_ref;
 } DartClassInfo;
+
+typedef struct DartInterfaceInfo {
+	char *name;
+	ut64 type_ref;
+	ut64 class_ref;
+} DartInterfaceInfo;
 
 #define DART_CLASS_ABSTRACT (1 << 0)
 #define DART_CLASS_ENUM (1 << 1)

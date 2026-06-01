@@ -5,8 +5,9 @@
   "timeout": 10,
   "expect": {
     "contains": [
-      "class TestClass (size=48)",
+      "class TestClass implements TestInterface (size=48)",
       "library: package:test",
+      "class TestInterface (size=0)",
       "fields:",
       "+0x10 int fieldA",
       "+0x18 List<int> items",

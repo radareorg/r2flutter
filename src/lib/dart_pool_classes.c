@@ -39,6 +39,14 @@ static DartMethodInfo *dart_method_info_clone(const DartMethodInfo *mi) {
 	return out;
 }
 
+static void dart_interface_info_free(void *p) {
+	DartInterfaceInfo *ii = (DartInterfaceInfo *)p;
+	if (ii) {
+		free (ii->name);
+		free (ii);
+	}
+}
+
 typedef enum {
 	kFieldCid_extract = 10,
 	kLibraryCid_extract = 12,
@@ -568,7 +576,7 @@ static int decode_class_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *class
 		DartClassInfo *ci = R_NEW0 (DartClassInfo);
 		ci->ref_id = (*ref_counter)++;
 		ci->fields = r_list_newf ((RListFree)dart_field_info_free);
-		ci->interfaces = r_list_newf (free);
+		ci->interfaces = r_list_newf (dart_interface_info_free);
 		uint32_t instance_size = 0;
 		cs_read_u32 (s, &instance_size);
 		ci->instance_size = instance_size;
@@ -603,6 +611,7 @@ static int decode_class_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *class
 		}
 		ut64 interfaces_ref = 0;
 		cs_read_ref_id (s, &interfaces_ref);
+		ci->interfaces_ref = interfaces_ref;
 		ut64 skip_refs = 3;
 		for (ut64 j = 0; j < skip_refs; j++) {
 			ut64 dummy = 0;
@@ -1220,7 +1229,7 @@ static void recover_enum_types_from_strings(DartCtx *ctx, RList *class_list) {
 			eci = R_NEW0 (DartClassInfo);
 			eci->name = strdup (ec->name);
 			eci->fields = r_list_newf ((RListFree)dart_field_info_free);
-			eci->interfaces = r_list_newf (free);
+			eci->interfaces = r_list_newf (dart_interface_info_free);
 			if (!eci->name) {
 				dart_class_info_free (eci);
 				continue;
@@ -1274,6 +1283,68 @@ static int decode_library_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *lib
 	return 0;
 }
 
+static bool class_has_interface(const DartClassInfo *ci, const char *name, ut64 type_ref) {
+	if (!ci || !ci->interfaces) {
+		return false;
+	}
+	RListIter *it;
+	DartInterfaceInfo *ii;
+	r_list_foreach (ci->interfaces, it, ii) {
+		if (!ii) {
+			continue;
+		}
+		if (type_ref > 0 && ii->type_ref == type_ref) {
+			return true;
+		}
+		if (R_STR_ISNOTEMPTY (name) && R_STR_ISNOTEMPTY (ii->name) && !strcmp (name, ii->name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void resolve_class_interfaces(DartCtx *ctx, RList *class_list, RList *type_list, RList *type_args_list, RList *array_list, DartClassInfo *ci) {
+	if (!ci || !ci->interfaces || ci->interfaces_ref == 0) {
+		return;
+	}
+	DartArrayInfo *interfaces = find_array_by_ref (array_list, ci->interfaces_ref);
+	if (!interfaces || interfaces->length == 0 || !interfaces->refs) {
+		return;
+	}
+	for (ut64 i = 0; i < interfaces->length; i++) {
+		ut64 type_ref = interfaces->refs[i];
+		if (type_ref == 0) {
+			continue;
+		}
+		char *name = resolve_type_name (ctx, class_list, type_list, type_args_list, array_list, type_ref);
+		ut64 class_ref = 0;
+		DartTypeInfo *ti = find_type_by_ref (type_list, type_ref);
+		if (ti && ti->kind == kTypeCid) {
+			DartClassInfo *target_ci = find_class_by_ref (class_list, ti->type_class_ref);
+			if (target_ci) {
+				class_ref = target_ci->ref_id;
+			}
+		} else {
+			DartClassInfo *direct_ci = find_class_by_ref (class_list, type_ref);
+			if (direct_ci) {
+				class_ref = direct_ci->ref_id;
+				if (!name && R_STR_ISNOTEMPTY (direct_ci->name)) {
+					name = strdup (direct_ci->name);
+				}
+			}
+		}
+		if (R_STR_ISEMPTY (name) || class_has_interface (ci, name, type_ref)) {
+			free (name);
+			continue;
+		}
+		DartInterfaceInfo *ii = R_NEW0 (DartInterfaceInfo);
+		ii->name = name;
+		ii->type_ref = type_ref;
+		ii->class_ref = class_ref;
+		r_list_append (ci->interfaces, ii);
+	}
+}
+
 static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList *field_list, RList *method_list, RList *type_list, RList *type_args_list, RList *array_list) {
 	if (!ctx || !ctx->refs || !class_list) {
 		return;
@@ -1309,6 +1380,9 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 				}
 			}
 		}
+	}
+	r_list_foreach (class_list, it, ci) {
+		resolve_class_interfaces (ctx, class_list, type_list, type_args_list, array_list, ci);
 	}
 	if (method_list) {
 		DartMethodInfo *mi;
@@ -1523,7 +1597,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 						ci->instance_size = 0;
 						ci->flags = 0;
 						ci->fields = r_list_newf ((RListFree)dart_field_info_free);
-						ci->interfaces = r_list_newf (free);
+						ci->interfaces = r_list_newf (dart_interface_info_free);
 						r_list_append (class_list, ci);
 						class_count++;
 					}
@@ -1587,6 +1661,28 @@ static void dump_class_json(PJ *pj, const DartClassInfo *ci) {
 		pj_kn (pj, "ref", ci->super_class_ref);
 		if (ci->super_class_name) {
 			pj_ks (pj, "name", ci->super_class_name);
+		}
+		pj_end (pj);
+	}
+	if (ci->interfaces && r_list_length (ci->interfaces) > 0) {
+		pj_ka (pj, "interfaces");
+		RListIter *iit;
+		DartInterfaceInfo *ii;
+		r_list_foreach (ci->interfaces, iit, ii) {
+			if (!ii) {
+				continue;
+			}
+			pj_o (pj);
+			if (ii->type_ref > 0) {
+				pj_kn (pj, "ref", ii->type_ref);
+			}
+			if (ii->class_ref > 0) {
+				pj_kn (pj, "class_ref", ii->class_ref);
+			}
+			if (ii->name) {
+				pj_ks (pj, "name", ii->name);
+			}
+			pj_end (pj);
 		}
 		pj_end (pj);
 	}
@@ -1677,6 +1773,27 @@ static void append_enum_values(RStrBuf *sb, const DartClassInfo *ci) {
 	free (joined);
 }
 
+static void append_interfaces_text(RStrBuf *sb, const DartClassInfo *ci) {
+	if (!sb || !ci || !ci->interfaces || r_list_length (ci->interfaces) == 0) {
+		return;
+	}
+	bool first = true;
+	RListIter *it;
+	DartInterfaceInfo *ii;
+	r_list_foreach (ci->interfaces, it, ii) {
+		if (!ii || R_STR_ISEMPTY (ii->name)) {
+			continue;
+		}
+		if (first) {
+			r_strbuf_append (sb, " implements ");
+			first = false;
+		} else {
+			r_strbuf_append (sb, ", ");
+		}
+		r_strbuf_append (sb, ii->name);
+	}
+}
+
 static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool type_view) {
 	if (!ci || !ci->name) {
 		return;
@@ -1701,6 +1818,7 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool 
 		if (ci->super_class_name) {
 			r_strbuf_appendf (sb, " extends %s", ci->super_class_name);
 		}
+		append_interfaces_text (sb, ci);
 		r_strbuf_appendf (sb, " (size=%u", ci->instance_size);
 		if (ci->flags & DART_CLASS_ABSTRACT) {
 			r_strbuf_append (sb, " abstract");
@@ -1750,6 +1868,7 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool 
 	if (ci->super_class_name) {
 		r_strbuf_appendf (sb, " extends %s", ci->super_class_name);
 	}
+	append_interfaces_text (sb, ci);
 	r_strbuf_appendf (sb, " (size=%u", ci->instance_size);
 	if (ci->flags & DART_CLASS_ABSTRACT) {
 		r_strbuf_append (sb, " abstract");
