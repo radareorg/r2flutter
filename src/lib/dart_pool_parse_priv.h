@@ -1,4 +1,4 @@
-/* r2flutter - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
+/* r2flutter - MIT - Copyright 2026 - pancake */
 
 #ifndef R2C_DART_POOL_PARSE_PRIV_H
 #define R2C_DART_POOL_PARSE_PRIV_H

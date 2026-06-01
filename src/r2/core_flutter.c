@@ -1,4 +1,4 @@
-/* radare2 - LGPL3 - Copyright 2026 - pancake */
+/* radare2 - MIT - Copyright 2026 - pancake */
 
 #include <r_core.h>
 #include "../../include/r2flutter/version.h"
@@ -81,7 +81,7 @@ static bool r2flutter_dump_r2script(RCore *core, DartCtx *dctx) {
 	dart_app_load_info (app);
 	char *script = dart_dumper_dump4radare2 (app);
 	if (script) {
-		r_cons_printf (core->cons, "%s", script);
+		r_cons_print (core->cons, script);
 		free (script);
 	}
 	dart_app_free (app);
@@ -221,7 +221,7 @@ RCorePlugin r_core_plugin_flutter = {
 		.name = "r2flutter",
 		.desc = "Dart/Flutter AOT snapshot analyzer",
 		.author = "pancake, Ahmeth4n",
-		.license = "LGPL-3.0",
+		.license = "MIT",
 		.version = R2FLUTTER_VERSION,
 	},
 	.init = r2flutter_core_init,
