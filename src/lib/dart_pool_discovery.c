@@ -48,6 +48,33 @@ static void pick_vm_iso_by_size(const ut64 *addrs, const ut64 *lens, int count, 
 	}
 }
 
+static int collect_snapshot_magics_in_range(DartCtx *ctx, ut64 start, ut64 size, ut64 *found_addrs, int found_cap, int found_cnt) {
+	if (!ctx || !found_addrs || found_cap <= 0 || found_cnt >= found_cap || size < 4) {
+		return found_cnt;
+	}
+	ut8 buf[4096];
+	for (ut64 off = 0; off + 4 <= size; off += (sizeof (buf) - 16)) {
+		ut64 addr = start + off;
+		int toread = (int) ((off + sizeof (buf) <= size)? sizeof (buf): (size - off));
+		if (toread <= 0) {
+			break;
+		}
+		if (!read_mem (ctx, addr, buf, toread)) {
+			break;
+		}
+		for (int j = 0; j + 4 <= toread; j += 4) {
+			uint32_t val = r_read_le32 (buf + j);
+			if (val == DART_SNAPSHOT_MAGIC) {
+				found_addrs[found_cnt++] = addr + j;
+				if (found_cnt >= found_cap) {
+					return found_cnt;
+				}
+			}
+		}
+	}
+	return found_cnt;
+}
+
 int find_snapshots(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
 		return -1;
@@ -108,31 +135,19 @@ int find_snapshots(DartCtx *ctx) {
 			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] scanning section '%s' vaddr=0x%" PFMT64x " size=0x%" PFMT64x "\n", sec->name? sec->name: "(null)", (ut64)vaddr, (ut64)size);
 			}
-			ut8 buf[4096];
-			for (ut64 off = 0; off + 4 <= size; off += (sizeof (buf) - 16)) {
-				ut64 addr = vaddr + off;
-				int toread = (int) ((off + sizeof (buf) <= size)? sizeof (buf): (size - off));
-				if (toread <= 0) {
-					break;
-				}
-				if (!read_mem (ctx, addr, buf, toread)) {
-					break;
-				}
-				for (int j2 = 0; j2 + 4 <= toread; j2 += 4) {
-					uint32_t val = r_read_le32 (buf + j2);
-					if (val == DART_SNAPSHOT_MAGIC) {
-						if (found_cnt < (int) (sizeof (found_addrs) / sizeof (found_addrs[0]))) {
-							found_addrs[found_cnt++] = addr + j2;
-						}
-					}
-				}
-				if (found_cnt >= 8) {
-					break;
-				}
-			}
+			found_cnt = collect_snapshot_magics_in_range (ctx, vaddr, size, found_addrs, (int) (sizeof (found_addrs) / sizeof (found_addrs[0])), found_cnt);
 			if (found_cnt >= 8) {
 				break;
 			}
+		}
+	}
+	if (found_cnt == 0) {
+		ut64 size = r_io_size (core->io);
+		if (size > 0 && size < (1ULL << 32)) {
+			if (ctx->verbose > 0) {
+				fprintf (stderr, "[r2flutter] scanning raw file size=0x%" PFMT64x "\n", (ut64)size);
+			}
+			found_cnt = collect_snapshot_magics_in_range (ctx, 0, size, found_addrs, (int) (sizeof (found_addrs) / sizeof (found_addrs[0])), found_cnt);
 		}
 	}
 	if (found_cnt >= 1) {

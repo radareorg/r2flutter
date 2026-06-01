@@ -1,0 +1,14 @@
+{
+  "name": "dump-fields-synthetic-json",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-j", "-c", "bins/synthetic/field_snapshot.bin"],
+  "timeout": 10,
+  "expect": {
+    "contains": [
+      "\"name\":\"TestClass\"",
+      "\"fields\":[{\"name\":\"fieldA\"",
+      "\"offset\":16",
+      "\"static\":false"
+    ]
+  }
+}

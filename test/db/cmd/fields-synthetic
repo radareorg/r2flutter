@@ -1,0 +1,23 @@
+NAME=text-fields-synthetic
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -c bins/synthetic/field_snapshot.bin 2>/dev/null
+EOF
+EXPECT=<<EOF
+class TestClass (size=24)
+  library: package:test
+  fields:
+    +0x10  fieldA
+
+EOF
+RUN
+
+NAME=json-fields-synthetic
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j -c bins/synthetic/field_snapshot.bin 2>/dev/null
+EOF
+EXPECT=<<EOF
+[{"ref":7,"name":"TestClass","library":{"ref":6,"name":"package:test"},"layout":{"instance_size":24,"type_params":0,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false},"fields":[{"name":"fieldA","offset":16,"flags":{"static":false,"final":false,"const":false,"late":false}}]}]
+EOF
+RUN

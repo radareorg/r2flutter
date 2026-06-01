@@ -153,7 +153,7 @@ char *dart_utf16le_to_utf8(const ut8 *buf, ut64 size) {
 }
 
 bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out) {
-	if (!ctx || !base || !out) {
+	if (!ctx || !out) {
 		return false;
 	}
 	memset (out, 0, sizeof (*out));

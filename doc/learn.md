@@ -360,6 +360,28 @@ The repo now exposes the currently recoverable subset through:
 
 The new dumper intentionally stops at metadata/data-image edges. Disassembly-derived object-pool xrefs and call/use edges are still future work.
 
+## Object-Oriented Metadata Recovery Is Layered
+
+**Finding**: The current OO recovery state is no longer "classes done, fields
+missing, xrefs absent". The implemented surface is split across several
+confidence layers:
+
+- cluster metadata can recover class names, superclass/library refs, flags,
+  layout counters, and Field owner/name refs when those serialized objects
+  survive
+- data-image scans can attach raw Field and Function objects back to recovered
+  classes by owner/name
+- string fallback recovers many type-looking names but does not carry reliable
+  hierarchy, library, field, or method ownership
+- `-x` emits the metadata/data-image edge subset, while plugin `r2flutter -a`
+  handles some disassembly-derived annotations
+
+The most valuable next work is therefore not "add field extraction" from
+scratch. It is resolving `Type` / `TypeArguments` / interface arrays, extending
+method/signature coverage, populating reverse string references, and decoding
+object-pool entries so PP-offset observations can become real `code -> object`
+xrefs. Field attachment now has direct synthetic text/JSON coverage.
+
 ## `r2flutter -a` Uses Live `RCore` Metadata But Keeps PP Resolution Conservative
 
 **Finding**: The new plugin-side analysis pass now runs inside the already loaded `RCore` session, reuses the current function/flag state, normalizes tagged Dart entrypoints to executable addresses, and scans analyzed ARM64 ops to recover:
