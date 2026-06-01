@@ -1,7 +1,7 @@
 NAME=text-xrefs-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --limit 4 --dump-xrefs bins/ios/Runner.app 2>/dev/null
+!!../bin/r2flutter -l 4 -x bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
 scan class.name class _Uint16List -> string _Uint16List @ 0x1b1db0
@@ -14,7 +14,7 @@ RUN
 NAME=json-xrefs-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -j --limit 3 --dump-xrefs bins/ios/Runner.app 2>/dev/null
+!!../bin/r2flutter -j -l 3 -x bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
 [{"kind":"class.name","origin":"scan","src":{"type":"class","name":"_Uint16List"},"dst":{"type":"string","name":"_Uint16List","addr":1777072}},{"kind":"class.name","origin":"scan","src":{"type":"class","name":"_ExternalInt64Array"},"dst":{"type":"string","name":"_ExternalInt64Array","addr":1777104}},{"kind":"class.name","origin":"scan","src":{"type":"class","name":"FutureOr"},"dst":{"type":"string","name":"FutureOr","addr":1777184}}]
@@ -24,7 +24,7 @@ RUN
 NAME=r2-xrefs-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r --limit 2 --dump-xrefs bins/ios/Runner.app 2>/dev/null
+!!../bin/r2flutter -r -l 2 -x bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
 # Dart xrefs

@@ -1,7 +1,7 @@
 NAME=text-types-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-types bins/android/first 2>/dev/null | sed -n '1,6p'
+!!../bin/r2flutter -T bins/android/first 2>/dev/null | sed -n '1,6p'
 EOF
 EXPECT=<<EOF
 class _Uint16List (size=0)

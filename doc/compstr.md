@@ -303,7 +303,7 @@ Recommended flow:
    - payload bytes from the fill phase
 6. Emit recovered strings even if they are not NUL-terminated in the file.
 
-This is the right place to make `--dump-strings` more complete for compressed-pointer snapshots.
+This is the right place to make `-s` more complete for compressed-pointer snapshots.
 
 ### Fast Heuristic Method: Non-NUL Text Scanning
 
@@ -313,7 +313,7 @@ If you want a cheap fallback:
 - also scan UTF-16LE runs
 - accept that this is heuristic and object-unaware
 
-This repo already gets useful results from that approach. On the compressed Android `mafia` sample, the current `--dump-strings` already recovers strings such as:
+This repo already gets useful results from that approach. On the compressed Android `mafia` sample, the current `-s` already recovers strings such as:
 
 - `Handle`
 - `MonomorphicSmiableCall`
@@ -507,7 +507,7 @@ These backends still have string intrinsics, but in this tree compressed pointer
 
 ## What This Means For `r2flutter`
 
-If the goal is "show them in `--dump-strings`", there are two valid levels of support:
+If the goal is "show them in `-s`", there are two valid levels of support:
 
 ### Level 1: Heuristic text recovery
 
@@ -529,7 +529,7 @@ Add a string-cluster decoder for compressed-pointer AOT:
 4. emit exact strings from fill payloads
 5. optionally track cluster/file offsets separately from runtime object addresses
 
-That is the correct long-term implementation if you want deterministic, object-aware `--dump-strings` output.
+That is the correct long-term implementation if you want deterministic, object-aware `-s` output.
 
 ## Repo Validation Summary
 

@@ -1,7 +1,7 @@
 {
   "name": "dump-funcs-stub-naming",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "--dump-funcs", "bins/android/mafia/"],
+  "cmd": ["../bin/r2flutter", "-q", "-f", "bins/android/mafia/"],
   "timeout": 30,
   "expect": {
     "contains": [

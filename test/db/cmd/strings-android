@@ -1,7 +1,7 @@
 NAME=text-strings-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-strings bins/android/first 2>/dev/null | sed -n '1,6p'
+!!../bin/r2flutter -s bins/android/first 2>/dev/null | sed -n '1,6p'
 EOF
 EXPECT=<<EOF
 0x00000214  165 :app "f91b8b03bf7f30a5e983fd19b23d978dproduct no-code_comments no-dwarf_stack_traces_mode no-lazy_dispatchers dedup_instructions no-tsan arm64 linux no-compressed-pointers"
@@ -16,7 +16,7 @@ RUN
 NAME=r2-strings-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r --dump-strings bins/android/first 2>/dev/null | head -6
+!!../bin/r2flutter -r -s bins/android/first 2>/dev/null | head -6
 EOF
 EXPECT=<<EOF
 # Dart Strings

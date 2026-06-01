@@ -1,7 +1,7 @@
 NAME=dump-it-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --limit 3 --dump-it bins/android/first 2>/dev/null
+!!../bin/r2flutter -l 3 -i bins/android/first 2>/dev/null
 EOF
 EXPECT=<<EOF
 # length=1311 first_entry_with_code=0 canonical_stack_map_entries_offset=25731
@@ -14,7 +14,7 @@ RUN
 NAME=json-it-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -j --limit 2 --dump-it bins/android/first 2>/dev/null
+!!../bin/r2flutter -j -l 2 -i bins/android/first 2>/dev/null
 EOF
 EXPECT=<<EOF
 {"length":1311,"first_entry_with_code":0,"canonical_stack_map_entries_offset":25731,"entries":[{"index":0,"code_index":0,"address":419688,"pc_offset":104,"stack_map_offset":11487,"kind":"code","name":"Object.noSuchMethod"},{"index":1,"code_index":1,"address":419732,"pc_offset":148,"stack_map_offset":10504,"kind":"code","name":"new NoSuchMethodError"}]}
@@ -24,7 +24,7 @@ RUN
 NAME=r2-it-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r --limit 2 --dump-it bins/android/first 2>/dev/null
+!!../bin/r2flutter -r -l 2 -i bins/android/first 2>/dev/null
 EOF
 EXPECT=<<EOF
 # Dart InstructionTable entries

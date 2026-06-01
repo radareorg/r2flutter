@@ -1,7 +1,7 @@
 NAME=text-types-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-types bins/android/mafia 2>/dev/null | head -6
+!!../bin/r2flutter -T bins/android/mafia 2>/dev/null | head -6
 EOF
 EXPECT=<<EOF
 class Handle (size=0)
@@ -16,7 +16,7 @@ RUN
 NAME=r2-types-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r --dump-types bins/android/mafia 2>/dev/null | head -7
+!!../bin/r2flutter -r -T bins/android/mafia 2>/dev/null | head -7
 EOF
 EXPECT=<<EOF
 # Dart classes extracted from snapshot

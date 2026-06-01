@@ -1,6 +1,6 @@
 NAME=text-classes-mafia
 FILE=-
-CMDS=!!../bin/r2flutter --dump-classes bins/android/mafia 2>/dev/null | head -6
+CMDS=!!../bin/r2flutter -c bins/android/mafia 2>/dev/null | head -6
 EXPECT=<<EOF
 class Handle (size=0)
 class MonomorphicSmiableCall (size=0)
@@ -13,7 +13,7 @@ RUN
 
 NAME=r2-classes-mafia
 FILE=-
-CMDS=!!../bin/r2flutter -r --dump-classes bins/android/mafia 2>/dev/null | head -7
+CMDS=!!../bin/r2flutter -r -c bins/android/mafia 2>/dev/null | head -7
 EXPECT=<<EOF
 # Dart classes extracted from snapshot
 # class Handle (size=0)

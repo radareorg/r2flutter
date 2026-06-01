@@ -1,6 +1,7 @@
-/* r2flutter - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
+/* r2flutter - MIT - Copyright 2026 - pancake, Ahmeth4n */
 
 #include <r_core.h>
+#include <r_getopt.h>
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_obf.h"
@@ -22,25 +23,26 @@ typedef enum {
 static const char usage_text[] =
 	"Usage: %s [options] <libapp_path_or_dir>\n"
 	"Modifiers:\n"
-	"  -h, --help            Show help\n"
+	"  -h                    Show help\n"
 	"  -j                    Output in JSON format\n"
 	"  -r                    Format output for r2 commands\n"
-	"  -V, --version         Show version\n"
+	"  -V                    Show version\n"
+	"  -q                    Suppress non-essential output\n"
 	"  -v                    Verbose (stderr debug info)\n"
 	"  -vv                   More verbose (dump headers)\n"
 	"Actions:\n"
-	"  --dump-classes        Print extracted class information\n"
-	"  --dump-funcs          Print all extracted functions (addr name)\n"
-	"  --dump-header         Print Dart AOT snapshot header info\n"
-	"  --dump-it             Print instruction table entries to stdout\n"
-	"  --dump-r2script       Print radare2 script for snapshot analysis\n"
-	"  --dump-strings        Print all extracted strings\n"
-	"  --dump-xrefs          Print metadata/data-image xrefs\n"
-	"  --dump-types          Print string-based type names\n"
+	"  -c                    Print extracted class information\n"
+	"  -f                    Print all extracted functions (addr name)\n"
+	"  -H                    Print Dart AOT snapshot header info\n"
+	"  -i                    Print instruction table entries to stdout\n"
+	"  -R                    Print radare2 script for snapshot analysis\n"
+	"  -s                    Print all extracted strings\n"
+	"  -T                    Print string-based type names\n"
+	"  -x                    Print metadata/data-image xrefs\n"
 	"Options:\n"
-	"  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)\n"
-	"  --omfile <file>       Load Flutter obfuscation map JSON (from --save-obfuscation-map)\n"
-	"  --use-name-pool       Heuristic fallback for unknown functions; may assign wrong names\n";
+	"  -l <N>                Limit output to N items\n"
+	"  -n                    Heuristic fallback for unknown functions; may assign wrong names\n"
+	"  -o <file>             Load Flutter obfuscation map JSON\n";
 
 static void print_usage(const char *argv0) {
 	printf (usage_text, argv0);
@@ -113,68 +115,77 @@ int main(int argc, char **argv) {
 	DartCtx dctx = {
 		.no_stubs = true
 	};
-
-	for (int i = 1; i < argc; i++) {
-		const char *a = argv[i];
-		if (!a) {
-			continue;
+	RGetopt opt;
+	r_getopt_init (&opt, argc, (const char **)argv, "cfhHijno:qrRsTvVxl:");
+	int c;
+	while ((c = r_getopt_next (&opt)) != -1) {
+		switch (c) {
+		case 'c':
+			action = ACTION_DUMP_CLASSES;
+			break;
+		case 'f':
+			action = ACTION_DUMP_FUNCS;
+			break;
+		case 'H':
+			action = ACTION_DUMP_HEADER;
+			break;
+		case 'h':
+			print_usage (argv[0]);
+			return 0;
+		case 'i':
+			action = ACTION_DUMP_IT;
+			dctx.dump_it = true;
+			break;
+		case 'j':
+			opt_json = true;
+			break;
+		case 'l':
+			dctx.dump_fns_limit = atoi (opt.arg);
+			break;
+		case 'n':
+			dctx.use_name_pool = true;
+			break;
+		case 'o':
+			dctx.obf_map_path = opt.arg;
+			break;
+		case 'q':
+			dctx.quiet = 1;
+			break;
+		case 'r':
+			opt_r2 = true;
+			break;
+		case 'R':
+			action = ACTION_DUMP_R2SCRIPT;
+			break;
+		case 's':
+			action = ACTION_DUMP_STRINGS;
+			break;
+		case 'T':
+			action = ACTION_DUMP_TYPES;
+			break;
+		case 'v':
+			dctx.verbose++;
+			break;
+		case 'V':
+			printf ("r2flutter %s\n", R2FLUTTER_VERSION);
+			return 0;
+		case 'x':
+			action = ACTION_DUMP_XREFS;
+			break;
+		case 0:
+			R_LOG_ERROR ("Long options are not supported");
+			print_usage (argv[0]);
+			return 1;
+		default:
+			return 1;
 		}
-		if (a[0] == '-') {
-			if (!strcmp (a, "-h") || !strcmp (a, "--help")) {
-				print_usage (argv[0]);
-				return 0;
-			}
-			if (!strcmp (a, "-V") || !strcmp (a, "--version")) {
-				printf ("r2flutter %s\n", R2FLUTTER_VERSION);
-				return 0;
-			}
-			if (!strcmp (a, "-v")) {
-				dctx.verbose = 1;
-			} else if (!strcmp (a, "-vv")) {
-				dctx.verbose = 2;
-			} else if (!strcmp (a, "-j")) {
-				opt_json = true;
-			} else if (!strcmp (a, "-r")) {
-				opt_r2 = true;
-			} else if (!strcmp (a, "--dump-strings")) {
-				action = ACTION_DUMP_STRINGS;
-			} else if (!strcmp (a, "--dump-classes")) {
-				action = ACTION_DUMP_CLASSES;
-			} else if (!strcmp (a, "--dump-types")) {
-				action = ACTION_DUMP_TYPES;
-			} else if (!strcmp (a, "--dump-header")) {
-				action = ACTION_DUMP_HEADER;
-			} else if (!strcmp (a, "--dump-funcs")) {
-				action = ACTION_DUMP_FUNCS;
-			} else if (!strcmp (a, "--limit")) {
-				if (i + 1 < argc) {
-					dctx.dump_fns_limit = atoi (argv[i + 1]);
-					i++;
-				} else {
-					R_LOG_ERROR ("Missing argument for %s", a);
-					return 1;
-				}
-			} else if (!strcmp (a, "--omfile")) {
-				if (i + 1 < argc) {
-					dctx.obf_map_path = argv[i + 1];
-					i++;
-				} else {
-					R_LOG_ERROR ("Missing argument for %s", a);
-					return 1;
-				}
-			} else if (!strcmp (a, "--dump-it")) {
-				action = ACTION_DUMP_IT;
-				dctx.dump_it = true;
-			} else if (!strcmp (a, "--dump-xrefs")) {
-				action = ACTION_DUMP_XREFS;
-			} else if (!strcmp (a, "--dump-r2script")) {
-				action = ACTION_DUMP_R2SCRIPT;
-			} else if (!strcmp (a, "--use-name-pool")) {
-				dctx.use_name_pool = true;
-			}
-		} else {
-			libapp_path_in = a;
-		}
+	}
+	if (opt.ind < argc) {
+		libapp_path_in = argv[opt.ind++];
+	}
+	if (opt.ind < argc) {
+		R_LOG_ERROR ("Unexpected argument: %s", argv[opt.ind]);
+		return 1;
 	}
 	if (!libapp_path_in) {
 		print_usage (argv[0]);

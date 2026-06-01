@@ -1,7 +1,7 @@
 {
   "name": "dump-classes-android",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-classes", "bins/android/first/"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "-c", "bins/android/first/"],
   "timeout": 30,
   "expect": {
     "contains": [

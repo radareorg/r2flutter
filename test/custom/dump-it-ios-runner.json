@@ -1,7 +1,7 @@
 {
   "name": "dump-it-ios-runner",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "--limit", "3", "--dump-it", "bins/ios/Runner.app"],
+  "cmd": ["../bin/r2flutter", "-l", "3", "-i", "bins/ios/Runner.app"],
   "timeout": 20,
   "expect": {
     "equals": "# length=7670 first_entry_with_code=0 canonical_stack_map_entries_offset=160751\n0 0xe768 code func.0000e768\n1 0xe770 code func.0000e770\n2 0xe7a0 code func.0000e7a0"

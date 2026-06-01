@@ -1,7 +1,7 @@
 {
   "name": "dump-types-android",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-types", "bins/android/first/"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "-T", "bins/android/first/"],
   "timeout": 30,
   "expect": {
     "contains": [

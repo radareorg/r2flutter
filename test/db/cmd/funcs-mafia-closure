@@ -1,7 +1,7 @@
 NAME=text-funcs-mafia-closure
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-funcs --quiet bins/android/mafia 2>/dev/null | grep -E '0x5b72b0|0x5b74cc'
+!!../bin/r2flutter -f -q bins/android/mafia 2>/dev/null | grep -E '0x5b72b0|0x5b74cc'
 EOF
 EXPECT=<<EOF
 0x5b72b0 method.FlutterError._anon_closure

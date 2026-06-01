@@ -1,7 +1,7 @@
 NAME=text-types-enum-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-types bins/ios/Runner.app 2>/dev/null | grep '^enum AppLifecycleState {'
+!!../bin/r2flutter -T bins/ios/Runner.app 2>/dev/null | grep '^enum AppLifecycleState {'
 EOF
 EXPECT=<<EOF
 enum AppLifecycleState { detached, hidden, inactive, paused, resumed }

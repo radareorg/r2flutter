@@ -1,7 +1,7 @@
 NAME=json-header-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -j --dump-header bins/android/mafia 2>/dev/null
+!!../bin/r2flutter -j -H bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
 {"kind":3,"hash":"97ff04a728735e6b6b098bdf983faaba","vm_data":832,"vm_instr":5898240,"iso_data":19072,"iso_instr":5990720,"cluster":{"base":1177,"objs":237774,"clusters":1105,"it_len":37258,"it_off":64,"total":4871502},"cws":4,"dart_version":"3.9.2","tag_style":"OBJECT_HEADER","alignment":64,"header_fields":5,"it_capacity":20000,"cid_table":{"cid_class":5,"cid_function":7,"cid_code":18,"cid_string":93,"cid_one_byte_string":94,"cid_two_byte_string":95,"cid_array":90,"cid_mint":61,"cid_object_pool":23,"num_predefined":175}}

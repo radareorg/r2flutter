@@ -8,25 +8,26 @@ EOF
 EXPECT=<<EOF
 Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
 Modifiers:
-  -h, --help            Show help
+  -h                    Show help
   -j                    Output in JSON format
   -r                    Format output for r2 commands
-  -V, --version         Show version
+  -V                    Show version
+  -q                    Suppress non-essential output
   -v                    Verbose (stderr debug info)
   -vv                   More verbose (dump headers)
 Actions:
-  --dump-classes        Print extracted class information
-  --dump-funcs          Print all extracted functions (addr name)
-  --dump-header         Print Dart AOT snapshot header info
-  --dump-it             Print instruction table entries to stdout
-  --dump-r2script       Print radare2 script for snapshot analysis
-  --dump-strings        Print all extracted strings
-  --dump-xrefs          Print metadata/data-image xrefs
-  --dump-types          Print string-based type names
+  -c                    Print extracted class information
+  -f                    Print all extracted functions (addr name)
+  -H                    Print Dart AOT snapshot header info
+  -i                    Print instruction table entries to stdout
+  -R                    Print radare2 script for snapshot analysis
+  -s                    Print all extracted strings
+  -T                    Print string-based type names
+  -x                    Print metadata/data-image xrefs
 Options:
-  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
-  --omfile <file>       Load Flutter obfuscation map JSON (from --save-obfuscation-map)
-  --use-name-pool       Heuristic fallback for unknown functions; may assign wrong names
+  -l <N>                Limit output to N items
+  -n                    Heuristic fallback for unknown functions; may assign wrong names
+  -o <file>             Load Flutter obfuscation map JSON
 ===
 Usage: r2flutter [-ajirfqncFstxH] [args]
 | r2flutter          analyze dart snapshot and apply flags/comments

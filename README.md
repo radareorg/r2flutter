@@ -45,38 +45,40 @@ make user-install
 ```bash
 Usage: bin/r2flutter [options] <libapp_path_or_dir>
 Modifiers:
-  -h, --help            Show help
+  -h                    Show help
   -j                    Output in JSON format
-  -r                    Output in radare2 format
-  -V, --version         Show version
+  -r                    Format output for r2 commands
+  -V                    Show version
+  -q                    Suppress non-essential output
   -v                    Verbose (stderr debug info)
   -vv                   More verbose (dump headers)
 Actions:
-  --dump-classes        Print extracted class information
-  --dump-funcs          Print all extracted functions (addr name)
-  --dump-header         Print Dart AOT snapshot header info
-  --dump-it             Print instruction table entries to stdout
-  --dump-r2script       Print radare2 script for snapshot analysis
-  --dump-strings        Print all extracted strings
-  --dump-types          Print string-based type names
+  -c                    Print extracted class information
+  -f                    Print all extracted functions (addr name)
+  -H                    Print Dart AOT snapshot header info
+  -i                    Print instruction table entries to stdout
+  -R                    Print radare2 script for snapshot analysis
+  -s                    Print all extracted strings
+  -T                    Print string-based type names
+  -x                    Print metadata/data-image xrefs
 Options:
-  --limit <N>           Limit output to N items (applies to dump-funcs, dump-it, etc.)
-  --omfile <file>       Load Flutter obfuscation map JSON (from --save-obfuscation-map)
-  --use-name-pool       Heuristic fallback for unknown functions; may assign wrong names
+  -l <N>                Limit output to N items
+  -n                    Heuristic fallback for unknown functions; may assign wrong names
+  -o <file>             Load Flutter obfuscation map JSON
 ```
 
-`--dump-funcs` and the default analysis flow skip loader-provided ELF/Mach-O stub symbols; radare2 already gets those from `RBin`, so `r2flutter` stays focused on Dart-derived metadata.
+`-f` and the default analysis flow skip loader-provided ELF/Mach-O stub symbols; radare2 already gets those from `RBin`, so `r2flutter` stays focused on Dart-derived metadata.
 
-`--omfile` consumes the JSON array emitted by Flutter/Dart `--save-obfuscation-map`. r2flutter inverts that mapping and applies it to recovered functions, instruction-table names, classes, fields, and method owners.
+`-o` consumes the JSON array emitted by Flutter/Dart `--save-obfuscation-map`. r2flutter inverts that mapping and applies it to recovered functions, instruction-table names, classes, fields, and method owners.
 
-`--use-name-pool` is intentionally opt-in. It consumes `package:` and `dart:` strings from the data image as a sequential fallback for otherwise unnamed functions, so it can produce plausible but incorrect names when the string order does not match the instruction table.
+`-n` is intentionally opt-in. It consumes `package:` and `dart:` strings from the data image as a sequential fallback for otherwise unnamed functions, so it can produce plausible but incorrect names when the string order does not match the instruction table.
 
-`--dump-it` honors the global format modifiers:
+`-i` honors the global format modifiers:
 
 ```bash
-bin/r2flutter --dump-it test/bins/ios/Runner.app
-bin/r2flutter -j --limit 16 --dump-it test/bins/ios/Runner.app
-bin/r2flutter -r --limit 16 --dump-it test/bins/ios/Runner.app
+bin/r2flutter -i test/bins/ios/Runner.app
+bin/r2flutter -j -l 16 -i test/bins/ios/Runner.app
+bin/r2flutter -r -l 16 -i test/bins/ios/Runner.app
 ```
 
 ## Dependencies

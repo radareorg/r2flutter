@@ -1,13 +1,6 @@
-/* radare2 - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
+/* radare2 - MIT - Copyright 2026 - pancake, Ahmeth4n */
 
-#include <ctype.h>
 #include <r_core.h>
-#include <r_flag.h>
-#include <r_anal.h>
-#include <r_list.h>
-#include <r_util/r_json.h>
-#include <r_util/r_name.h>
-#include <r_util/r_str.h>
 #include <sdb/ht_pp.h>
 #include <sdb/ht_up.h>
 #include "../../include/r2flutter/dart_app.h"

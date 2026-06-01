@@ -1,6 +1,6 @@
 # FUNCTIPS — Function Listing In r2flutter
 
-Practical notes for anyone touching `--dump-funcs`, the InstructionsTable path, or the cluster-based name recovery in r2flutter. Captures what I learned while fixing the `fix-funcs` branch on the Dart 3.8.1 / Android arm64 testcase (`poc/app/libapp.so`, snapshot `830f4f59e7969c70b595182826435c19`), plus the follow-ups that are deliberately left for future sessions.
+Practical notes for anyone touching `-f`, the InstructionsTable path, or the cluster-based name recovery in r2flutter. Captures what I learned while fixing the `fix-funcs` branch on the Dart 3.8.1 / Android arm64 testcase (`poc/app/libapp.so`, snapshot `830f4f59e7969c70b595182826435c19`), plus the follow-ups that are deliberately left for future sessions.
 
 ## 1. Ground truth and how to diff
 
@@ -19,7 +19,7 @@ grep '^idaapi.set_name'      ida_script/addNames.py | sed 's/idaapi.set_name(\(0
 Compare:
 
 ```
-./bin/r2flutter --dump-funcs poc/app/libapp.so 2>/dev/null | awk '{print $1}' | sort -u > /tmp/rf_addrs.txt
+./bin/r2flutter -f poc/app/libapp.so 2>/dev/null | awk '{print $1}' | sort -u > /tmp/rf_addrs.txt
 comm -12 /tmp/bl_addrs.txt /tmp/rf_addrs.txt | wc -l   # common
 comm -23 /tmp/bl_addrs.txt /tmp/rf_addrs.txt | wc -l   # r2flutter misses
 comm -13 /tmp/bl_addrs.txt /tmp/rf_addrs.txt | wc -l   # r2flutter invents
@@ -51,7 +51,7 @@ Two non-obvious points that bit us:
 
 ### Symptom
 
-Running `diff <(r2flutter --dump-funcs) <(blutter addNames.py)` showed ~54% of common addresses with the wrong name. Sampling revealed a pattern:
+Running `diff <(r2flutter -f) <(blutter addNames.py)` showed ~54% of common addresses with the wrong name. Sampling revealed a pattern:
 
 ```
 0x6572f0  blutter=AllocateSelectionContainerStub      r2flutter=method.TooltipState._buildTooltipOverlay
@@ -124,7 +124,7 @@ What to change:
 
 - First prove the alias relationship from serialized data. A check against `test/bins/android/mafia` showed that the Code payloads for the early slots are `0` or `1`, so `payload_info >> 1` is zero for the `0x5b6b64` and `0x5b6c34` `dyn:` entries. That means the unchecked-offset idea above is not sufficient for this fixture as written.
 - Do not fold `dyn:` entries by name alone. That would make the count look better while hiding a parser gap.
-- Once a reliable Code-object relationship is available, post-process function-listing output only. Keep `--dump-it` as the raw InstructionsTable view.
+- Once a reliable Code-object relationship is available, post-process function-listing output only. Keep `-i` as the raw InstructionsTable view.
 - Add a regression test on `test/bins/android/mafia` that pins the before/after count at `0x5b6b64` / `0x5b6c34` (currently both listed separately as `method.Duration.dyn:*`).
 
 Expected impact: -280 entries on `poc/app`, closer count-parity with blutter.
@@ -174,6 +174,6 @@ Resist the temptation to reimplement these blutter behaviors — they are either
 
 - Full type-signature recovery (parameter types, default values). Blutter reads these from `FunctionType` + `TypeParameters` via VM accessors; reconstructing them from the snapshot is possible but large, and buys very little for function *listing*.
 - Frida script generation, IDA struct dump, asm-annotated Dart files. These are blutter's output products, not r2flutter's responsibility; r2flutter emits r2-native outputs (flags, comments, symbols) only.
-- Object pool walking for field discovery beyond names. Fields belong to `--dump-classes`; keep function listing focused on the Code cluster + InstructionsTable.
+- Object pool walking for field discovery beyond names. Fields belong to `-c`; keep function listing focused on the Code cluster + InstructionsTable.
 
-Keep `--dump-funcs` tight: one name per Code object, named by owner kind, diffable against blutter. Everything else is a different subcommand.
+Keep `-f` tight: one name per Code object, named by owner kind, diffable against blutter. Everything else is a different subcommand.

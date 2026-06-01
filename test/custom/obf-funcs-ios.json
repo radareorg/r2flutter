@@ -1,7 +1,7 @@
 {
   "name": "obf-funcs-ios",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-j", "--dump-funcs", "--limit", "3", "--omfile", "custom/obf-map.txt", "bins/ios/Runner.app"],
+  "cmd": ["../bin/r2flutter", "-j", "-f", "-l", "3", "-o", "custom/obf-map.txt", "bins/ios/Runner.app"],
   "timeout": 30,
   "expect": {
     "equals": "[{\"addr\":59240,\"name\":\"func.0000e768\"},{\"addr\":59248,\"name\":\"func.0000e770\"},{\"addr\":59296,\"name\":\"func.0000e7a0\"}]"

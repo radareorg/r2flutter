@@ -1,7 +1,7 @@
 {
   "name": "dump-funcs-ios-runner",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-funcs", "--limit", "10", "bins/ios/Runner.app"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "-f", "-l", "10", "bins/ios/Runner.app"],
   "timeout": 30,
   "expect": {
     "contains": [

@@ -1,7 +1,7 @@
 NAME=funcs-mafia-vm-symbol-operators
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-funcs --quiet bins/android/mafia 2>/dev/null | awk '$1=="0xe11f60" || $1=="0xe1205c" || $1=="0xe12174" || $1=="0xe12220" || $1=="0xe122a8" {print} $1=="0xe12220" || $1=="0xe122a8" {names[$2]=1} END {n=0; for (name in names) {n++} print "unique_greaterthan=" n}'
+!!../bin/r2flutter -f -q bins/android/mafia 2>/dev/null | awk '$1=="0xe11f60" || $1=="0xe1205c" || $1=="0xe12174" || $1=="0xe12220" || $1=="0xe122a8" {print} $1=="0xe12220" || $1=="0xe122a8" {names[$2]=1} END {n=0; for (name in names) {n++} print "unique_greaterthan=" n}'
 EOF
 EXPECT=<<EOF
 0xe11f60 method._Double_0150898.op_add

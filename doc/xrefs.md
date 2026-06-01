@@ -526,28 +526,28 @@ These low-confidence links are still useful for triage, but they should not be p
 
 With current repo code, the main directly dumpable pieces are:
 
-- `--dump-header`
+- `-H`
   - snapshot layout
   - CID table basics
   - pointer-compression mode
-- `--dump-it`
+- `-i`
   - instruction-table entries
   - code entrypoint addresses
-- `--dump-funcs`
+- `-f`
   - recovered function entrypoints and best-effort names
-- `--dump-classes`
+- `-c`
   - class/type names
   - surviving superclass/library metadata when present
   - field/method attachment when data-image scans succeed
-- `--dump-strings`
+- `-s`
   - string values and byte addresses
-- `--dump-xrefs`
+- `-x`
   - flattened metadata/object-graph xrefs
   - class -> string/library/super links
   - field -> owner/name/type links when metadata survives
   - method -> owner/name/entry links when data-image scans succeed
   - instruction-table entry -> code/stub address links
-- `--dump-r2script`
+- `-R`
   - recovered function flags
   - PP-relative object-pool offsets seen in code
 

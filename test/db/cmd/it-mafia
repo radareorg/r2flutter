@@ -1,7 +1,7 @@
 NAME=dump-it-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --limit 3 --dump-it bins/android/mafia 2>/dev/null
+!!../bin/r2flutter -l 3 -i bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
 # length=37258 first_entry_with_code=0 canonical_stack_map_entries_offset=827131
@@ -14,7 +14,7 @@ RUN
 NAME=json-it-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -j --limit 2 --dump-it bins/android/mafia 2>/dev/null
+!!../bin/r2flutter -j -l 2 -i bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
 {"length":37258,"first_entry_with_code":0,"canonical_stack_map_entries_offset":827131,"entries":[{"index":0,"code_index":0,"address":5990848,"pc_offset":128,"stack_map_offset":762000,"kind":"code","name":"method.DateTime.compareTo"},{"index":1,"code_index":1,"address":5991076,"pc_offset":356,"stack_map_offset":762043,"kind":"code","name":"method.Duration.compareTo"}]}
@@ -24,7 +24,7 @@ RUN
 NAME=r2-it-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r --limit 2 --dump-it bins/android/mafia 2>/dev/null
+!!../bin/r2flutter -r -l 2 -i bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
 # Dart InstructionTable entries

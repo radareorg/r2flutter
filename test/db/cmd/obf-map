@@ -1,7 +1,7 @@
 NAME=obf-funcs-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -j --dump-funcs --limit 3 --omfile custom/obf-map.txt bins/ios/Runner.app 2>/dev/null
+!!../bin/r2flutter -j -f -l 3 -o custom/obf-map.txt bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
 [{"addr":59240,"name":"func.0000e768"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"func.0000e7a0"}]
@@ -11,7 +11,7 @@ RUN
 NAME=obf-it-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-it --limit 2 --omfile custom/obf-map.txt bins/android/first 2>/dev/null
+!!../bin/r2flutter -i -l 2 -o custom/obf-map.txt bins/android/first 2>/dev/null
 EOF
 EXPECT=<<EOF
 # length=1311 first_entry_with_code=0 canonical_stack_map_entries_offset=25731

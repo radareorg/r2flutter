@@ -4,7 +4,7 @@
   "cmd": [
     "python3",
     "-c",
-    "from pathlib import Path; import struct, subprocess, sys; inner=Path('bins/macos/hello/hello.aot').read_bytes(); out=Path('/tmp/r2flutter-test-outer-dart-exe'); hdr=struct.pack('<IIIIIIII',0xfeedfacf,0x0100000c,0,2,1,40,0,0); note=struct.pack('<II16sQQ',0x31,40,b'__dart_app_snap\\0',0x1000,len(inner)); out.write_bytes(hdr+note+(b'\\0'*(0x1000-len(hdr)-len(note)))+inner); p=subprocess.run(['../bin/r2flutter','-j','--dump-header',str(out)],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True); sys.stdout.write(p.stdout); sys.exit(p.returncode)"
+    "from pathlib import Path; import struct, subprocess, sys; inner=Path('bins/macos/hello/hello.aot').read_bytes(); out=Path('/tmp/r2flutter-test-outer-dart-exe'); hdr=struct.pack('<IIIIIIII',0xfeedfacf,0x0100000c,0,2,1,40,0,0); note=struct.pack('<II16sQQ',0x31,40,b'__dart_app_snap\\0',0x1000,len(inner)); out.write_bytes(hdr+note+(b'\\0'*(0x1000-len(hdr)-len(note)))+inner); p=subprocess.run(['../bin/r2flutter','-j','-H',str(out)],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True); sys.stdout.write(p.stdout); sys.exit(p.returncode)"
   ],
   "expect": {
     "contains": [

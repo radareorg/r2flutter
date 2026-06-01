@@ -1,7 +1,7 @@
 NAME=text-strings-android-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-strings bins/android/mafia 2>/dev/null | sed -n '1,12p'
+!!../bin/r2flutter -s bins/android/mafia 2>/dev/null | sed -n '1,12p'
 EOF
 EXPECT=<<EOF
 0x00000354  167 :app "97ff04a728735e6b6b098bdf983faabaproduct no-code_comments no-dwarf_stack_traces_mode dedup_instructions no-tsan no-msan no-shared_data arm64 android compressed-pointers"

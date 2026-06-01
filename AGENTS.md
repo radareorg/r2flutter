@@ -45,18 +45,17 @@ Tests
 
 CLI Flags (debugging)
 - `-v` / `-vv`: increase stderr verbosity for snapshot discovery.
-- `-j --dump-header`: emit one JSON line with snapshot + cluster info.
-- `--dump-it`: print InstructionTable entries to stdout. Supports plain text, `-j`, and `-r`.
-- `--quiet`: suppress non-essential stdout (handy for JSON-only tests).
-- `--no-dump`: suppress printing radare2 flags/script.
+- `-j -H`: emit one JSON line with snapshot + cluster info.
+- `-i`: print InstructionTable entries to stdout. Supports plain text, `-j`, and `-r`.
+- `-q`: suppress non-essential stdout (handy for JSON-only tests).
 
 Function dumps skip loader-provided ELF/Mach-O stub symbols by default; rely on plain `r2`/`RBin` for those and keep `r2flutter` focused on Dart-derived names.
 
 Iteration Loop
 1) Implement a focused change (parser or flags), build with `make`.
 2) Add a minimal r2r test exercising the new behavior under `test/db/cmd/`.
-3) Run `make test` to validate. If it times out, reduce test output (use `--quiet`, `--no-dump`).
-4) When failures occur, use the debug flags (`-v`, `-vv`, `--dump-it`) and small inputs to triage. Adjust parser heuristics accordingly.
+3) Run `make test` to validate. If it times out, reduce test output (use `-q`).
+4) When failures occur, use the debug flags (`-v`, `-vv`, `-i`) and small inputs to triage. Adjust parser heuristics accordingly.
 5) Keep tests deterministic: prefer single-line stable outputs and avoid large dumps.
 
 Parser Notes

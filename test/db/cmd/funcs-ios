@@ -1,7 +1,7 @@
 NAME=json-funcs-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -j --dump-funcs --limit 3 bins/ios/Runner.app 2>/dev/null
+!!../bin/r2flutter -j -f -l 3 bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
 [{"addr":59240,"name":"func.0000e768"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"func.0000e7a0"}]
@@ -11,7 +11,7 @@ RUN
 NAME=r2-funcs-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r --dump-funcs --limit 2 bins/ios/Runner.app 2>/dev/null
+!!../bin/r2flutter -r -f -l 2 bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
 f method.func.0000e768 = 0xe768

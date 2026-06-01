@@ -1,7 +1,7 @@
 NAME=r2script-method-order
 FILE=-
 CMDS=<<CMDS_END
-!!../bin/r2flutter --dump-r2script bins/ios/Runner.app 2>/dev/null | perl -ne 'if (/^f method\..* = 0x([0-9a-fA-F]+)/) { $v = hex ($1); if (defined $p && $v < $p) { print "UNSORTED\n"; exit 1; } $p = $v; $count++; } END { if ($count > 0) { print "OK\n"; } else { print "NO_METHODS\n"; exit 1; } }'
+!!../bin/r2flutter -R bins/ios/Runner.app 2>/dev/null | perl -ne 'if (/^f method\..* = 0x([0-9a-fA-F]+)/) { $v = hex ($1); if (defined $p && $v < $p) { print "UNSORTED\n"; exit 1; } $p = $v; $count++; } END { if ($count > 0) { print "OK\n"; } else { print "NO_METHODS\n"; exit 1; } }'
 CMDS_END
 EXPECT=<<EXPECT_END
 OK

@@ -33,7 +33,7 @@ Flutter macOS apps differ structurally: their Dart app snapshot lives in `App.fr
 
 **Implementation implications**:
 
-- `--dump-header` JSON should include container metadata such as `container:"macho-lc-note"`, `note_owner:"__dart_app_snap"`, `payload_offset`, and `payload_size` when present
+- `-H` JSON should include container metadata such as `container:"macho-lc-note"`, `note_owner:"__dart_app_snap"`, `payload_offset`, and `payload_size` when present
 - a future `--triage` mode can report `standalone-dart-macos` vs `flutter-macos-app` based on `LC_NOTE`, snapshot symbols, and Flutter framework imports
 - string triage should prioritize the inner Mach-O object pool; this is where hardcoded URLs, paths, and keys appear even when the outer VM binary looks uninteresting
 
@@ -86,7 +86,7 @@ Handle 82 1a 82 34 MonomorphicSmiableCall ...
 
 The printable text is still plain, but it is separated by cluster metadata bytes instead of `0x00`.
 
-**Implication**: `--dump-strings` can recover some of these today with non-NUL-delimited text scanning, but complete support should come from snapshot-aware string-cluster decoding rather than classic C-string assumptions.
+**Implication**: `-s` can recover some of these today with non-NUL-delimited text scanning, but complete support should come from snapshot-aware string-cluster decoding rather than classic C-string assumptions.
 
 ## Snapshot `WriteUnsigned` Is Not Standard ULEB128
 
@@ -146,9 +146,9 @@ The recovered string object starts at `0x2e2fc0`, and its payload decodes the ex
 
 Those addresses match the reference outputs from blutter and unflutter for `DateTime.compareTo`, its dynamic variant, `_runMain`, and the `_runMain` anonymous closure.
 
-**Implication**: `cluster.it_len` is not a reliable upper bound for `--dump-funcs` on this sample. Function dumping should trust the decoded RO-image table length and should not cap itself to the smaller clustered-header value.
+**Implication**: `cluster.it_len` is not a reliable upper bound for `-f` on this sample. Function dumping should trust the decoded RO-image table length and should not cap itself to the smaller clustered-header value.
 
-## `--use-name-pool` Must Stay Opt-In
+## `-n` Must Stay Opt-In
 
 **Finding**: The name-pool fallback is useful for exploratory reversing, but it is too weak to enable by default because it can silently mislabel functions.
 
@@ -164,7 +164,7 @@ Why this is risky:
 - one early mismatch shifts all later fallback names
 - the resulting names look plausible enough to be mistaken for confirmed metadata
 
-Use `--use-name-pool` for manual triage only. The default synthetic `method.fn_*` names are intentionally less informative, but more honest.
+Use `-n` for manual triage only. The default synthetic `method.fn_*` names are intentionally less informative, but more honest.
 
 ## Code-Slot Owner CID Must Gate The Name-Pool Fallback
 
@@ -181,9 +181,9 @@ Fix: the Code-cluster reader now records the cluster cid of each slot's owner re
 
 `resolve_it_entry_name ()` then only advances `name_pool_idx` when the slot is `DART_OWNER_FUNCTION` or `DART_OWNER_UNKNOWN`. Stub slots emit stable synthetic names like `stub.vm_<index>` instead of stealing a pool entry.
 
-**Implication**: names stay aligned across the full IT even when `--use-name-pool` is enabled, and diffing the output against blutter's `ida_script/addNames.py` becomes meaningful again. Out-of-snapshot VM stubs (addresses before `iso_instr`) are still unnamed on this branch; matching them requires a separate per-version `OBJECT_STORE_STUB_CODE_LIST` / `VM_STUB_CODE_LIST` table and is intentionally left for a follow-up.
+**Implication**: names stay aligned across the full IT even when `-n` is enabled, and diffing the output against blutter's `ida_script/addNames.py` becomes meaningful again. Out-of-snapshot VM stubs (addresses before `iso_instr`) are still unnamed on this branch; matching them requires a separate per-version `OBJECT_STORE_STUB_CODE_LIST` / `VM_STUB_CODE_LIST` table and is intentionally left for a follow-up.
 
-**Test invariant**: regression tests for this gate must run with `--use-name-pool`. The default path intentionally leaves the name pool disabled, so tests without that flag do not exercise the bug where allocate and type-test stubs consumed pool entries.
+**Test invariant**: regression tests for this gate must run with `-n`. The default path intentionally leaves the name pool disabled, so tests without that flag do not exercise the bug where allocate and type-test stubs consumed pool entries.
 
 ## `dyn:` Trampolines Need A Better Signal Than Code Payload Info
 
@@ -191,13 +191,13 @@ Fix: the Code-cluster reader now records the cluster cid of each slot's owner re
 
 On `test/bins/android/mafia`, the modern Code cluster payload for the early entries called out in `doc/functips.md` is only `0` or `1`, which decodes to `unchecked_offset = payload_info >> 1 == 0`. That does not explain `0x5b6b64` or `0x5b6c34`, even though both still look like dynamic-entry trampolines in the function listing.
 
-**Implication**: do not suppress `dyn:` rows by name or adjacency alone. Keep `--dump-it` raw, keep the visible `dyn:` entries in `--dump-funcs` until a real Code-object relationship is recovered, and test the current behavior so future changes can prove they are improving it rather than hiding it.
+**Implication**: do not suppress `dyn:` rows by name or adjacency alone. Keep `-i` raw, keep the visible `dyn:` entries in `-f` until a real Code-object relationship is recovered, and test the current behavior so future changes can prove they are improving it rather than hiding it.
 
-## Enum Recovery In `--dump-types` Is Heuristic But Useful
+## Enum Recovery In `-T` Is Heuristic But Useful
 
 **Finding**: Production AOT samples still do not expose enough `Class` metadata to recover enum declarations directly, but enum names and variants often survive as qualified strings such as `AppLifecycleState.resumed` plus a matching `AppLifecycleState.` marker.
 
-`--dump-types` now supplements the existing type-name scanner with a conservative enum inference pass over extracted strings:
+`-T` now supplements the existing type-name scanner with a conservative enum inference pass over extracted strings:
 
 - require a trailing `EnumName.` marker
 - require at least two lowercase `EnumName.value` strings
@@ -208,7 +208,7 @@ This recovers real enums in the shipped fixtures on both platforms, for example 
 
 ## Dump Header JSON Superset
 
-**Finding**: `-j --dump-header` emits the same snapshot/cluster fields as the old dump-snapshot JSON, plus layout metadata (version, tag style, CID table).
+**Finding**: `-j -H` emits the same snapshot/cluster fields as the old dump-snapshot JSON, plus layout metadata (version, tag style, CID table).
 
 This makes the legacy dump-snapshot flag redundant and keeps scripts relying on `cluster` and snapshot addresses intact.
 
@@ -227,14 +227,14 @@ Keeping the prefixes in a tiny local table makes the supported mappings explicit
 
 ## InstructionTable Dumping Is A Real Output Mode Now
 
-**Finding**: `--dump-it` should be treated like the other dump commands, not as a stderr-only debug side effect.
+**Finding**: `-i` should be treated like the other dump commands, not as a stderr-only debug side effect.
 
 The command now:
 
 - writes to stdout
 - honors `-j` for JSON
 - honors `-r` for radare2 flags
-- honors `--limit` for manageable output on large apps
+- honors `-l` for manageable output on large apps
 
 The parser also needs a wider scan than the raw `it_off` hint on some iOS samples, because the offset can land inside the table payload rather than exactly on the `InstructionsTable::Data` header.
 
@@ -244,11 +244,15 @@ The parser also needs a wider scan than the raw `it_off` hint on some iOS sample
 
 This keeps the short command set lowercase for string-oriented output (`-s` JSON, `-t` r2 comments) and avoids carrying an unnecessary uppercase-only alias in the plugin help and parser.
 
+## Standalone CLI Uses Short Flags Only
+
+The standalone `bin/r2flutter` parser now uses `r_getopt`, so every option is a single-character flag. Keep CLI tests and examples on these action flags: `-c` classes, `-f` functions, `-H` header, `-i` instruction table, `-R` r2 script, `-s` strings, `-T` types, and `-x` xrefs. Shared modifiers are `-j`, `-r`, `-q`, `-v`, `-l`, `-n`, and `-o`.
+
 ## r2r Coverage Needs Short Cross-Platform Windows
 
 **Finding**: The `test/db/cmd` suite is more maintainable when every dump mode is exercised on both Android and iOS using short deterministic windows instead of full dumps.
 
-The current matrix covers `--dump-header`, `--dump-funcs`, `--dump-it`, `--dump-strings`, `--dump-classes`, and `--dump-types` against `test/bins/android/first` and `test/bins/ios/Runner.app`, using `--limit` or `sed -n` to keep expectations stable and fast.
+The current matrix covers `-H`, `-f`, `-i`, `-s`, `-c`, and `-T` against `test/bins/android/first` and `test/bins/ios/Runner.app`, using `-l` or `sed -n` to keep expectations stable and fast.
 
 This avoids brittle megabyte-scale expectations while still checking platform-specific snapshot addresses, instruction table metadata, and representative function/class/type/string prefixes.
 
@@ -256,7 +260,7 @@ This avoids brittle megabyte-scale expectations while still checking platform-sp
 
 **Finding**: Loader-provided ELF/Mach-O stub symbols do not add useful Flutter-specific signal, because radare2 already exposes them through `RBin`.
 
-`r2flutter` now skips those stubs by default in `--dump-funcs` and analysis output, which keeps the plugin focused on Dart-derived names and makes function-dump tests line up with the augmented data we actually recover.
+`r2flutter` now skips those stubs by default in `-f` and analysis output, which keeps the plugin focused on Dart-derived names and makes function-dump tests line up with the augmented data we actually recover.
 
 ## Production AOT Snapshots Lack Class Metadata
 
@@ -308,9 +312,9 @@ Implementation details:
    - `library`: structural metadata (`package:` URIs, `.dart` paths, CamelCase type names)
    - `app`: anything containing whitespace or punctuation (typical user-facing strings)
 
-This produces clean `--dump-strings` output even when the clustered snapshot contains compressed or stripped string objects, while also giving analysts a quick way to filter out VM noise and focus on app-facing literals like `"Hello, Dart!"`.
+This produces clean `-s` output even when the clustered snapshot contains compressed or stripped string objects, while also giving analysts a quick way to filter out VM noise and focus on app-facing literals like `"Hello, Dart!"`.
 
-## `--dump-strings` Must Stay Inside Dart Snapshot Windows
+## `-s` Must Stay Inside Dart Snapshot Windows
 
 **Finding**: Letting the string dumper scan every readable section regresses badly on iOS once Mach-O `__text`, code stubs, cert blobs, and loader metadata are included in the candidate set.
 
@@ -326,7 +330,7 @@ The practical fix is:
 - keep the broad fallback limited to read-only constant sections such as Mach-O `__const` / `__cstring` and ELF `.rodata` / `.data.rel.ro`
 - keep short-string heuristics strict enough to drop opcode-shaped junk like `_X;,` while preserving real Dart identifiers like `_Set`
 
-This removes the worst false positives from `--dump-strings` without sacrificing the real Dart names stored in the const area of the shipped iOS and Android fixtures.
+This removes the worst false positives from `-s` without sacrificing the real Dart names stored in the const area of the shipped iOS and Android fixtures.
 
 ## Cross References Split Into Metadata, Data-Image, And Code Layers
 
@@ -351,7 +355,7 @@ Current gaps:
 
 The repo now exposes the currently recoverable subset through:
 
-- CLI: `--dump-xrefs`
+- CLI: `-x`
 - radare2 plugin: `r2flutter -x`
 
 The new dumper intentionally stops at metadata/data-image edges. Disassembly-derived object-pool xrefs and call/use edges are still future work.
@@ -604,7 +608,7 @@ Offset 0x08: [4 bytes] Length (compressed SMI)
 Offset 0x0C: [variable] String data
 ```
 
-Strings in compressed-pointer snapshots are serialized inline in the cluster stream via `StringSerializationCluster`, NOT stored in ROData. The `--dump-strings` feature currently does NOT extract strings from compressed-pointer binaries' cluster streams.
+Strings in compressed-pointer snapshots are serialized inline in the cluster stream via `StringSerializationCluster`, NOT stored in ROData. The `-s` feature currently does NOT extract strings from compressed-pointer binaries' cluster streams.
 
 ### ROData Location
 
@@ -647,7 +651,7 @@ This keeps the CLI and plugin call sites on the same mode switch (`0`, `'j'`, `'
 
 ## Obfuscation Maps
 
-Flutter obfuscation maps use the VM `--save-obfuscation-map` format: one JSON array with alternating `original, obfuscated` strings. r2flutter has to reverse that relation during analysis because the snapshot only carries the obfuscated side. Applying the rename map at identifier materialization points keeps `--dump-strings` faithful to the raw binary while still deobfuscating function, class, field, and method outputs.
+Flutter obfuscation maps use the VM `--save-obfuscation-map` format: one JSON array with alternating `original, obfuscated` strings. r2flutter has to reverse that relation during analysis because the snapshot only carries the obfuscated side. Applying the rename map at identifier materialization points keeps `-s` faithful to the raw binary while still deobfuscating function, class, field, and method outputs.
 
 ## `r_str_newf ()` In This Tree Is Treated As Infallible
 
@@ -686,7 +690,7 @@ That lets `offsets.json` grow by hash without inventing per-hash guesses: the mi
 
 ## Dart `3.8.1` Cluster Parser Fixes For Full Function Naming
 
-Cross-checking `poc/unflutter-source/internal/cluster/*.go` against the current C parser exposed the real regressions behind the `--dump-funcs` mismatch on `poc/app/libapp.so` and the Android `mafia` sample:
+Cross-checking `poc/unflutter-source/internal/cluster/*.go` against the current C parser exposed the real regressions behind the `-f` mismatch on `poc/app/libapp.so` and the Android `mafia` sample:
 
 - object-header cluster tags use `CanonicalBit = 1`, not bit `0`
 - clustered unsigned integers use the Dart VLE terminator rules (`byte > 127`, final contribution `byte - 128`)

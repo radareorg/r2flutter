@@ -1,7 +1,7 @@
 NAME=json-header-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -j --dump-header bins/android/first 2>/dev/null
+!!../bin/r2flutter -j -H bins/android/first 2>/dev/null
 EOF
 EXPECT=<<EOF
 {"kind":3,"hash":"f91b8b03bf7f30a5e983fd19b23d978d","vm_data":512,"vm_instr":327680,"iso_data":36544,"iso_instr":419584,"cluster":{"base":1154,"objs":11342,"clusters":47,"it_len":1311,"it_off":64,"total":91657},"cws":8,"dart_version":"unknown","tag_style":"OBJECT_HEADER","alignment":16,"header_fields":5,"it_capacity":20000,"cid_table":{"cid_class":5,"cid_function":7,"cid_code":18,"cid_string":93,"cid_one_byte_string":94,"cid_two_byte_string":95,"cid_array":90,"cid_mint":61,"cid_object_pool":23,"num_predefined":175}}

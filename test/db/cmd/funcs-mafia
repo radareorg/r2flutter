@@ -1,7 +1,7 @@
 NAME=text-funcs-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-funcs --limit 3 bins/android/mafia 2>/dev/null
+!!../bin/r2flutter -f -l 3 bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
 0x5b69c0 method.DateTime.compareTo
@@ -13,7 +13,7 @@ RUN
 NAME=r2-funcs-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r --dump-funcs --limit 2 bins/android/mafia 2>/dev/null
+!!../bin/r2flutter -r -f -l 2 bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
 f method.DateTime.compareTo = 0x5b69c0
@@ -26,7 +26,7 @@ RUN
 NAME=json-funcs-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -j --dump-funcs --limit 3 bins/android/mafia 2>/dev/null
+!!../bin/r2flutter -j -f -l 3 bins/android/mafia 2>/dev/null
 EOF
 EXPECT=<<EOF
 [{"addr":5990848,"name":"method.DateTime.compareTo"},{"addr":5991076,"name":"method.Duration.compareTo"},{"addr":5991268,"name":"method.Duration.dyn:_"}]
@@ -39,7 +39,7 @@ RUN
 NAME=funcs-mafia-allocate-stub
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-funcs --quiet bins/android/mafia 2>/dev/null | grep -E '^0x5b6bf4 '
+!!../bin/r2flutter -f -q bins/android/mafia 2>/dev/null | grep -E '^0x5b6bf4 '
 EOF
 EXPECT=<<EOF
 0x5b6bf4 stub.AllocateDurationStub
@@ -51,7 +51,7 @@ RUN
 NAME=funcs-mafia-allocate-stub-not-fallback
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-funcs --quiet bins/android/mafia 2>/dev/null | grep -c '^0x5b6bf4 method.fn_'
+!!../bin/r2flutter -f -q bins/android/mafia 2>/dev/null | grep -c '^0x5b6bf4 method.fn_'
 EOF
 EXPECT=<<EOF
 0
@@ -63,7 +63,7 @@ RUN
 NAME=funcs-mafia-typetest-stub-present
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-funcs --quiet bins/android/mafia 2>/dev/null | grep -c ' stub.typetest_'
+!!../bin/r2flutter -f -q bins/android/mafia 2>/dev/null | grep -c ' stub.typetest_'
 EOF
 EXPECT=<<EOF
 1277
@@ -76,7 +76,7 @@ RUN
 NAME=funcs-mafia-allocate-stub-count
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter --dump-funcs --quiet bins/android/mafia 2>/dev/null | grep -c ' stub.Allocate'
+!!../bin/r2flutter -f -q bins/android/mafia 2>/dev/null | grep -c ' stub.Allocate'
 EOF
 EXPECT=<<EOF
 4096

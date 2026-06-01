@@ -1,7 +1,7 @@
 {
   "name": "dump-funcs-default-no-stubs",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-n", "--dump-funcs", "--limit", "5", "bins/android/first/"],
+  "cmd": ["../bin/r2flutter", "-q", "-n", "-f", "-l", "5", "bins/android/first/"],
   "timeout": 30,
   "expect": {
     "contains": [

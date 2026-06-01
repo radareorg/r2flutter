@@ -6,8 +6,8 @@
   "expect": {
     "contains": [
       "Usage:",
-      "--dump-it",
-      "--dump-header"
+      "-i",
+      "-H"
     ],
     "not_contains": [
       "--no-stubs"

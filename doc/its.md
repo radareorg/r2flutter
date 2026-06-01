@@ -1,6 +1,6 @@
 # InstructionTable Entries
 
-`--dump-it` dumps entries from Dart's `InstructionsTable::Data`.
+`-i` dumps entries from Dart's `InstructionsTable::Data`.
 
 ## What An "Instruction Table Entry Address" Is
 
@@ -32,22 +32,22 @@ For reversing work, this is useful because it gives a stable index -> address li
 Plain text:
 
 ```bash
-bin/r2flutter --dump-it test/bins/ios/Runner.app
+bin/r2flutter -i test/bins/ios/Runner.app
 ```
 
 JSON:
 
 ```bash
-bin/r2flutter -j --limit 16 --dump-it test/bins/ios/Runner.app
+bin/r2flutter -j -l 16 -i test/bins/ios/Runner.app
 ```
 
 radare2 flags:
 
 ```bash
-bin/r2flutter -r --limit 16 --dump-it test/bins/ios/Runner.app
+bin/r2flutter -r -l 16 -i test/bins/ios/Runner.app
 ```
 
-`--limit` is useful because real apps can have thousands of entries.
+`-l` is useful because real apps can have thousands of entries.
 
 ## Fields Exposed By r2flutter
 
@@ -69,5 +69,5 @@ JSON also includes:
 ## Notes
 
 - Output is written to `stdout`, not `stderr`.
-- `-j` and `-r` now affect `--dump-it` the same way they affect the other dump commands.
+- `-j` and `-r` now affect `-i` the same way they affect the other dump commands.
 - The current parser finds the table by scanning the mapped data image for a valid `InstructionsTable::Data` header when the snapshot's `it_off` field does not point exactly at the payload start.
