@@ -242,6 +242,17 @@ HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
 
 #define CHUNK_SIZE 4096
 
+typedef struct {
+	const char *needle;
+	int len;
+	int min_match;
+} DataNameNeedle;
+
+static const DataNameNeedle data_name_needles[] = {
+	{ "package:", 8, 8 },
+	{ "dart:", 5, 5 },
+};
+
 // Extract a printable ASCII string starting at buf[pos], return length or 0
 static int extract_printable_string(const ut8 *buf, int pos, int buflen, char *out, int outsz) {
 	int k = 0;
@@ -264,19 +275,8 @@ RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_en
 	if (!ctx || !ctx->core) {
 		return NULL;
 	}
-	struct {
-		const char *needle;
-		int len;
-		int min_match;
-	} needles[] = {
-		{ "package:", 8, 8 },
-		{ "dart:", 5, 5 },
-};
 	ut8 buf[CHUNK_SIZE];
 	RList *out = r_list_newf (free);
-	if (!out) {
-		return NULL;
-	}
 	ut64 limit = data_image_end - data_image_base;
 	if (limit > (1ULL << 22)) {
 		limit = (1ULL << 22);
@@ -293,19 +293,20 @@ RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_en
 		}
 		for (int i = 0; i + 8 < toread; i++) {
 			size_t n;
-			for (n = 0; n < sizeof (needles) / sizeof (needles[0]); n++) {
-				if (buf[i] != needles[n].needle[0]) {
+			for (n = 0; n < R_ARRAY_SIZE (data_name_needles); n++) {
+				const DataNameNeedle *needle = &data_name_needles[n];
+				if (buf[i] != needle->needle[0]) {
 					continue;
 				}
-				if (i + needles[n].len > toread) {
+				if (i + needle->len > toread) {
 					continue;
 				}
-				if (memcmp (buf + i, needles[n].needle, needles[n].len)) {
+				if (memcmp (buf + i, needle->needle, needle->len)) {
 					continue;
 				}
 				char s[128];
 				int k = extract_printable_string (buf, i, toread, s, sizeof (s));
-				if (k > needles[n].min_match) {
+				if (k > needle->min_match) {
 					char *dup = strdup (s);
 					if (dup) {
 						r_list_append (out, dup);
@@ -327,9 +328,6 @@ void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 data_im
 	}
 	if (!ctx->name_pool) {
 		ctx->name_pool = r_list_newf (free);
-	}
-	if (!ctx->name_pool) {
-		return;
 	}
 	ut64 limit = data_image_end - data_image_base;
 	if (limit > (1ULL << 22)) {

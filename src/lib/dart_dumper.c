@@ -1,5 +1,6 @@
 /* r2flutter - MIT - Copyright 2026 - pancake */
 
+#include <ctype.h>
 #include <r_core.h>
 #include <r_flag.h>
 #include <r_util/r_name.h>
@@ -62,7 +63,7 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 			p++;
 		}
 		const char *q = p;
-		while ((*q >= '0' && *q <= '9') || (*q >= 'a' && *q <= 'f') || (*q >= 'A' && *q <= 'F')) {
+		while (isxdigit ((ut8)*q)) {
 			q++;
 		}
 		if (q == p) {

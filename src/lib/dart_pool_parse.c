@@ -321,18 +321,18 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	}
 	ctx->name_by_ep = scan_code_names (ctx, data_image_base, data_image_end);
 	ctx->name_pool = collect_data_names (ctx, data_image_base, data_image_end);
-	if (!ctx->name_pool || r_list_length (ctx->name_pool) == 0) {
+	if (r_list_length (ctx->name_pool) == 0) {
 		collect_data_names_with_r2 (ctx, data_image_base, data_image_end);
-		if (ctx->verbose > 0 && ctx->name_pool) {
+		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] name_pool(r2)=%d\n", r_list_length (ctx->name_pool));
 		}
 	}
 	ctx->name_pool_idx = 0;
-	if (ctx->verbose > 0 && ctx->name_pool) {
+	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] name_pool=%d\n", r_list_length (ctx->name_pool));
 	}
 	if (itlen == 0) {
-		goto beach;
+		goto cleanup;
 	}
 	ut64 max_entries = 0;
 	if (it_limit > 0) {
@@ -344,22 +344,22 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	}
 	if (itdata == 0) {
 		(void)dart_it_emit_linear (ctx, itlen, max_entries, on_fn, fn_user, on_it, it_user);
-		goto beach;
+		goto cleanup;
 	}
 	ut64 table_addr = data_image_base + itdata;
 	if (dart_it_emit_fixed (ctx, table_addr, data_image_base, itlen, max_entries, include_stubs, sym_by_addr, on_fn, fn_user, on_it, it_user) == 0) {
-		goto beach;
+		goto cleanup;
 	}
 	for (int delta = -64; delta <= 64; delta += 4) {
 		if (dart_it_emit_varint (ctx, table_addr + delta, data_image_base, max_entries, include_stubs, sym_by_addr, on_fn, fn_user, on_it, it_user) == 0) {
-			goto beach;
+			goto cleanup;
 		}
 	}
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] Could not decode InstructionsTable::Data at 0x%" PFMT64x ", using sequential fallback\n", (ut64) (data_image_base + itdata));
 	}
 	(void)dart_it_emit_linear (ctx, itlen, max_entries, on_fn, fn_user, on_it, it_user);
-beach:
+cleanup:
 	if (ctx->name_by_code_index) {
 		for (ut64 i = 0; i < ctx->name_by_code_index_count; i++) {
 			free (ctx->name_by_code_index[i]);
@@ -380,10 +380,8 @@ beach:
 	if (sym_by_addr) {
 		ht_up_free (sym_by_addr);
 	}
-	if (ctx->name_pool) {
-		r_list_free (ctx->name_pool);
-		ctx->name_pool = NULL;
-	}
+	r_list_free (ctx->name_pool);
+	ctx->name_pool = NULL;
 	return 0;
 }
 
@@ -729,9 +727,6 @@ RList *dart_pool_extract_instruction_table(DartCtx *ctx) {
 		return NULL;
 	}
 	RList *list = r_list_newf ((RListFree)dart_instruction_table_entry_free);
-	if (!list) {
-		return NULL;
-	}
 	int ok = find_snapshots (ctx);
 	if (ok != 0) {
 		r_list_free (list);

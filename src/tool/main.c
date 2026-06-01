@@ -61,36 +61,43 @@ static void set_embedded_payload_ctx(DartCtx *dctx, const DartAppEmbeddedPayload
 	dctx->container_macho_offset = payload->macho_offset;
 }
 
+static char *resolve_directory_input_path(const char *path) {
+	char *candidate = r_file_new (path, "libapp.so", NULL); // Android
+	if (r_file_exists (candidate)) {
+		return candidate;
+	}
+	free (candidate);
+	candidate = r_file_new (path, "Frameworks", "App.framework", "App", NULL); // iOS
+	if (r_file_exists (candidate)) {
+		return candidate;
+	}
+	free (candidate);
+	return NULL;
+}
+
 static char *resolve_input_path(const char *s, DartCtx *dctx, bool *extracted_inner) {
 	*extracted_inner = false;
 	if (r_file_is_directory (s)) {
-		char *candidate = r_str_newf ("%s/libapp.so", s); // Android
-		if (r_file_exists (candidate)) {
-			return candidate;
-		}
-		free (candidate);
-		candidate = r_str_newf ("%s/Frameworks/App.framework/App", s); // iOS
-		if (r_file_exists (candidate)) {
-			return candidate;
-		}
-	} else if (r_file_exists (s)) {
-		DartAppEmbeddedPayload payload;
-		if (dart_app_find_macho_embedded_dart (s, &payload)) {
-			char *inner = dart_app_extract_embedded_payload (s, &payload);
-			if (!inner) {
-				R_LOG_ERROR ("Failed to extract embedded Dart Mach-O from: %s", s);
-				return NULL;
-			}
-			set_embedded_payload_ctx (dctx, &payload);
-			*extracted_inner = true;
-			if (dctx->verbose) {
-				fprintf (stderr, "[r2flutter] extracted %s payload 0x%" PFMT64x "..0x%" PFMT64x " to %s\n", payload.owner, payload.payload_offset, payload.payload_offset + payload.payload_size, inner);
-			}
-			return inner;
-		}
-		return strdup (s);
+		return resolve_directory_input_path (s);
 	}
-	return NULL;
+	if (!r_file_exists (s)) {
+		return NULL;
+	}
+	DartAppEmbeddedPayload payload;
+	if (dart_app_find_macho_embedded_dart (s, &payload)) {
+		char *inner = dart_app_extract_embedded_payload (s, &payload);
+		if (!inner) {
+			R_LOG_ERROR ("Failed to extract embedded Dart Mach-O from: %s", s);
+			return NULL;
+		}
+		set_embedded_payload_ctx (dctx, &payload);
+		*extracted_inner = true;
+		if (dctx->verbose) {
+			fprintf (stderr, "[r2flutter] extracted %s payload 0x%" PFMT64x "..0x%" PFMT64x " to %s\n", payload.owner, payload.payload_offset, payload.payload_offset + payload.payload_size, inner);
+		}
+		return inner;
+	}
+	return strdup (s);
 }
 
 int main(int argc, char **argv) {
@@ -173,19 +180,12 @@ int main(int argc, char **argv) {
 		print_usage (argv[0]);
 		return 1;
 	}
-	if (dctx.obf_map_path && !dart_obf_load (&dctx)) {
-		dart_obf_fini (&dctx);
-		return 1;
-	}
-	dart_obf_fini (&dctx);
-
 	bool extracted_inner = false;
 	char *libapp_path = resolve_input_path (libapp_path_in, &dctx, &extracted_inner);
 	if (!libapp_path) {
 		R_LOG_ERROR ("File or directory does not exist: %s", libapp_path_in);
 		return 1;
 	}
-
 	RCore *core = r_core_new ();
 	if (!core) {
 		R_LOG_ERROR ("Failed to create radare2 core");
@@ -206,6 +206,12 @@ int main(int argc, char **argv) {
 	DartApp *app = dart_app_new_from_core (core, &dctx);
 	if (!app) {
 		R_LOG_ERROR ("Failed to create DartApp");
+		r_core_free (core);
+		free_resolved_path (libapp_path, extracted_inner);
+		return 1;
+	}
+	if (dctx.obf_map_path && !dart_obf_load (&dctx)) {
+		dart_app_free (app);
 		r_core_free (core);
 		free_resolved_path (libapp_path, extracted_inner);
 		return 1;

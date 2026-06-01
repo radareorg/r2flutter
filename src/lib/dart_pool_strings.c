@@ -595,9 +595,6 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 		return NULL;
 	}
 	RList *string_list = r_list_newf ((RListFree)dart_string_info_free);
-	if (!string_list) {
-		return NULL;
-	}
 	HtUP *seen_addrs = ht_up_new0 ();
 	if (!seen_addrs) {
 		return string_list;
@@ -726,9 +723,7 @@ char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
 	RList *strings = dart_pool_extract_strings (ctx);
 	if (fmt == 'j') {
 		if (!strings || r_list_length (strings) == 0) {
-			if (strings) {
-				dart_string_list_free (strings);
-			}
+			dart_string_list_free (strings);
 			return strdup ("[]");
 		}
 		PJ *pj = pj_new ();

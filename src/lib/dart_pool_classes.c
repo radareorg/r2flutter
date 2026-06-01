@@ -474,7 +474,7 @@ static void recover_enum_types_from_strings(DartCtx *ctx, RList *class_list) {
 			eci->name = strdup (ec->name);
 			eci->fields = r_list_newf ((RListFree)dart_field_info_free);
 			eci->interfaces = r_list_newf (free);
-			if (!eci->name || !eci->fields || !eci->interfaces) {
+			if (!eci->name) {
 				dart_class_info_free (eci);
 				continue;
 			}
@@ -672,7 +672,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		}
 		resolve_class_and_field_names (ctx, class_list, field_list);
 		if (ctx->verbose > 0) {
-			fprintf (stderr, "[r2flutter] Extracted fields from clusters: %d\n", field_list? r_list_length (field_list): 0);
+			fprintf (stderr, "[r2flutter] Extracted fields from clusters: %d\n", r_list_length (field_list));
 		}
 	} else {
 		if (ctx->verbose > 0) {
@@ -680,9 +680,9 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		}
 	}
 	if (ctx->verbose > 0) {
-		fprintf (stderr, "[r2flutter] Extracted classes from clusters: %d\n", class_list? r_list_length (class_list): 0);
+		fprintf (stderr, "[r2flutter] Extracted classes from clusters: %d\n", r_list_length (class_list));
 	}
-	if (!class_list || r_list_length (class_list) == 0) {
+	if (r_list_length (class_list) == 0) {
 		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] Falling back to string-based type extraction\n");
 		}
@@ -698,10 +698,10 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 					break;
 				}
 				int slen = 0;
-				while (slen < to_read && buf[slen] >= 0x20 && buf[slen] < 0x7f) {
+				while (slen < to_read && IS_PRINTABLE (buf[slen])) {
 					slen++;
 				}
-				if (slen >= 3 && slen < 80 && (buf[slen] == 0 || buf[slen] < 0x20 || buf[slen] >= 0x7f)) {
+				if (slen >= 3 && slen < to_read && slen < 80 && !IS_PRINTABLE (buf[slen])) {
 					char saved = buf[slen];
 					buf[slen] = 0;
 					char *s = (char *)buf;
@@ -982,9 +982,7 @@ char *dart_pool_dump_classes(DartCtx *ctx, int fmt) {
 	}
 	if (fmt == 'j') {
 		if (!classes || r_list_length (classes) == 0) {
-			if (classes) {
-				dart_class_list_free (classes);
-			}
+			dart_class_list_free (classes);
 			return strdup ("[]");
 		}
 		PJ *pj = pj_new ();

@@ -34,17 +34,7 @@ static void dart_xref_info_free(void *p) {
 
 static char *xref_join_names(const char *owner, const char *name) {
 	if (R_STR_ISNOTEMPTY (owner) && R_STR_ISNOTEMPTY (name)) {
-		size_t olen = strlen (owner);
-		size_t nlen = strlen (name);
-		char *out = malloc (olen + nlen + 2);
-		if (!out) {
-			return NULL;
-		}
-		memcpy (out, owner, olen);
-		out[olen] = '.';
-		memcpy (out + olen + 1, name, nlen);
-		out[olen + nlen + 1] = '\0';
-		return out;
+		return r_str_newf ("%s.%s", owner, name);
 	}
 	if (R_STR_ISNOTEMPTY (name)) {
 		return strdup (name);
@@ -56,15 +46,11 @@ static char *xref_join_names(const char *owner, const char *name) {
 }
 
 static char *xref_it_label(ut64 index) {
-	char buf[64];
-	snprintf (buf, sizeof (buf), "it[%" PRIu64 "]", (uint64_t)index);
-	return strdup (buf);
+	return r_str_newf ("it[%" PRIu64 "]", (uint64_t)index);
 }
 
 static char *xref_ref_label(const char *prefix, ut64 ref) {
-	char buf[64];
-	snprintf (buf, sizeof (buf), "%s#%" PRIu64, prefix, (uint64_t)ref);
-	return strdup (buf);
+	return r_str_newf ("%s#%" PRIu64, prefix, (uint64_t)ref);
 }
 
 static const char *xref_class_origin(const DartClassInfo *ci) {

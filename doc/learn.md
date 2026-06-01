@@ -745,3 +745,11 @@ Dart AOT `Function.code_index` values are serialized one-based: `0` is reserved 
 Modern isolate snapshots also refer to VM-snapshot base objects for predefined symbols. Operator method names such as `+` and `>` may therefore live in the VM data snapshot, not in the isolate string clusters. Populate base `strings_by_ref` entries from the VM snapshot's string cluster before resolving isolate `Function.name` refs, then normalize operator symbols to stable names like `op_add` and `op_gt`.
 
 VM base strings can also expose `::` for top-level function owners. Treat that placeholder as an empty owner when rendering names; otherwise top-level functions and closures become noisy names like `method.::._anon_closure`.
+
+## Cleanup Invariants
+
+The project assumes radare2 list constructors (`r_list_new` / `r_list_newf`) do not return `NULL`, and `r_list_free` accepts `NULL`. Keep parser cleanup code aligned with that contract: do not add constructor null checks or wrap list frees unless a caller needs to skip other dereferences.
+
+The fallback class-name scanner reads fixed-size chunks that are not guaranteed to be null-terminated. Only inspect `buf[slen]` when `slen < to_read`; printable runs that reach the end of a chunk should be skipped until a delimiter is observed instead of reading past the buffer.
+
+Validate the CLI obfuscation map only after `dart_app_new_from_core ()` copies the initial `DartCtx`; loading it before that copy would share one hash table across two independently finalized contexts. After validation, keep the map loaded in the context that will use it instead of immediately forcing a second lazy parse.
