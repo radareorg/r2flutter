@@ -100,6 +100,8 @@ typedef struct DartTypeInfo {
 	char *name;
 	ut32 kind;
 	ut64 type_class_ref;
+	ut64 type_args_ref;
+	ut32 flags;
 	RList *type_args;
 } DartTypeInfo;
 

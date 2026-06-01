@@ -7,7 +7,7 @@ EXPECT=<<EOF
 class TestClass (size=24)
   library: package:test
   fields:
-    +0x10  fieldA
+    +0x10 int fieldA
 
 EOF
 RUN
@@ -18,6 +18,6 @@ CMDS=<<EOF
 !!../bin/r2flutter -j -c bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"ref":7,"name":"TestClass","library":{"ref":6,"name":"package:test"},"layout":{"instance_size":24,"type_params":0,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false},"fields":[{"name":"fieldA","offset":16,"flags":{"static":false,"final":false,"const":false,"late":false}}]}]
+[{"ref":7,"name":"TestClass","library":{"ref":6,"name":"package:test"},"layout":{"instance_size":24,"type_params":0,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false},"fields":[{"name":"fieldA","type":"int","offset":16,"flags":{"static":false,"final":false,"const":false,"late":false}}]}]
 EOF
 RUN

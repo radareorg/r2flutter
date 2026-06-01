@@ -351,7 +351,8 @@ Current gaps:
 
 - `DartStringInfo.references` exists but is not populated yet, so reverse `string -> metadata users` xrefs are still missing
 - object-pool offsets can be collected from code, but pool entries are not decoded yet, so `code -> string/class/field/method` xrefs are not end-to-end
-- library URI resolution and `Field.type_ref` name resolution are still incomplete
+- library URI resolution works when metadata survives, and direct `Field.type_ref`
+  links now resolve simple `Type` objects; generic `TypeArguments` remain incomplete
 
 The repo now exposes the currently recoverable subset through:
 

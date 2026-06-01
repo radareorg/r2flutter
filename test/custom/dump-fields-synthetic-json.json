@@ -7,6 +7,7 @@
     "contains": [
       "\"name\":\"TestClass\"",
       "\"fields\":[{\"name\":\"fieldA\"",
+      "\"type\":\"int\"",
       "\"offset\":16",
       "\"static\":false"
     ]

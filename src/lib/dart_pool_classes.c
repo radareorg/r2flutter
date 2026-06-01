@@ -21,8 +21,10 @@ static DartFieldInfo *dart_field_info_clone(const DartFieldInfo *fi) {
 typedef enum {
 	kFieldCid_extract = 10,
 	kLibraryCid_extract = 12,
-	kTypeArgumentsCid_extract = 115,
 } ExtraCids;
+
+#define DART_TYPE_CLASS_ID_SHIFT 3
+#define DART_TYPE_CLASS_ID_MASK ((1U << 20) - 1)
 
 static int decode_field_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *field_list, ut64 *ref_counter) {
 	ut64 count = 0;
@@ -58,6 +60,42 @@ static int decode_field_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *field
 		r_list_append (field_list, fi);
 		if (ctx->refs && fi->ref_id < ctx->refs_count) {
 			ctx->refs[fi->ref_id] = fi;
+		}
+	}
+	return 0;
+}
+
+static int decode_type_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *type_list, ut64 *ref_counter) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return -1;
+	}
+	if (count == 0 || count > 50000) {
+		return 0;
+	}
+	if (ctx->verbose > 1) {
+		fprintf (stderr, "[r2flutter] Type cluster: count=%" PRIu64 "\n", count);
+	}
+	for (ut64 i = 0; i < count; i++) {
+		DartTypeInfo *ti = R_NEW0 (DartTypeInfo);
+		ti->ref_id = (*ref_counter)++;
+		ti->kind = kTypeCid;
+		ut64 type_test_stub_ref = 0;
+		ut64 hash_ref = 0;
+		ut64 args_ref = 0;
+		cs_read_ref_id (s, &type_test_stub_ref);
+		cs_read_ref_id (s, &hash_ref);
+		cs_read_ref_id (s, &args_ref);
+		(void)type_test_stub_ref;
+		(void)hash_ref;
+		ti->type_args_ref = args_ref;
+		ut64 flags = 0;
+		cs_read_unsigned (s, &flags);
+		ti->flags = (ut32)flags;
+		ti->type_class_ref = (flags >> DART_TYPE_CLASS_ID_SHIFT) & DART_TYPE_CLASS_ID_MASK;
+		r_list_append (type_list, ti);
+		if (ctx->refs && ti->ref_id < ctx->refs_count) {
+			ctx->refs[ti->ref_id] = ti;
 		}
 	}
 	return 0;
@@ -157,6 +195,71 @@ static char *dup_ref_string_obf(DartCtx *ctx, ut64 ref) {
 		dart_obf_apply (ctx, &value);
 	}
 	return value;
+}
+
+static const char *builtin_type_name(ut64 cid) {
+	switch (cid) {
+	case kStringCid:
+	case kOneByteStringCid:
+	case kTwoByteStringCid:
+		return "String";
+	case kMintCid:
+		return "int";
+	case kDoubleCid:
+		return "double";
+	default:
+		return NULL;
+	}
+}
+
+static DartTypeInfo *find_type_by_ref(RList *type_list, ut64 ref) {
+	if (!type_list || ref == 0) {
+		return NULL;
+	}
+	RListIter *it;
+	DartTypeInfo *ti;
+	r_list_foreach (type_list, it, ti) {
+		if (ti && ti->ref_id == ref) {
+			return ti;
+		}
+	}
+	return NULL;
+}
+
+static char *dup_class_name_by_ref(RList *class_list, ut64 ref) {
+	if (!class_list || ref == 0) {
+		return NULL;
+	}
+	RListIter *it;
+	DartClassInfo *ci;
+	r_list_foreach (class_list, it, ci) {
+		if (ci && ci->ref_id == ref && R_STR_ISNOTEMPTY (ci->name)) {
+			return strdup (ci->name);
+		}
+	}
+	return NULL;
+}
+
+static char *resolve_type_name(DartCtx *ctx, RList *class_list, RList *type_list, ut64 type_ref) {
+	DartTypeInfo *ti = find_type_by_ref (type_list, type_ref);
+	if (!ti) {
+		return NULL;
+	}
+	if (R_STR_ISNOTEMPTY (ti->name)) {
+		return strdup (ti->name);
+	}
+	char *name = NULL;
+	const char *builtin = builtin_type_name (ti->type_class_ref);
+	if (builtin) {
+		name = strdup (builtin);
+	} else {
+		name = dup_class_name_by_ref (class_list, ti->type_class_ref);
+	}
+	if (name) {
+		dart_obf_apply (ctx, &name);
+		ti->name = strdup (name);
+	}
+	return name;
 }
 
 typedef struct {
@@ -527,7 +630,7 @@ static int decode_library_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *lib
 	return 0;
 }
 
-static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList *field_list) {
+static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList *field_list, RList *type_list) {
 	if (!ctx || !ctx->refs || !class_list) {
 		return;
 	}
@@ -573,6 +676,9 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 		}
 		if (!fi->name && fi->name_ref > 0 && fi->name_ref < ctx->refs_count) {
 			fi->name = dup_ref_string_obf (ctx, fi->name_ref);
+		}
+		if (!fi->type_name && fi->type_ref > 0) {
+			fi->type_name = resolve_type_name (ctx, class_list, type_list, fi->type_ref);
 		}
 		if (fi->owner_ref > 0 && fi->owner_ref < ctx->refs_count) {
 			void *ref = ctx->refs[fi->owner_ref];
@@ -620,6 +726,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	bool header_valid = (nc > 0 && nc < 1000000 && no > 0 && no < 10000000);
 	RList *class_list = r_list_newf ((RListFree)dart_class_info_free);
 	RList *field_list = r_list_newf ((RListFree)dart_field_info_free);
+	RList *type_list = r_list_newf ((RListFree)dart_type_info_free);
 	ctx->strings = r_list_newf (free_dart_string);
 	RList *libraries = r_list_newf (free_library_info);
 	if (header_valid) {
@@ -659,6 +766,9 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 			case kFieldCid_extract:
 				rc = decode_field_cluster_ext (&stream, ctx, field_list, &ref_counter);
 				break;
+			case kTypeCid:
+				rc = decode_type_cluster_ext (&stream, ctx, type_list, &ref_counter);
+				break;
 			case kLibraryCid_extract:
 				rc = decode_library_cluster_ext (&stream, ctx, libraries, &ref_counter);
 				break;
@@ -670,7 +780,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 				break;
 			}
 		}
-		resolve_class_and_field_names (ctx, class_list, field_list);
+		resolve_class_and_field_names (ctx, class_list, field_list, type_list);
 		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] Extracted fields from clusters: %d\n", r_list_length (field_list));
 		}
@@ -731,6 +841,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	r_list_free (ctx->strings);
 	ctx->strings = NULL;
 	r_list_free (libraries);
+	r_list_free (type_list);
 	r_list_free (field_list);
 	if (ctx->dump_fields && r_list_length (class_list) > 0) {
 		ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
