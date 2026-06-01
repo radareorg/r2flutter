@@ -592,117 +592,6 @@ static int string_info_addr_cmp(const void *a, const void *b) {
 	return strcmp (sa->value? sa->value: "", sb->value? sb->value: "");
 }
 
-static bool string_ref_exists(RList *refs, const char *kind, ut64 object_ref) {
-	if (!refs || R_STR_ISEMPTY (kind)) {
-		return false;
-	}
-	RListIter *it;
-	DartStringRef *sr;
-	r_list_foreach (refs, it, sr) {
-		if (!sr) {
-			continue;
-		}
-		if (sr->object_ref == object_ref && R_STR_ISNOTEMPTY (sr->kind) && !strcmp (sr->kind, kind)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-static void add_string_ref_by_value(HtPP *strings_by_value, const char *value, const char *kind, ut32 object_type, ut64 object_ref, const char *object_name) {
-	if (!strings_by_value || R_STR_ISEMPTY (value) || R_STR_ISEMPTY (kind)) {
-		return;
-	}
-	DartStringInfo *si = (DartStringInfo *)ht_pp_find (strings_by_value, value, NULL);
-	if (!si || !si->references || string_ref_exists (si->references, kind, object_ref)) {
-		return;
-	}
-	DartStringRef *sr = R_NEW0 (DartStringRef);
-	sr->object_ref = object_ref;
-	sr->object_type = object_type;
-	sr->kind = strdup (kind);
-	sr->object_name = R_STR_ISNOTEMPTY (object_name)? strdup (object_name): NULL;
-	r_list_append (si->references, sr);
-}
-
-static HtPP *build_strings_by_value(RList *strings) {
-	HtPP *strings_by_value = ht_pp_new0 ();
-	if (!strings) {
-		return strings_by_value;
-	}
-	RListIter *it;
-	DartStringInfo *si;
-	r_list_foreach (strings, it, si) {
-		if (!si || R_STR_ISEMPTY (si->value)) {
-			continue;
-		}
-		if (!ht_pp_find (strings_by_value, si->value, NULL)) {
-			ht_pp_insert (strings_by_value, si->value, si);
-		}
-	}
-	return strings_by_value;
-}
-
-static void populate_string_metadata_references(DartCtx *ctx, RList *strings) {
-	if (!ctx || !strings || r_list_length (strings) == 0) {
-		return;
-	}
-	HtPP *strings_by_value = build_strings_by_value (strings);
-	RList *classes = dart_pool_extract_classes (ctx);
-	if (!classes) {
-		ht_pp_free (strings_by_value);
-		return;
-	}
-	RListIter *it;
-	DartClassInfo *ci;
-	r_list_foreach (classes, it, ci) {
-		if (!ci || (ci->ref_id == 0 && ci->name_ref == 0)) {
-			continue;
-		}
-		add_string_ref_by_value (strings_by_value, ci->name, "class.name", DART_REF_CLASS, ci->ref_id, ci->name);
-		add_string_ref_by_value (strings_by_value, ci->library_name, "library.name", DART_REF_LIBRARY, ci->library_ref, ci->library_name);
-		add_string_ref_by_value (strings_by_value, ci->super_class_name, "class.super", DART_REF_CLASS, ci->super_class_ref, ci->name);
-		if (ci->interfaces) {
-			RListIter *iit;
-			DartInterfaceInfo *ii;
-			r_list_foreach (ci->interfaces, iit, ii) {
-				if (!ii) {
-					continue;
-				}
-				add_string_ref_by_value (strings_by_value, ii->name, "class.interface", DART_REF_CLASS, ci->ref_id, ci->name);
-			}
-		}
-		if (ci->fields) {
-			RListIter *fit;
-			DartFieldInfo *fi;
-			r_list_foreach (ci->fields, fit, fi) {
-				if (!fi || (fi->ref_id == 0 && fi->name_ref == 0)) {
-					continue;
-				}
-				char *field_name = R_STR_ISNOTEMPTY (ci->name)? r_str_newf ("%s.%s", ci->name, r_str_get (fi->name)): strdup (r_str_get (fi->name));
-				add_string_ref_by_value (strings_by_value, fi->name, "field.name", DART_REF_FIELD, fi->ref_id, field_name);
-				add_string_ref_by_value (strings_by_value, fi->type_name, "field.type", DART_REF_FIELD, fi->ref_id, field_name);
-				free (field_name);
-			}
-		}
-		if (ci->methods) {
-			RListIter *mit;
-			DartMethodInfo *mi;
-			r_list_foreach (ci->methods, mit, mi) {
-				if (!mi || (mi->ref_id == 0 && mi->name_ref == 0 && mi->signature_ref == 0)) {
-					continue;
-				}
-				char *method_name = R_STR_ISNOTEMPTY (ci->name)? r_str_newf ("%s.%s", ci->name, r_str_get (mi->name)): strdup (r_str_get (mi->name));
-				add_string_ref_by_value (strings_by_value, mi->name, "method.name", DART_REF_FUNCTION, mi->ref_id, method_name);
-				add_string_ref_by_value (strings_by_value, mi->signature, "method.signature", DART_REF_FUNCTION, mi->ref_id, method_name);
-				free (method_name);
-			}
-		}
-	}
-	dart_class_list_free (classes);
-	ht_pp_free (strings_by_value);
-}
-
 RList *dart_pool_extract_strings(DartCtx *ctx) {
 	if (!ctx || !ctx->core || !ctx->core->bin) {
 		return NULL;
@@ -780,7 +669,6 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 	}
 	ht_up_free (seen_addrs);
 	r_list_sort (string_list, (RListComparator)string_info_addr_cmp);
-	populate_string_metadata_references (ctx, string_list);
 	return string_list;
 }
 
@@ -869,10 +757,12 @@ static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt) {
 }
 
 char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
-	RList *strings = dart_pool_extract_strings (ctx);
+	DartRecoveryModel model = { 0 };
+	dart_recovery_model_load (ctx, &model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_STRING_REFS);
+	RList *strings = model.strings;
 	if (fmt == 'j') {
 		if (!strings || r_list_length (strings) == 0) {
-			dart_string_list_free (strings);
+			dart_recovery_model_fini (&model);
 			return strdup ("[]");
 		}
 		PJ *pj = pj_new ();
@@ -885,10 +775,12 @@ char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
 			}
 		}
 		pj_end (pj);
-		dart_string_list_free (strings);
-		return pj_drain (pj);
+		char *out = pj_drain (pj);
+		dart_recovery_model_fini (&model);
+		return out;
 	}
 	if (!strings) {
+		dart_recovery_model_fini (&model);
 		return strdup ("# No strings found\n");
 	}
 	RStrBuf *sb = r_strbuf_new (fmt == 'r'? "# Dart Strings\n": "");
@@ -900,6 +792,7 @@ char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
 	if (fmt == 'r') {
 		r_strbuf_appendf (sb, "# Total: %d strings\n", r_list_length (strings));
 	}
-	dart_string_list_free (strings);
-	return r_strbuf_drain (sb);
+	char *out = r_strbuf_drain (sb);
+	dart_recovery_model_fini (&model);
+	return out;
 }

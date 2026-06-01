@@ -110,6 +110,26 @@ typedef struct {
 	ut32 kind_tag;
 } DartScannedMethod;
 
+typedef enum {
+	DART_RECOVERY_STRINGS = 1 << 0,
+	DART_RECOVERY_CLASSES = 1 << 1,
+	DART_RECOVERY_CLASS_FIELDS = 1 << 2,
+	DART_RECOVERY_IT = 1 << 3,
+	DART_RECOVERY_METHOD_INDEX = 1 << 4,
+	DART_RECOVERY_STRING_REFS = 1 << 5,
+} DartRecoveryFlags;
+
+typedef struct {
+	DartCtx *ctx;
+	RList *strings;
+	RList *classes;
+	RVecDartInstructionTableEntry *it_entries;
+	HtPP *string_by_value;
+	HtUP *string_by_addr;
+	HtPP *class_by_name;
+	HtUP *method_by_addr;
+} DartRecoveryModel;
+
 typedef void(*DartInstructionTableEntryCallback)(const DartInstructionTableEntry *entry, void *user);
 
 bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len);
@@ -128,6 +148,13 @@ bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz);
 HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
 RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
 void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
+
+bool dart_recovery_model_load(DartCtx *ctx, DartRecoveryModel *model, int flags);
+void dart_recovery_model_fini(DartRecoveryModel *model);
+DartStringInfo *dart_recovery_model_string_by_value(DartRecoveryModel *model, const char *value);
+DartStringInfo *dart_recovery_model_string_by_addr(DartRecoveryModel *model, ut64 addr);
+DartClassInfo *dart_recovery_model_class_by_name(DartRecoveryModel *model, const char *name);
+DartMethodInfo *dart_recovery_model_method_by_addr(DartRecoveryModel *model, ut64 addr);
 
 bool cs_read_u8(ClusterStream *s, ut8 *out);
 bool cs_read_u32(ClusterStream *s, uint32_t *out);

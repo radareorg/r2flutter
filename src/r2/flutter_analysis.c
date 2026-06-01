@@ -5,21 +5,14 @@
 #include <sdb/ht_up.h>
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
-#include "../../include/r2flutter/dart_pool_parse.h"
+#include "../lib/dart_pool_parse_priv.h"
 #include "flutter_analysis.h"
 
 #define DART_ANALYSIS_MAX_REGS 32
 
 R_VEC_TYPE(RVecFlutterEntry, ut64);
 
-typedef struct {
-	RList *strings;
-	RList *classes;
-	HtPP *string_by_value;
-	HtUP *string_by_addr;
-	HtPP *class_by_name;
-	HtUP *method_by_addr;
-} FlutterAnalModel;
+typedef DartRecoveryModel FlutterAnalModel;
 
 typedef struct {
 	const DartClassInfo *klass;
@@ -71,16 +64,7 @@ static void flutter_stack_slot_free(void *p) {
 }
 
 static void flutter_model_fini(FlutterAnalModel *model) {
-	if (!model) {
-		return;
-	}
-	dart_string_list_free (model->strings);
-	dart_class_list_free (model->classes);
-	ht_pp_free (model->string_by_value);
-	ht_up_free (model->string_by_addr);
-	ht_pp_free (model->class_by_name);
-	ht_up_free (model->method_by_addr);
-	memset (model, 0, sizeof (*model));
+	dart_recovery_model_fini (model);
 }
 
 static void flutter_state_init(FlutterAnalState *state) {
@@ -145,19 +129,19 @@ static int flutter_reg_index(const char *name) {
 }
 
 static const DartStringInfo *flutter_model_find_string_by_value(FlutterAnalModel *model, const char *value) {
-	return model && value? ht_pp_find (model->string_by_value, value, NULL): NULL;
+	return dart_recovery_model_string_by_value (model, value);
 }
 
 static const DartStringInfo *flutter_model_find_string_by_addr(FlutterAnalModel *model, ut64 addr) {
-	return model && addr? ht_up_find (model->string_by_addr, addr, NULL): NULL;
+	return dart_recovery_model_string_by_addr (model, addr);
 }
 
 static const DartClassInfo *flutter_model_find_class(FlutterAnalModel *model, const char *name) {
-	return model && name? ht_pp_find (model->class_by_name, name, NULL): NULL;
+	return dart_recovery_model_class_by_name (model, name);
 }
 
 static const DartMethodInfo *flutter_model_find_method(FlutterAnalModel *model, ut64 addr) {
-	return model? ht_up_find (model->method_by_addr, addr, NULL): NULL;
+	return dart_recovery_model_method_by_addr (model, addr);
 }
 
 static RFlagItem *flutter_get_flag_at(RCore *core, ut64 addr) {
@@ -357,58 +341,12 @@ static bool flutter_model_load(FlutterAnalModel *model, RCore *core, DartCtx *dc
 	if (!model || !core || !dctx) {
 		return false;
 	}
-	memset (model, 0, sizeof (*model));
-	model->string_by_value = ht_pp_new0 ();
-	model->string_by_addr = ht_up_new0 ();
-	model->class_by_name = ht_pp_new0 ();
-	model->method_by_addr = ht_up_new0 ();
-
 	DartCtx ctx = *dctx;
 	ctx.core = core;
-	ctx.dump_fields = 1;
-	model->strings = dart_pool_extract_strings (&ctx);
-	model->classes = dart_pool_extract_classes (&ctx);
+	dart_recovery_model_load (&ctx, model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_CLASS_FIELDS | DART_RECOVERY_METHOD_INDEX);
 	if (!model->strings || !model->classes) {
 		flutter_model_fini (model);
 		return false;
-	}
-
-	RListIter *it;
-	DartStringInfo *si;
-	r_list_foreach (model->strings, it, si) {
-		if (!si || !R_STR_ISNOTEMPTY (si->value)) {
-			continue;
-		}
-		if (!ht_pp_find (model->string_by_value, si->value, NULL)) {
-			ht_pp_insert (model->string_by_value, si->value, si);
-		}
-		if (si->address && !ht_up_find (model->string_by_addr, si->address, NULL)) {
-			ht_up_insert (model->string_by_addr, si->address, si);
-		}
-	}
-
-	DartClassInfo *ci;
-	r_list_foreach (model->classes, it, ci) {
-		if (!ci || !R_STR_ISNOTEMPTY (ci->name)) {
-			continue;
-		}
-		if (!ht_pp_find (model->class_by_name, ci->name, NULL)) {
-			ht_pp_insert (model->class_by_name, ci->name, ci);
-		}
-		if (!ci->methods) {
-			continue;
-		}
-		RListIter *mit;
-		DartMethodInfo *mi;
-		r_list_foreach (ci->methods, mit, mi) {
-			if (!mi || !mi->entry_point) {
-				continue;
-			}
-			ut64 addr = flutter_normalize_code_addr (mi->entry_point);
-			if (!ht_up_find (model->method_by_addr, addr, NULL)) {
-				ht_up_insert (model->method_by_addr, addr, mi);
-			}
-		}
 	}
 	return true;
 }

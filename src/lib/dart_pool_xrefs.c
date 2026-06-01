@@ -87,20 +87,6 @@ static const char *xref_method_origin(const DartMethodInfo *mi) {
 	return (mi->ref_id > 0 || mi->name_ref > 0 || mi->owner_ref > 0 || mi->signature_ref > 0)? "metadata": "data-image";
 }
 
-static DartStringInfo *xref_find_string(HtPP *strings_by_value, const char *value) {
-	if (!strings_by_value || R_STR_ISEMPTY (value)) {
-		return NULL;
-	}
-	return ht_pp_find (strings_by_value, value, NULL);
-}
-
-static DartClassInfo *xref_find_class(HtPP *classes_by_name, const char *name) {
-	if (!classes_by_name || R_STR_ISEMPTY (name)) {
-		return NULL;
-	}
-	return ht_pp_find (classes_by_name, name, NULL);
-}
-
 static bool xref_limit_reached(ut64 count, ut64 limit) {
 	return limit > 0 && count >= limit;
 }
@@ -124,7 +110,7 @@ static void append_xref_info(RList *list, ut64 *count, ut64 limit, const char *o
 	(*count)++;
 }
 
-static void collect_field_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList *xrefs, RList *seen_fields, ut64 *count, ut64 limit, ut64 data_start, ut64 data_end) {
+static void collect_field_scan_xrefs(DartCtx *ctx, DartRecoveryModel *model, RList *xrefs, RList *seen_fields, ut64 *count, ut64 limit, ut64 data_start, ut64 data_end) {
 	if (!ctx || !ctx->core || !xrefs || data_start >= data_end || xref_limit_reached (*count, limit)) {
 		return;
 	}
@@ -144,14 +130,14 @@ static void collect_field_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 		r_list_append (seen_fields, strdup (keybuf));
 		char *field_label = xref_join_names (field.owner_name, field.name);
 		append_xref_info (xrefs, count, limit, "data-image", "field.owner", "field", field_label, 0, 0, "class", field.owner_name, 0, 0);
-		DartStringInfo *field_si = xref_find_string (strings_by_value, field.name);
+		DartStringInfo *field_si = dart_recovery_model_string_by_value (model, field.name);
 		append_xref_info (xrefs, count, limit, "data-image", "field.name", "field", field_label, 0, 0, "string", field.name, 0, field_si? field_si->address: 0);
 		free (field_label);
 		field_count++;
 	}
 }
 
-static void collect_method_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList *xrefs, HtUP *seen_ep, ut64 *count, ut64 limit, ut64 data_start, ut64 data_end) {
+static void collect_method_scan_xrefs(DartCtx *ctx, DartRecoveryModel *model, RList *xrefs, HtUP *seen_ep, ut64 *count, ut64 limit, ut64 data_start, ut64 data_end) {
 	if (!ctx || !ctx->core || !ctx->layout || !xrefs || data_start >= data_end || xref_limit_reached (*count, limit)) {
 		return;
 	}
@@ -173,7 +159,7 @@ static void collect_method_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RLis
 		}
 		char *method_label = xref_join_names (method.owner_name, method.name);
 		append_xref_info (xrefs, count, limit, "data-image", "method.owner", "method", method_label, 0, 0, "class", method.owner_name, 0, 0);
-		DartStringInfo *method_si = xref_find_string (strings_by_value, method.name);
+		DartStringInfo *method_si = dart_recovery_model_string_by_value (model, method.name);
 		append_xref_info (xrefs, count, limit, "data-image", "method.name", "method", method_label, 0, 0, "string", method.name, 0, method_si? method_si->address: 0);
 		append_xref_info (xrefs, count, limit, "data-image", "method.entry", "method", method_label, 0, 0, "code", method_label, 0, method.entry);
 		ht_up_insert (seen_ep, method.entry, (void *)1);
@@ -182,7 +168,7 @@ static void collect_method_scan_xrefs(DartCtx *ctx, HtPP *strings_by_value, RLis
 	}
 }
 
-static void collect_data_image_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList *xrefs, ut64 *count, ut64 limit) {
+static void collect_data_image_xrefs(DartCtx *ctx, DartRecoveryModel *model, RList *xrefs, ut64 *count, ut64 limit) {
 	if (!ctx || !ctx->core || !xrefs || xref_limit_reached (*count, limit)) {
 		return;
 	}
@@ -198,15 +184,15 @@ static void collect_data_image_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 	if (parse_snapshot_header (ctx, ctx->iso_data, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) == 0) {
 		ut64 data_image_base = ctx->iso_data + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
 		ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: (data_image_base + (4ULL << 20));
-		collect_field_scan_xrefs (ctx, strings_by_value, xrefs, seen_fields, count, limit, data_image_base, data_image_end);
-		collect_method_scan_xrefs (ctx, strings_by_value, xrefs, seen_ep, count, limit, data_image_base, data_image_end);
+		collect_field_scan_xrefs (ctx, model, xrefs, seen_fields, count, limit, data_image_base, data_image_end);
+		collect_method_scan_xrefs (ctx, model, xrefs, seen_ep, count, limit, data_image_base, data_image_end);
 	}
 	if (ctx->vm_data && !xref_limit_reached (*count, limit) &&
 		parse_snapshot_header (ctx, ctx->vm_data, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) == 0) {
 		ut64 vm_data_base = ctx->vm_data + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
 		ut64 vm_data_end = ctx->vm_instr? ctx->vm_instr: (vm_data_base + (4ULL << 20));
-		collect_field_scan_xrefs (ctx, strings_by_value, xrefs, seen_fields, count, limit, vm_data_base, vm_data_end);
-		collect_method_scan_xrefs (ctx, strings_by_value, xrefs, seen_ep, count, limit, vm_data_base, vm_data_end);
+		collect_field_scan_xrefs (ctx, model, xrefs, seen_fields, count, limit, vm_data_base, vm_data_end);
+		collect_method_scan_xrefs (ctx, model, xrefs, seen_ep, count, limit, vm_data_base, vm_data_end);
 	}
 	ht_up_free (seen_ep);
 	r_list_free (seen_fields);
@@ -403,14 +389,14 @@ static RList *collect_pool_uses(DartCtx *ctx, RVecDartInstructionTableEntry *ent
 	return uses;
 }
 
-static bool append_string_pool_xref(DartCtx *ctx, RList *xrefs, HtPP *strings_by_value, HtPP *classes_by_name, ut64 *count, ut64 limit, const DartPoolUseInfo *use, ut64 target) {
+static bool append_string_pool_xref(DartCtx *ctx, DartRecoveryModel *model, RList *xrefs, ut64 *count, ut64 limit, const DartPoolUseInfo *use, ut64 target) {
 	char buf[256];
 	if (!try_read_dart_string (ctx, target, buf, sizeof (buf))) {
 		return false;
 	}
-	DartStringInfo *si = xref_find_string (strings_by_value, buf);
+	DartStringInfo *si = dart_recovery_model_string_by_value (model, buf);
 	append_xref_info (xrefs, count, limit, "code", "code.string", "code", use->fn_name, use->fn_index, use->at, "string", si? si->value: buf, si? si->ref_id: 0, si && si->address? si->address: target);
-	if (classes_by_name && xref_find_class (classes_by_name, buf) && !xref_limit_reached (*count, limit)) {
+	if (dart_recovery_model_class_by_name (model, buf) && !xref_limit_reached (*count, limit)) {
 		append_xref_info (xrefs, count, limit, "code", "code.class", "code", use->fn_name, use->fn_index, use->at, "class", buf, 0, si && si->address? si->address: target);
 	}
 	return true;
@@ -431,7 +417,7 @@ static bool append_flag_pool_xref(DartCtx *ctx, RList *xrefs, ut64 *count, ut64 
 	return true;
 }
 
-static bool resolve_pool_entry_xref(DartCtx *ctx, RList *xrefs, HtPP *strings_by_value, HtPP *classes_by_name, ut64 *count, ut64 limit, const DartPoolUseInfo *use, ut64 raw, ut64 heap_base) {
+static bool resolve_pool_entry_xref(DartCtx *ctx, DartRecoveryModel *model, RList *xrefs, ut64 *count, ut64 limit, const DartPoolUseInfo *use, ut64 raw, ut64 heap_base) {
 	ut64 candidates[9];
 	int n = 0;
 	candidates[n++] = raw;
@@ -447,7 +433,7 @@ static bool resolve_pool_entry_xref(DartCtx *ctx, RList *xrefs, HtPP *strings_by
 		if (!target) {
 			continue;
 		}
-		if (append_string_pool_xref (ctx, xrefs, strings_by_value, classes_by_name, count, limit, use, target)) {
+		if (append_string_pool_xref (ctx, model, xrefs, count, limit, use, target)) {
 			return true;
 		}
 		if (append_flag_pool_xref (ctx, xrefs, count, limit, use, target)) {
@@ -457,15 +443,15 @@ static bool resolve_pool_entry_xref(DartCtx *ctx, RList *xrefs, HtPP *strings_by
 	return false;
 }
 
-static void collect_object_pool_xrefs(DartCtx *ctx, RVecDartInstructionTableEntry *it_entries, HtPP *strings_by_value, HtPP *classes_by_name, RList *xrefs, ut64 *count, ut64 limit) {
-	if (!ctx || !ctx->core || !it_entries || !strings_by_value || !xrefs || xref_limit_reached (*count, limit)) {
+static void collect_object_pool_xrefs(DartCtx *ctx, DartRecoveryModel *model, RList *xrefs, ut64 *count, ut64 limit) {
+	if (!ctx || !ctx->core || !model || !model->it_entries || !xrefs || xref_limit_reached (*count, limit)) {
 		return;
 	}
 	ut64 pool_base = xref_object_pool_base (ctx);
 	if (!pool_base) {
 		return;
 	}
-	RList *uses = collect_pool_uses (ctx, it_entries, limit);
+	RList *uses = collect_pool_uses (ctx, model->it_entries, limit);
 	ut64 heap_base = xref_flag_addr (ctx->core, "app.heap_base");
 	RListIter *it;
 	DartPoolUseInfo *use;
@@ -478,7 +464,7 @@ static void collect_object_pool_xrefs(DartCtx *ctx, RVecDartInstructionTableEntr
 		if (!read_u64_at (ctx, entry_addr, &raw)) {
 			continue;
 		}
-		(void)resolve_pool_entry_xref (ctx, xrefs, strings_by_value, classes_by_name, count, limit, use, raw, heap_base);
+		(void)resolve_pool_entry_xref (ctx, model, xrefs, count, limit, use, raw, heap_base);
 	}
 	r_list_free (uses);
 }
@@ -490,36 +476,10 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 	RList *xrefs = r_list_newf (dart_xref_info_free);
 	const ut64 limit = ctx->dump_fns_limit > 0? (ut64)ctx->dump_fns_limit: 0;
 	ut64 count = 0;
-	const int old_dump_fields = ctx->dump_fields;
-	ctx->dump_fields = 1;
-	RList *classes = dart_pool_extract_classes (ctx);
-	ctx->dump_fields = old_dump_fields;
-	RList *strings = dart_pool_extract_strings (ctx);
-	RVecDartInstructionTableEntry *it_entries = dart_pool_extract_instruction_table (ctx);
-	HtPP *strings_by_value = ht_pp_new0 ();
-	HtPP *classes_by_name = ht_pp_new0 ();
-	if (strings) {
-		RListIter *it;
-		DartStringInfo *si;
-		r_list_foreach (strings, it, si) {
-			if (!si || !R_STR_ISNOTEMPTY (si->value)) {
-				continue;
-			}
-			if (!ht_pp_find (strings_by_value, si->value, NULL)) {
-				ht_pp_insert (strings_by_value, si->value, si);
-			}
-		}
-	}
-	if (classes) {
-		RListIter *it;
-		DartClassInfo *ci;
-		r_list_foreach (classes, it, ci) {
-			if (!ci || R_STR_ISEMPTY (ci->name) || ht_pp_find (classes_by_name, ci->name, NULL)) {
-				continue;
-			}
-			ht_pp_insert (classes_by_name, ci->name, ci);
-		}
-	}
+	DartRecoveryModel model = { 0 };
+	dart_recovery_model_load (ctx, &model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_CLASS_FIELDS | DART_RECOVERY_IT);
+	RList *classes = model.classes;
+	RVecDartInstructionTableEntry *it_entries = model.it_entries;
 	if (classes) {
 		RListIter *it;
 		DartClassInfo *ci;
@@ -528,7 +488,7 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 				continue;
 			}
 			const char *class_origin = xref_class_origin (ci);
-			DartStringInfo *name_si = xref_find_string (strings_by_value, ci->name);
+			DartStringInfo *name_si = dart_recovery_model_string_by_value (&model, ci->name);
 			append_xref_info (xrefs, &count, limit, class_origin, "class.name", "class", ci->name, ci->ref_id, 0, "string", ci->name, ci->name_ref, name_si? name_si->address: 0);
 			if (ci->library_ref > 0 || R_STR_ISNOTEMPTY (ci->library_name)) {
 				char *library_name = ci->library_name? strdup (ci->library_name): xref_ref_label ("library", ci->library_ref);
@@ -566,7 +526,7 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 					const char *field_origin = xref_field_origin (fi);
 					append_xref_info (xrefs, &count, limit, field_origin, "field.owner", "field", field_label, fi->ref_id, 0, "class", ci->name, fi->owner_ref, 0);
 					if (R_STR_ISNOTEMPTY (fi->name)) {
-						DartStringInfo *field_si = xref_find_string (strings_by_value, fi->name);
+						DartStringInfo *field_si = dart_recovery_model_string_by_value (&model, fi->name);
 						append_xref_info (xrefs, &count, limit, field_origin, "field.name", "field", field_label, fi->ref_id, 0, "string", fi->name, fi->name_ref, field_si? field_si->address: 0);
 					}
 					if (fi->type_ref > 0 || R_STR_ISNOTEMPTY (fi->type_name)) {
@@ -591,7 +551,7 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 					const char *method_origin = xref_method_origin (mi);
 					append_xref_info (xrefs, &count, limit, method_origin, "method.owner", "method", method_label, mi->ref_id, mi->entry_point, "class", ci->name, mi->owner_ref, 0);
 					if (R_STR_ISNOTEMPTY (mi->name)) {
-						DartStringInfo *method_si = xref_find_string (strings_by_value, mi->name);
+						DartStringInfo *method_si = dart_recovery_model_string_by_value (&model, mi->name);
 						append_xref_info (xrefs, &count, limit, method_origin, "method.name", "method", method_label, mi->ref_id, mi->entry_point, "string", mi->name, mi->name_ref, method_si? method_si->address: 0);
 					}
 					if (mi->signature_ref > 0 || R_STR_ISNOTEMPTY (mi->signature)) {
@@ -607,8 +567,8 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 			}
 		}
 	}
-	collect_object_pool_xrefs (ctx, it_entries, strings_by_value, classes_by_name, xrefs, &count, limit);
-	collect_data_image_xrefs (ctx, strings_by_value, xrefs, &count, limit);
+	collect_object_pool_xrefs (ctx, &model, xrefs, &count, limit);
+	collect_data_image_xrefs (ctx, &model, xrefs, &count, limit);
 	if (it_entries && !xref_limit_reached (count, limit)) {
 		DartInstructionTableEntry *entry;
 		R_VEC_FOREACH (it_entries, entry) {
@@ -620,11 +580,7 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 			free (it_label);
 		}
 	}
-	ht_pp_free (classes_by_name);
-	ht_pp_free (strings_by_value);
-	dart_class_list_free (classes);
-	dart_string_list_free (strings);
-	dart_instruction_table_list_free (it_entries);
+	dart_recovery_model_fini (&model);
 	return xrefs;
 }
 

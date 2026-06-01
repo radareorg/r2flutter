@@ -13,7 +13,7 @@ BUILD_DIR = build
 BIN_DIR = bin
 
 # Source files
-LIB_SRC = $(SRC_DIR)/dart_app.c $(SRC_DIR)/dart_dumper.c $(SRC_DIR)/dart_pool_snapshot.c $(SRC_DIR)/dart_pool_discovery.c $(SRC_DIR)/dart_pool_names.c $(SRC_DIR)/dart_pool_strings.c $(SRC_DIR)/dart_pool_data_image.c $(SRC_DIR)/dart_pool_it.c $(SRC_DIR)/dart_pool_xrefs.c $(SRC_DIR)/dart_pool_clusters.c $(SRC_DIR)/dart_pool_classes.c $(SRC_DIR)/dart_pool_parse.c $(SRC_DIR)/dart_pool_modern.c $(SRC_DIR)/dart_version.c $(SRC_DIR)/dart_obf.c
+LIB_SRC = $(SRC_DIR)/dart_app.c $(SRC_DIR)/dart_dumper.c $(SRC_DIR)/dart_pool_snapshot.c $(SRC_DIR)/dart_pool_discovery.c $(SRC_DIR)/dart_pool_names.c $(SRC_DIR)/dart_pool_strings.c $(SRC_DIR)/dart_pool_data_image.c $(SRC_DIR)/dart_pool_it.c $(SRC_DIR)/dart_pool_xrefs.c $(SRC_DIR)/dart_pool_clusters.c $(SRC_DIR)/dart_pool_classes.c $(SRC_DIR)/dart_pool_model.c $(SRC_DIR)/dart_pool_parse.c $(SRC_DIR)/dart_pool_modern.c $(SRC_DIR)/dart_version.c $(SRC_DIR)/dart_obf.c
 MAIN_SRC = src/tool/main.c
 
 # Object files

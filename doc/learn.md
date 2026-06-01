@@ -803,6 +803,19 @@ The modern object-header cluster naming code now lives in `src/lib/dart_pool_mod
 
 Keep future splits on the same boundary: move whole parser subsystems behind private headers first, then reduce the remaining orchestration in `dart_pool_parse.c`. The remaining parser file should mostly be public API orchestration and header rendering.
 
+## Recovery Model Boundary
+
+Fast extractors should stay pure: `dart_pool_extract_strings ()` extracts
+strings, `dart_pool_extract_classes ()` extracts class metadata, and neither
+should call the other just to enrich an output view. Cross-feature joins now go
+through the private `DartRecoveryModel`, which owns the loaded strings, classes,
+instruction-table entries, and shared indexes by string value/address,
+class name, and method entrypoint.
+
+That boundary keeps output features from becoming recursive parsers. String
+reverse references, xrefs, and plugin analysis can consume the same model while
+slow code analysis remains an explicit layer on top.
+
 ## Modern AOT Function Names And VM Base Symbols
 
 Dart AOT `Function.code_index` values are serialized one-based: `0` is reserved for the lazy-compile stub, and non-zero values must be converted to the zero-based `InstructionsTable` slot with `code_index - 1`. Using the raw value as a slot lets a later function fallback name bleed into the next instruction-table entry; on the Android `mafia` fixture this made both `0xe12220` and `0xe122a8` render as `_Double._greaterThan`.
