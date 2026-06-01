@@ -67,6 +67,13 @@ static const char *xref_field_origin(const DartFieldInfo *fi) {
 	return (fi->ref_id > 0 || fi->name_ref > 0 || fi->owner_ref > 0 || fi->type_ref > 0)? "metadata": "data-image";
 }
 
+static const char *xref_method_origin(const DartMethodInfo *mi) {
+	if (!mi) {
+		return "data-image";
+	}
+	return (mi->ref_id > 0 || mi->name_ref > 0 || mi->owner_ref > 0 || mi->signature_ref > 0)? "metadata": "data-image";
+}
+
 static DartStringInfo *xref_find_string(HtPP *strings_by_value, const char *value) {
 	if (!strings_by_value || R_STR_ISEMPTY (value)) {
 		return NULL;
@@ -255,6 +262,34 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 						free (type_name);
 					}
 					free (field_label);
+				}
+			}
+			if (ci->methods) {
+				RListIter *mit;
+				DartMethodInfo *mi;
+				r_list_foreach (ci->methods, mit, mi) {
+					if (!mi || xref_limit_reached (count, limit)) {
+						continue;
+					}
+					if (mi->ref_id == 0 && mi->name_ref == 0 && mi->owner_ref == 0 && mi->signature_ref == 0 && mi->entry_point == 0) {
+						continue;
+					}
+					char *method_label = xref_join_names (ci->name, mi->name);
+					const char *method_origin = xref_method_origin (mi);
+					append_xref_info (xrefs, &count, limit, method_origin, "method.owner", "method", method_label, mi->ref_id, mi->entry_point, "class", ci->name, mi->owner_ref, 0);
+					if (R_STR_ISNOTEMPTY (mi->name)) {
+						DartStringInfo *method_si = xref_find_string (strings_by_value, mi->name);
+						append_xref_info (xrefs, &count, limit, method_origin, "method.name", "method", method_label, mi->ref_id, mi->entry_point, "string", mi->name, mi->name_ref, method_si? method_si->address: 0);
+					}
+					if (mi->signature_ref > 0 || R_STR_ISNOTEMPTY (mi->signature)) {
+						char *signature = mi->signature? strdup (mi->signature): xref_ref_label ("type", mi->signature_ref);
+						append_xref_info (xrefs, &count, limit, method_origin, "method.signature", "method", method_label, mi->ref_id, mi->entry_point, "type", signature, mi->signature_ref, 0);
+						free (signature);
+					}
+					if (mi->entry_point > 0) {
+						append_xref_info (xrefs, &count, limit, method_origin, "method.entry", "method", method_label, mi->ref_id, mi->entry_point, "code", method_label, mi->code_ref, mi->entry_point);
+					}
+					free (method_label);
 				}
 			}
 		}

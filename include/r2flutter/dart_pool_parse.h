@@ -118,9 +118,14 @@ typedef struct DartMethodInfo {
 	ut64 ref_id;
 	char *name;
 	char *owner_name;
+	char *signature;
 	ut64 owner_ref;
+	ut64 name_ref;
+	ut64 signature_ref;
+	ut64 data_ref;
 	ut64 entry_point;
 	ut64 code_ref;
+	ut64 code_index;
 	ut32 kind_tag;
 	ut32 flags;
 } DartMethodInfo;

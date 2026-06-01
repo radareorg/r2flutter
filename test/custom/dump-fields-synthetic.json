@@ -11,7 +11,9 @@
       "+0x10 int fieldA",
       "+0x18 List<int> items",
       "+0x20 List<X0> genericItems",
-      "+0x28 (int) => String callback"
+      "+0x28 (int) => String callback",
+      "methods:",
+      "0x00000000 compute (int) => String (RegularFunction)"
     ]
   }
 }

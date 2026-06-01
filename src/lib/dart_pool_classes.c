@@ -18,6 +18,27 @@ static DartFieldInfo *dart_field_info_clone(const DartFieldInfo *fi) {
 	return out;
 }
 
+static DartMethodInfo *dart_method_info_clone(const DartMethodInfo *mi) {
+	if (!mi) {
+		return NULL;
+	}
+	DartMethodInfo *out = R_NEW0 (DartMethodInfo);
+	out->ref_id = mi->ref_id;
+	out->name = mi->name? strdup (mi->name): NULL;
+	out->owner_name = mi->owner_name? strdup (mi->owner_name): NULL;
+	out->signature = mi->signature? strdup (mi->signature): NULL;
+	out->owner_ref = mi->owner_ref;
+	out->name_ref = mi->name_ref;
+	out->signature_ref = mi->signature_ref;
+	out->data_ref = mi->data_ref;
+	out->entry_point = mi->entry_point;
+	out->code_ref = mi->code_ref;
+	out->code_index = mi->code_index;
+	out->kind_tag = mi->kind_tag;
+	out->flags = mi->flags;
+	return out;
+}
+
 typedef enum {
 	kFieldCid_extract = 10,
 	kLibraryCid_extract = 12,
@@ -56,6 +77,8 @@ static void free_array_info(void *p) {
 		free (ai);
 	}
 }
+
+static void free_method_info_items(DartMethodInfo **items, ut64 count);
 
 static int decode_field_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *field_list, ut64 *ref_counter) {
 	ut64 count = 0;
@@ -96,6 +119,62 @@ static int decode_field_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *field
 	return 0;
 }
 
+static int decode_function_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *method_list, ut64 *ref_counter) {
+	if (!s || !ctx || !method_list || !ref_counter) {
+		return -1;
+	}
+	ut64 start = s->cursor;
+	ut64 start_ref = *ref_counter;
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		s->cursor = start;
+		*ref_counter = start_ref;
+		return -1;
+	}
+	if (count == 0) {
+		return 0;
+	}
+	if (count > 100000) {
+		s->cursor = start;
+		*ref_counter = start_ref;
+		return -1;
+	}
+	if (ctx->verbose > 1) {
+		fprintf (stderr, "[r2flutter] Function cluster (ext): count=%" PRIu64 "\n", count);
+	}
+	DartMethodInfo **items = (DartMethodInfo **)calloc ((size_t)count, sizeof (DartMethodInfo *));
+	if (!items) {
+		s->cursor = start;
+		*ref_counter = start_ref;
+		return -1;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		DartMethodInfo *mi = R_NEW0 (DartMethodInfo);
+		mi->ref_id = (*ref_counter)++;
+		if (!cs_read_ref_id (s, &mi->name_ref) || !cs_read_ref_id (s, &mi->owner_ref) || !cs_read_ref_id (s, &mi->signature_ref) || !cs_read_ref_id (s, &mi->data_ref) || !cs_read_unsigned (s, &mi->code_index) || !cs_read_u32 (s, &mi->kind_tag)) {
+			dart_method_info_free (mi);
+			free_method_info_items (items, count);
+			s->cursor = start;
+			*ref_counter = start_ref;
+			return -1;
+		}
+		if (mi->code_index > 0 && ctx->iso_instr > 0) {
+			mi->entry_point = ctx->iso_instr + (mi->code_index - 1) * 4;
+		}
+		mi->code_ref = mi->code_index;
+		items[i] = mi;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		r_list_append (method_list, items[i]);
+		if (ctx->refs && items[i]->ref_id < ctx->refs_count) {
+			ctx->refs[items[i]->ref_id] = items[i];
+		}
+		items[i] = NULL;
+	}
+	free_method_info_items (items, count);
+	return 0;
+}
+
 static void free_type_arguments_items(DartTypeArgumentsInfo **items, ut64 count) {
 	if (!items) {
 		return;
@@ -122,6 +201,16 @@ static void free_type_info_items(DartTypeInfo **items, ut64 count) {
 	}
 	for (ut64 i = 0; i < count; i++) {
 		dart_type_info_free (items[i]);
+	}
+	free (items);
+}
+
+static void free_method_info_items(DartMethodInfo **items, ut64 count) {
+	if (!items) {
+		return;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		dart_method_info_free (items[i]);
 	}
 	free (items);
 }
@@ -621,16 +710,24 @@ static DartArrayInfo *find_array_by_ref(RList *array_list, ut64 ref) {
 	return NULL;
 }
 
-static char *dup_class_name_by_ref(RList *class_list, ut64 ref) {
+static DartClassInfo *find_class_by_ref(RList *class_list, ut64 ref) {
 	if (!class_list || ref == 0) {
 		return NULL;
 	}
 	RListIter *it;
 	DartClassInfo *ci;
 	r_list_foreach (class_list, it, ci) {
-		if (ci && ci->ref_id == ref && R_STR_ISNOTEMPTY (ci->name)) {
-			return strdup (ci->name);
+		if (ci && ci->ref_id == ref) {
+			return ci;
 		}
+	}
+	return NULL;
+}
+
+static char *dup_class_name_by_ref(RList *class_list, ut64 ref) {
+	DartClassInfo *ci = find_class_by_ref (class_list, ref);
+	if (ci && R_STR_ISNOTEMPTY (ci->name)) {
+		return strdup (ci->name);
 	}
 	return NULL;
 }
@@ -1177,7 +1274,7 @@ static int decode_library_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *lib
 	return 0;
 }
 
-static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList *field_list, RList *type_list, RList *type_args_list, RList *array_list) {
+static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList *field_list, RList *method_list, RList *type_list, RList *type_args_list, RList *array_list) {
 	if (!ctx || !ctx->refs || !class_list) {
 		return;
 	}
@@ -1213,6 +1310,32 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 			}
 		}
 	}
+	if (method_list) {
+		DartMethodInfo *mi;
+		r_list_foreach (method_list, it, mi) {
+			if (!mi) {
+				continue;
+			}
+			if (!mi->name && mi->name_ref > 0 && mi->name_ref < ctx->refs_count) {
+				mi->name = dup_ref_string_obf (ctx, mi->name_ref);
+			}
+			if (!mi->signature && mi->signature_ref > 0) {
+				mi->signature = resolve_type_name (ctx, class_list, type_list, type_args_list, array_list, mi->signature_ref);
+			}
+			DartClassInfo *owner = find_class_by_ref (class_list, mi->owner_ref);
+			if (!owner) {
+				continue;
+			}
+			if (!mi->owner_name && owner->name) {
+				mi->owner_name = strdup (owner->name);
+			}
+			if (!owner->methods) {
+				owner->methods = r_list_newf ((RListFree)dart_method_info_free);
+			}
+			DartMethodInfo *mi_copy = dart_method_info_clone (mi);
+			r_list_append (owner->methods, mi_copy);
+		}
+	}
 	if (!field_list) {
 		return;
 	}
@@ -1227,15 +1350,10 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 		if (!fi->type_name && fi->type_ref > 0) {
 			fi->type_name = resolve_type_name (ctx, class_list, type_list, type_args_list, array_list, fi->type_ref);
 		}
-		if (fi->owner_ref > 0 && fi->owner_ref < ctx->refs_count) {
-			void *ref = ctx->refs[fi->owner_ref];
-			if (ref) {
-				DartClassInfo *owner = (DartClassInfo *)ref;
-				if (owner->fields) {
-					DartFieldInfo *fi_copy = dart_field_info_clone (fi);
-					r_list_append (owner->fields, fi_copy);
-				}
-			}
+		DartClassInfo *owner = find_class_by_ref (class_list, fi->owner_ref);
+		if (owner && owner->fields) {
+			DartFieldInfo *fi_copy = dart_field_info_clone (fi);
+			r_list_append (owner->fields, fi_copy);
 		}
 	}
 }
@@ -1273,6 +1391,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	bool header_valid = (nc > 0 && nc < 1000000 && no > 0 && no < 10000000);
 	RList *class_list = r_list_newf ((RListFree)dart_class_info_free);
 	RList *field_list = r_list_newf ((RListFree)dart_field_info_free);
+	RList *method_list = r_list_newf ((RListFree)dart_method_info_free);
 	RList *type_list = r_list_newf ((RListFree)dart_type_info_free);
 	RList *type_args_list = r_list_newf (free_type_arguments_info);
 	RList *array_list = r_list_newf (free_array_info);
@@ -1315,6 +1434,13 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 			case kFieldCid_extract:
 				rc = decode_field_cluster_ext (&stream, ctx, field_list, &ref_counter);
 				break;
+			case kFunctionCid:
+				rc = decode_function_cluster_ext (&stream, ctx, method_list, &ref_counter);
+				if (rc < 0) {
+					rc = 0;
+					skip_generic_cluster (&stream);
+				}
+				break;
 			case kTypeCid:
 				rc = decode_type_cluster_ext (&stream, ctx, type_list, &ref_counter);
 				break;
@@ -1354,7 +1480,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 				break;
 			}
 		}
-		resolve_class_and_field_names (ctx, class_list, field_list, type_list, type_args_list, array_list);
+		resolve_class_and_field_names (ctx, class_list, field_list, method_list, type_list, type_args_list, array_list);
 		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] Extracted fields from clusters: %d\n", r_list_length (field_list));
 		}
@@ -1418,6 +1544,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	r_list_free (array_list);
 	r_list_free (type_args_list);
 	r_list_free (type_list);
+	r_list_free (method_list);
 	r_list_free (field_list);
 	if (ctx->dump_fields && r_list_length (class_list) > 0) {
 		ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
@@ -1524,6 +1651,9 @@ static void dump_class_json(PJ *pj, const DartClassInfo *ci) {
 			if (mi->owner_name) {
 				pj_ks (pj, "owner", mi->owner_name);
 			}
+			if (mi->signature) {
+				pj_ks (pj, "signature", mi->signature);
+			}
 			pj_kn (pj, "kind_tag", mi->kind_tag);
 			pj_ks (pj, "kind", method_kind_name (mi->kind_tag));
 			pj_end (pj);
@@ -1601,7 +1731,11 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool 
 			RListIter *mit;
 			DartMethodInfo *mi;
 			r_list_foreach (ci->methods, mit, mi) {
-				r_strbuf_appendf (sb, "#   method 0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, r_str_get (mi->name), method_kind_name (mi->kind_tag));
+				r_strbuf_appendf (sb, "#   method 0x%08" PFMT64x " %s", (ut64)mi->entry_point, r_str_get (mi->name));
+				if (R_STR_ISNOTEMPTY (mi->signature)) {
+					r_strbuf_appendf (sb, " %s", mi->signature);
+				}
+				r_strbuf_appendf (sb, " (%s)\n", method_kind_name (mi->kind_tag));
 			}
 		}
 		return;
@@ -1653,7 +1787,11 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool 
 		RListIter *mit;
 		DartMethodInfo *mi;
 		r_list_foreach (ci->methods, mit, mi) {
-			r_strbuf_appendf (sb, "    0x%08" PFMT64x " %s (%s)\n", (ut64)mi->entry_point, r_str_get (mi->name), method_kind_name (mi->kind_tag));
+			r_strbuf_appendf (sb, "    0x%08" PFMT64x " %s", (ut64)mi->entry_point, r_str_get (mi->name));
+			if (R_STR_ISNOTEMPTY (mi->signature)) {
+				r_strbuf_appendf (sb, " %s", mi->signature);
+			}
+			r_strbuf_appendf (sb, " (%s)\n", method_kind_name (mi->kind_tag));
 		}
 	}
 }

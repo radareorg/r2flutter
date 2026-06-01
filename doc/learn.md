@@ -380,12 +380,12 @@ confidence layers:
   handles some disassembly-derived annotations
 
 The most valuable next work is therefore not "add field extraction" from
-scratch. It is linking decoded `FunctionType` objects to method/function
-metadata, resolving interface arrays, populating reverse string references, and
-decoding object-pool entries so PP-offset observations can become real
-`code -> object` xrefs. Field attachment, generic field type rendering,
-type-parameter field types, and function-shaped field types now have direct
-synthetic text/JSON/xref coverage.
+scratch. It is resolving interface arrays, populating reverse string
+references, and decoding object-pool entries so PP-offset observations can
+become real `code -> object` xrefs. Field attachment, generic field type
+rendering, type-parameter field types, function-shaped field types, and
+cluster-backed method signatures now have direct synthetic text/JSON/xref
+coverage.
 
 ## `r2flutter -a` Uses Live `RCore` Metadata But Keeps PP Resolution Conservative
 

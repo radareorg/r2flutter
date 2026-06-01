@@ -119,13 +119,14 @@ This is enough to recover:
 
 Current limitation:
 
-- method/function signatures are not yet wired from Function objects to decoded
-  `FunctionType` refs
+- data-image method scans still recover names and entrypoints only, without
+  signature refs
 - complex optional named-parameter flags and production layouts still need more
   coverage
 
 So `field -> type` exists in metadata and can often be rendered now, while
-`method -> signature` is still the next recovery step.
+cluster-backed `method -> signature` edges are emitted when Function metadata
+survives.
 
 ### Method / Function Xrefs
 

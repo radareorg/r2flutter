@@ -18,7 +18,10 @@
       "\"name\":\"callback\"",
       "\"type\":\"(int) => String\"",
       "\"offset\":40",
-      "\"static\":false"
+      "\"static\":false",
+      "\"methods\":[{\"name\":\"compute\"",
+      "\"signature\":\"(int) => String\"",
+      "\"kind\":\"RegularFunction\""
     ]
   }
 }

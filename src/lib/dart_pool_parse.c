@@ -488,6 +488,7 @@ void dart_method_info_free(DartMethodInfo *mi) {
 	if (mi) {
 		free (mi->name);
 		free (mi->owner_name);
+		free (mi->signature);
 		free (mi);
 	}
 }
