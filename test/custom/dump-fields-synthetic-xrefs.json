@@ -8,7 +8,9 @@
       "field.type field TestClass.items",
       "type List<int>",
       "field.type field TestClass.genericItems",
-      "type List<X0>"
+      "type List<X0>",
+      "field.type field TestClass.callback",
+      "type (int) => String"
     ]
   }
 }

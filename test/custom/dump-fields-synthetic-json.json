@@ -15,6 +15,9 @@
       "\"name\":\"genericItems\"",
       "\"type\":\"List<X0>\"",
       "\"offset\":32",
+      "\"name\":\"callback\"",
+      "\"type\":\"(int) => String\"",
+      "\"offset\":40",
       "\"static\":false"
     ]
   }

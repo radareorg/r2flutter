@@ -4,12 +4,13 @@ CMDS=<<EOF
 !!../bin/r2flutter -c bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
-class TestClass (size=40)
+class TestClass (size=48)
   library: package:test
   fields:
     +0x10 int fieldA
     +0x18 List<int> items
     +0x20 List<X0> genericItems
+    +0x28 (int) => String callback
 
 EOF
 RUN
@@ -20,7 +21,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -j -c bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"ref":9,"name":"TestClass","library":{"ref":8,"name":"package:test"},"layout":{"instance_size":40,"type_params":1,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false},"fields":[{"name":"fieldA","type":"int","offset":16,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"items","type":"List<int>","offset":24,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"genericItems","type":"List<X0>","offset":32,"flags":{"static":false,"final":false,"const":false,"late":false}}]}]
+[{"ref":10,"name":"TestClass","library":{"ref":9,"name":"package:test"},"layout":{"instance_size":48,"type_params":1,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false},"fields":[{"name":"fieldA","type":"int","offset":16,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"items","type":"List<int>","offset":24,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"genericItems","type":"List<X0>","offset":32,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"callback","type":"(int) => String","offset":40,"flags":{"static":false,"final":false,"const":false,"late":false}}]}]
 EOF
 RUN
 
@@ -30,16 +31,19 @@ CMDS=<<EOF
 !!../bin/r2flutter -x bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
-metadata class.name class TestClass [ref=9] -> string TestClass [ref=2]
-metadata class.library class TestClass [ref=9] -> library package:test [ref=8]
-metadata field.owner field TestClass.fieldA [ref=16] -> class TestClass [ref=9]
-metadata field.name field TestClass.fieldA [ref=16] -> string fieldA [ref=4]
-metadata field.type field TestClass.fieldA [ref=16] -> type int [ref=13]
-metadata field.owner field TestClass.items [ref=17] -> class TestClass [ref=9]
-metadata field.name field TestClass.items [ref=17] -> string items [ref=6]
-metadata field.type field TestClass.items [ref=17] -> type List<int> [ref=14]
-metadata field.owner field TestClass.genericItems [ref=18] -> class TestClass [ref=9]
-metadata field.name field TestClass.genericItems [ref=18] -> string genericItems [ref=7]
-metadata field.type field TestClass.genericItems [ref=18] -> type List<X0> [ref=15]
+metadata class.name class TestClass [ref=10] -> string TestClass [ref=2]
+metadata class.library class TestClass [ref=10] -> library package:test [ref=9]
+metadata field.owner field TestClass.fieldA [ref=20] -> class TestClass [ref=10]
+metadata field.name field TestClass.fieldA [ref=20] -> string fieldA [ref=4]
+metadata field.type field TestClass.fieldA [ref=20] -> type int [ref=15]
+metadata field.owner field TestClass.items [ref=21] -> class TestClass [ref=10]
+metadata field.name field TestClass.items [ref=21] -> string items [ref=6]
+metadata field.type field TestClass.items [ref=21] -> type List<int> [ref=16]
+metadata field.owner field TestClass.genericItems [ref=22] -> class TestClass [ref=10]
+metadata field.name field TestClass.genericItems [ref=22] -> string genericItems [ref=7]
+metadata field.type field TestClass.genericItems [ref=22] -> type List<X0> [ref=17]
+metadata field.owner field TestClass.callback [ref=23] -> class TestClass [ref=10]
+metadata field.name field TestClass.callback [ref=23] -> string callback [ref=8]
+metadata field.type field TestClass.callback [ref=23] -> type (int) => String [ref=19]
 EOF
 RUN

@@ -102,8 +102,14 @@ typedef struct DartTypeInfo {
 	ut64 type_class_ref;
 	ut64 type_args_ref;
 	ut64 owner_ref;
+	ut64 type_parameters_ref;
+	ut64 result_type_ref;
+	ut64 parameter_types_ref;
+	ut64 named_parameter_names_ref;
 	ut32 base;
 	ut32 index;
+	ut32 packed_parameter_counts;
+	ut32 packed_type_parameter_counts;
 	ut32 flags;
 	RList *type_args;
 } DartTypeInfo;

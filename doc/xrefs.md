@@ -114,13 +114,18 @@ This is enough to recover:
 - field owner
 - field flags
 - field offset inside an instance layout
+- readable field type names for direct `Type`, `TypeArguments`,
+  `TypeParameter`, and simple `FunctionType` refs
 
 Current limitation:
 
-- the repo stores `type_ref` but does not yet resolve it into a readable `type_name`
-- there is no full `Type` / `TypeArguments` parser wired into the class dump
+- method/function signatures are not yet wired from Function objects to decoded
+  `FunctionType` refs
+- complex optional named-parameter flags and production layouts still need more
+  coverage
 
-So `field -> type` exists in metadata, but only as a raw reference today.
+So `field -> type` exists in metadata and can often be rendered now, while
+`method -> signature` is still the next recovery step.
 
 ### Method / Function Xrefs
 

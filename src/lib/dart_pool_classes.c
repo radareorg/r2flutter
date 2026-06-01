@@ -34,11 +34,26 @@ typedef struct {
 	ut64 *type_refs;
 } DartTypeArgumentsInfo;
 
+typedef struct {
+	ut64 ref_id;
+	ut64 length;
+	ut64 type_args_ref;
+	ut64 *refs;
+} DartArrayInfo;
+
 static void free_type_arguments_info(void *p) {
 	DartTypeArgumentsInfo *tai = (DartTypeArgumentsInfo *)p;
 	if (tai) {
 		free (tai->type_refs);
 		free (tai);
+	}
+}
+
+static void free_array_info(void *p) {
+	DartArrayInfo *ai = (DartArrayInfo *)p;
+	if (ai) {
+		free (ai->refs);
+		free (ai);
 	}
 }
 
@@ -87,6 +102,26 @@ static void free_type_arguments_items(DartTypeArgumentsInfo **items, ut64 count)
 	}
 	for (ut64 i = 0; i < count; i++) {
 		free_type_arguments_info (items[i]);
+	}
+	free (items);
+}
+
+static void free_array_items(DartArrayInfo **items, ut64 count) {
+	if (!items) {
+		return;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		free_array_info (items[i]);
+	}
+	free (items);
+}
+
+static void free_type_info_items(DartTypeInfo **items, ut64 count) {
+	if (!items) {
+		return;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		dart_type_info_free (items[i]);
 	}
 	free (items);
 }
@@ -182,6 +217,93 @@ static int decode_type_arguments_cluster_ext(ClusterStream *s, DartCtx *ctx, RLi
 	return 0;
 }
 
+static int decode_array_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *array_list, ut64 *ref_counter) {
+	if (!s || !ctx || !array_list || !ref_counter) {
+		return -1;
+	}
+	ut64 start = s->cursor;
+	ut64 start_ref = *ref_counter;
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		s->cursor = start;
+		*ref_counter = start_ref;
+		return -1;
+	}
+	if (count == 0) {
+		return 0;
+	}
+	if (count > 50000) {
+		s->cursor = start;
+		*ref_counter = start_ref;
+		return -1;
+	}
+	if (ctx->verbose > 1) {
+		fprintf (stderr, "[r2flutter] Array cluster: count=%" PRIu64 "\n", count);
+	}
+	ut64 *lengths = (ut64 *)calloc ((size_t)count, sizeof (ut64));
+	DartArrayInfo **items = (DartArrayInfo **)calloc ((size_t)count, sizeof (DartArrayInfo *));
+	if (!lengths || !items) {
+		free (lengths);
+		free_array_items (items, count);
+		s->cursor = start;
+		*ref_counter = start_ref;
+		return -1;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		ut64 length = 0;
+		if (!cs_read_unsigned (s, &length) || length > 4096) {
+			free (lengths);
+			free_array_items (items, count);
+			s->cursor = start;
+			*ref_counter = start_ref;
+			return -1;
+		}
+		lengths[i] = length;
+		DartArrayInfo *ai = R_NEW0 (DartArrayInfo);
+		ai->ref_id = (*ref_counter)++;
+		ai->length = length;
+		items[i] = ai;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		ut64 length = 0;
+		ut64 type_args_ref = 0;
+		if (!cs_read_unsigned (s, &length) || length != lengths[i] || !cs_read_ref_id (s, &type_args_ref)) {
+			free (lengths);
+			free_array_items (items, count);
+			s->cursor = start;
+			*ref_counter = start_ref;
+			return -1;
+		}
+		items[i]->type_args_ref = type_args_ref;
+		if (length > 0) {
+			items[i]->refs = (ut64 *)calloc ((size_t)length, sizeof (ut64));
+			if (!items[i]->refs) {
+				free (lengths);
+				free_array_items (items, count);
+				s->cursor = start;
+				*ref_counter = start_ref;
+				return -1;
+			}
+		}
+		for (ut64 j = 0; j < length; j++) {
+			if (!cs_read_ref_id (s, &items[i]->refs[j])) {
+				free (lengths);
+				free_array_items (items, count);
+				s->cursor = start;
+				*ref_counter = start_ref;
+				return -1;
+			}
+		}
+	}
+	free (lengths);
+	for (ut64 i = 0; i < count; i++) {
+		r_list_append (array_list, items[i]);
+		items[i] = NULL;
+	}
+	free_array_items (items, count);
+	return 0;
+}
+
 static int decode_type_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *type_list, ut64 *ref_counter) {
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
@@ -264,6 +386,81 @@ static int decode_type_parameter_cluster_ext(ClusterStream *s, DartCtx *ctx, RLi
 			ctx->refs[ti->ref_id] = ti;
 		}
 	}
+	return 0;
+}
+
+static int decode_function_type_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *type_list, ut64 *ref_counter) {
+	if (!s || !ctx || !type_list || !ref_counter) {
+		return -1;
+	}
+	ut64 start = s->cursor;
+	ut64 start_ref = *ref_counter;
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		s->cursor = start;
+		*ref_counter = start_ref;
+		return -1;
+	}
+	if (count == 0) {
+		return 0;
+	}
+	if (count > 50000) {
+		s->cursor = start;
+		*ref_counter = start_ref;
+		return -1;
+	}
+	if (ctx->verbose > 1) {
+		fprintf (stderr, "[r2flutter] FunctionType cluster: count=%" PRIu64 "\n", count);
+	}
+	DartTypeInfo **items = (DartTypeInfo **)calloc ((size_t)count, sizeof (DartTypeInfo *));
+	if (!items) {
+		s->cursor = start;
+		*ref_counter = start_ref;
+		return -1;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		DartTypeInfo *ti = R_NEW0 (DartTypeInfo);
+		ti->ref_id = (*ref_counter)++;
+		ti->kind = kFunctionTypeCid;
+		ut64 type_test_stub_ref = 0;
+		ut64 hash_ref = 0;
+		if (!cs_read_ref_id (s, &type_test_stub_ref) || !cs_read_ref_id (s, &hash_ref) || !cs_read_ref_id (s, &ti->type_parameters_ref) || !cs_read_ref_id (s, &ti->result_type_ref) || !cs_read_ref_id (s, &ti->parameter_types_ref) || !cs_read_ref_id (s, &ti->named_parameter_names_ref)) {
+			dart_type_info_free (ti);
+			free_type_info_items (items, count);
+			s->cursor = start;
+			*ref_counter = start_ref;
+			return -1;
+		}
+		(void)type_test_stub_ref;
+		(void)hash_ref;
+		ut8 flags = 0;
+		if (!cs_read_u8 (s, &flags) || !cs_read_u32 (s, &ti->packed_parameter_counts)) {
+			dart_type_info_free (ti);
+			free_type_info_items (items, count);
+			s->cursor = start;
+			*ref_counter = start_ref;
+			return -1;
+		}
+		ti->flags = flags;
+		ut8 raw16[2] = { 0 };
+		if (!cs_read_bytes (s, raw16, sizeof (raw16))) {
+			dart_type_info_free (ti);
+			free_type_info_items (items, count);
+			s->cursor = start;
+			*ref_counter = start_ref;
+			return -1;
+		}
+		ti->packed_type_parameter_counts = r_read_le16 (raw16);
+		items[i] = ti;
+	}
+	for (ut64 i = 0; i < count; i++) {
+		r_list_append (type_list, items[i]);
+		if (ctx->refs && items[i]->ref_id < ctx->refs_count) {
+			ctx->refs[items[i]->ref_id] = items[i];
+		}
+		items[i] = NULL;
+	}
+	free_type_info_items (items, count);
 	return 0;
 }
 
@@ -410,6 +607,20 @@ static DartTypeArgumentsInfo *find_type_arguments_by_ref(RList *type_args_list, 
 	return NULL;
 }
 
+static DartArrayInfo *find_array_by_ref(RList *array_list, ut64 ref) {
+	if (!array_list || ref == 0) {
+		return NULL;
+	}
+	RListIter *it;
+	DartArrayInfo *ai;
+	r_list_foreach (array_list, it, ai) {
+		if (ai && ai->ref_id == ref) {
+			return ai;
+		}
+	}
+	return NULL;
+}
+
 static char *dup_class_name_by_ref(RList *class_list, ut64 ref) {
 	if (!class_list || ref == 0) {
 		return NULL;
@@ -424,7 +635,110 @@ static char *dup_class_name_by_ref(RList *class_list, ut64 ref) {
 	return NULL;
 }
 
-static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *type_list, RList *type_args_list, ut64 type_ref, int depth) {
+static ut32 function_type_num_implicit(const DartTypeInfo *ti) {
+	return ti? (ti->packed_parameter_counts & 1): 0;
+}
+
+static bool function_type_has_named_optional(const DartTypeInfo *ti) {
+	return ti && ((ti->packed_parameter_counts >> 1) & 1);
+}
+
+static ut32 function_type_num_fixed(const DartTypeInfo *ti) {
+	return ti? ((ti->packed_parameter_counts >> 2) & 0x3fff): 0;
+}
+
+static ut32 function_type_num_optional(const DartTypeInfo *ti) {
+	return ti? ((ti->packed_parameter_counts >> 16) & 0x3fff): 0;
+}
+
+static ut32 function_type_num_type_parameters(const DartTypeInfo *ti) {
+	return ti? ((ti->packed_type_parameter_counts >> 8) & 0xff): 0;
+}
+
+static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *type_list, RList *type_args_list, RList *array_list, ut64 type_ref, int depth);
+
+static void append_function_parameter_type(RStrBuf *sb, DartCtx *ctx, RList *class_list, RList *type_list, RList *type_args_list, RList *array_list, const DartArrayInfo *parameter_types, ut32 index, int depth) {
+	char *name = NULL;
+	if (parameter_types && index < parameter_types->length && parameter_types->refs) {
+		name = resolve_type_name_depth (ctx, class_list, type_list, type_args_list, array_list, parameter_types->refs[index], depth + 1);
+	}
+	r_strbuf_append (sb, R_STR_ISNOTEMPTY (name)? name: "dynamic");
+	free (name);
+}
+
+static void append_function_parameter_name(RStrBuf *sb, DartCtx *ctx, const DartArrayInfo *names, ut32 index) {
+	char *name = NULL;
+	if (names && index < names->length && names->refs) {
+		name = dup_ref_string_obf (ctx, names->refs[index]);
+	}
+	if (R_STR_ISNOTEMPTY (name)) {
+		r_strbuf_appendf (sb, " %s", name);
+	} else {
+		r_strbuf_appendf (sb, " arg%u", index);
+	}
+	free (name);
+}
+
+static char *resolve_function_type_name(DartCtx *ctx, RList *class_list, RList *type_list, RList *type_args_list, RList *array_list, DartTypeInfo *ti, int depth) {
+	if (!ti) {
+		return NULL;
+	}
+	RStrBuf sb;
+	r_strbuf_init (&sb);
+	ut32 num_type_params = function_type_num_type_parameters (ti);
+	if (num_type_params > 0) {
+		r_strbuf_append (&sb, "<");
+		for (ut32 i = 0; i < num_type_params; i++) {
+			if (i > 0) {
+				r_strbuf_append (&sb, ", ");
+			}
+			r_strbuf_appendf (&sb, "Y%u", i);
+		}
+		r_strbuf_append (&sb, ">");
+	}
+	r_strbuf_append (&sb, "(");
+	const DartArrayInfo *parameter_types = find_array_by_ref (array_list, ti->parameter_types_ref);
+	const DartArrayInfo *names = find_array_by_ref (array_list, ti->named_parameter_names_ref);
+	ut32 implicit = function_type_num_implicit (ti);
+	ut32 fixed = function_type_num_fixed (ti);
+	ut32 optional = function_type_num_optional (ti);
+	ut32 total = fixed + optional;
+	bool need_comma = false;
+	for (ut32 i = implicit; i < fixed && i < total; i++) {
+		if (need_comma) {
+			r_strbuf_append (&sb, ", ");
+		}
+		append_function_parameter_type (&sb, ctx, class_list, type_list, type_args_list, array_list, parameter_types, i, depth);
+		need_comma = true;
+	}
+	if (optional > 0) {
+		if (need_comma) {
+			r_strbuf_append (&sb, ", ");
+		}
+		bool has_named = function_type_has_named_optional (ti);
+		r_strbuf_append (&sb, has_named? "{": "[");
+		for (ut32 i = fixed; i < total; i++) {
+			if (i > fixed) {
+				r_strbuf_append (&sb, ", ");
+			}
+			append_function_parameter_type (&sb, ctx, class_list, type_list, type_args_list, array_list, parameter_types, i, depth);
+			if (has_named) {
+				append_function_parameter_name (&sb, ctx, names, i - fixed);
+			}
+		}
+		r_strbuf_append (&sb, has_named? "}": "]");
+	}
+	r_strbuf_append (&sb, ") => ");
+	char *result = resolve_type_name_depth (ctx, class_list, type_list, type_args_list, array_list, ti->result_type_ref, depth + 1);
+	r_strbuf_append (&sb, R_STR_ISNOTEMPTY (result)? result: "dynamic");
+	free (result);
+	const char *resolved = r_strbuf_get (&sb);
+	char *name = resolved? strdup (resolved): NULL;
+	r_strbuf_fini (&sb);
+	return name;
+}
+
+static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *type_list, RList *type_args_list, RList *array_list, ut64 type_ref, int depth) {
 	if (depth > DART_TYPE_RESOLVE_MAX_DEPTH) {
 		return NULL;
 	}
@@ -443,6 +757,13 @@ static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *typ
 		char *name = ti->base > 0
 			? r_str_newf ("%s%u%s%u", base_prefix, ti->base, index_prefix, index)
 			: r_str_newf ("%s%u", index_prefix, index);
+		if (name) {
+			ti->name = strdup (name);
+		}
+		return name;
+	}
+	if (ti->kind == kFunctionTypeCid) {
+		char *name = resolve_function_type_name (ctx, class_list, type_list, type_args_list, array_list, ti, depth);
 		if (name) {
 			ti->name = strdup (name);
 		}
@@ -467,7 +788,7 @@ static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *typ
 				if (i > 0) {
 					r_strbuf_append (&sb, ", ");
 				}
-				char *arg_name = resolve_type_name_depth (ctx, class_list, type_list, type_args_list, tai->type_refs? tai->type_refs[i]: 0, depth + 1);
+				char *arg_name = resolve_type_name_depth (ctx, class_list, type_list, type_args_list, array_list, tai->type_refs? tai->type_refs[i]: 0, depth + 1);
 				r_strbuf_append (&sb, R_STR_ISNOTEMPTY (arg_name)? arg_name: "dynamic");
 				free (arg_name);
 			}
@@ -484,8 +805,8 @@ static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *typ
 	return name;
 }
 
-static char *resolve_type_name(DartCtx *ctx, RList *class_list, RList *type_list, RList *type_args_list, ut64 type_ref) {
-	return resolve_type_name_depth (ctx, class_list, type_list, type_args_list, type_ref, 0);
+static char *resolve_type_name(DartCtx *ctx, RList *class_list, RList *type_list, RList *type_args_list, RList *array_list, ut64 type_ref) {
+	return resolve_type_name_depth (ctx, class_list, type_list, type_args_list, array_list, type_ref, 0);
 }
 
 typedef struct {
@@ -856,7 +1177,7 @@ static int decode_library_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *lib
 	return 0;
 }
 
-static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList *field_list, RList *type_list, RList *type_args_list) {
+static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList *field_list, RList *type_list, RList *type_args_list, RList *array_list) {
 	if (!ctx || !ctx->refs || !class_list) {
 		return;
 	}
@@ -904,7 +1225,7 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 			fi->name = dup_ref_string_obf (ctx, fi->name_ref);
 		}
 		if (!fi->type_name && fi->type_ref > 0) {
-			fi->type_name = resolve_type_name (ctx, class_list, type_list, type_args_list, fi->type_ref);
+			fi->type_name = resolve_type_name (ctx, class_list, type_list, type_args_list, array_list, fi->type_ref);
 		}
 		if (fi->owner_ref > 0 && fi->owner_ref < ctx->refs_count) {
 			void *ref = ctx->refs[fi->owner_ref];
@@ -954,6 +1275,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	RList *field_list = r_list_newf ((RListFree)dart_field_info_free);
 	RList *type_list = r_list_newf ((RListFree)dart_type_info_free);
 	RList *type_args_list = r_list_newf (free_type_arguments_info);
+	RList *array_list = r_list_newf (free_array_info);
 	ctx->strings = r_list_newf (free_dart_string);
 	RList *libraries = r_list_newf (free_library_info);
 	if (header_valid) {
@@ -996,11 +1318,26 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 			case kTypeCid:
 				rc = decode_type_cluster_ext (&stream, ctx, type_list, &ref_counter);
 				break;
+			case kFunctionTypeCid:
+				rc = decode_function_type_cluster_ext (&stream, ctx, type_list, &ref_counter);
+				if (rc < 0) {
+					rc = 0;
+					skip_generic_cluster (&stream);
+				}
+				break;
 			case kTypeParameterCid:
 				rc = decode_type_parameter_cluster_ext (&stream, ctx, type_list, &ref_counter);
 				break;
 			case kTypeArgumentsCid:
 				rc = decode_type_arguments_cluster_ext (&stream, ctx, type_args_list, &ref_counter);
+				if (rc < 0) {
+					rc = 0;
+					skip_generic_cluster (&stream);
+				}
+				break;
+			case kArrayCid:
+			case kImmutableArrayCid:
+				rc = decode_array_cluster_ext (&stream, ctx, array_list, &ref_counter);
 				if (rc < 0) {
 					rc = 0;
 					skip_generic_cluster (&stream);
@@ -1017,7 +1354,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 				break;
 			}
 		}
-		resolve_class_and_field_names (ctx, class_list, field_list, type_list, type_args_list);
+		resolve_class_and_field_names (ctx, class_list, field_list, type_list, type_args_list, array_list);
 		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] Extracted fields from clusters: %d\n", r_list_length (field_list));
 		}
@@ -1078,6 +1415,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	r_list_free (ctx->strings);
 	ctx->strings = NULL;
 	r_list_free (libraries);
+	r_list_free (array_list);
 	r_list_free (type_args_list);
 	r_list_free (type_list);
 	r_list_free (field_list);
