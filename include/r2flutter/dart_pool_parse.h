@@ -2,6 +2,7 @@
 #define R2C_DART_POOL_PARSE_H
 
 #include <stdint.h>
+#include <r_vec.h>
 #include "dart_r2.h"
 
 typedef struct r_core_t RCore;
@@ -123,6 +124,9 @@ typedef struct DartInstructionTableEntry {
 	char *name;
 } DartInstructionTableEntry;
 
+void dart_instruction_table_entry_fini(DartInstructionTableEntry *ie);
+R_VEC_TYPE_WITH_FINI(RVecDartInstructionTableEntry, DartInstructionTableEntry, dart_instruction_table_entry_fini);
+
 typedef void(*DartPoolFunctionCallback)(const char *name, ut64 addr, ut64 size, void *user);
 
 // ============================================================================
@@ -161,10 +165,10 @@ char *dart_pool_dump_xrefs(DartCtx *ctx, int fmt);
 // InstructionTable extraction API
 // ============================================================================
 
-RList *dart_pool_extract_instruction_table(DartCtx *ctx);
+RVecDartInstructionTableEntry *dart_pool_extract_instruction_table(DartCtx *ctx);
 char *dart_pool_dump_it(DartCtx *ctx, int fmt);
 void dart_instruction_table_entry_free(DartInstructionTableEntry *ie);
-void dart_instruction_table_list_free(RList *list);
+void dart_instruction_table_list_free(RVecDartInstructionTableEntry *list);
 
 #ifdef __cplusplus
 }

@@ -492,15 +492,23 @@ void dart_method_info_free(DartMethodInfo *mi) {
 	}
 }
 
-void dart_instruction_table_entry_free(DartInstructionTableEntry *ie) {
-	if (ie) {
-		free (ie->name);
-		free (ie);
+void dart_instruction_table_entry_fini(DartInstructionTableEntry *ie) {
+	if (!ie) {
+		return;
 	}
+	R_FREE (ie->name);
 }
 
-void dart_instruction_table_list_free(RList *list) {
-	r_list_free (list);
+void dart_instruction_table_entry_free(DartInstructionTableEntry *ie) {
+	if (!ie) {
+		return;
+	}
+	dart_instruction_table_entry_fini (ie);
+	free (ie);
+}
+
+void dart_instruction_table_list_free(RVecDartInstructionTableEntry *list) {
+	RVecDartInstructionTableEntry_free (list);
 }
 
 void dart_class_list_free(RList *list) {
@@ -686,29 +694,26 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 }
 
 static void collect_it_entry_cb(const DartInstructionTableEntry *entry, void *user) {
-	RList *list = (RList *)user;
+	RVecDartInstructionTableEntry *list = (RVecDartInstructionTableEntry *)user;
 	if (!entry || !list) {
 		return;
 	}
-	DartInstructionTableEntry *dup = R_NEW0 (DartInstructionTableEntry);
-	dup->index = entry->index;
-	dup->code_index = entry->code_index;
-	dup->address = entry->address;
-	dup->pc_offset = entry->pc_offset;
-	dup->stack_map_offset = entry->stack_map_offset;
-	dup->has_code = entry->has_code;
+	DartInstructionTableEntry *dup = RVecDartInstructionTableEntry_emplace_back (list);
+	if (!dup) {
+		return;
+	}
+	*dup = *entry;
 	dup->name = entry->name? strdup (entry->name): NULL;
-	r_list_append (list, dup);
 }
 
-RList *dart_pool_extract_instruction_table(DartCtx *ctx) {
+RVecDartInstructionTableEntry *dart_pool_extract_instruction_table(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
 		return NULL;
 	}
-	RList *list = r_list_newf ((RListFree)dart_instruction_table_entry_free);
+	RVecDartInstructionTableEntry *list = RVecDartInstructionTableEntry_new ();
 	int ok = find_snapshots (ctx);
 	if (ok != 0) {
-		r_list_free (list);
+		RVecDartInstructionTableEntry_free (list);
 		return NULL;
 	}
 	if (ctx->verbose > 0) {
@@ -721,7 +726,7 @@ RList *dart_pool_extract_instruction_table(DartCtx *ctx) {
 	DartVerLayout layout_tmp;
 	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
 	if (decode_pool_and_emit (ctx, NULL, NULL, collect_it_entry_cb, list, true, ctx->dump_fns_limit > 0? (ut64)ctx->dump_fns_limit: 0) != 0) {
-		r_list_free (list);
+		RVecDartInstructionTableEntry_free (list);
 		list = NULL;
 	}
 	dart_ctx_fini_layout (ctx, layout_owned);
@@ -729,7 +734,7 @@ RList *dart_pool_extract_instruction_table(DartCtx *ctx) {
 }
 
 char *dart_pool_dump_it(DartCtx *ctx, int fmt) {
-	RList *entries = dart_pool_extract_instruction_table (ctx);
+	RVecDartInstructionTableEntry *entries = dart_pool_extract_instruction_table (ctx);
 	if (!entries) {
 		return fmt == 'j'? strdup ("{\"error\":\"Dart snapshots not found\"}"): strdup ("Error: Dart snapshots not found\n");
 	}
@@ -744,12 +749,8 @@ char *dart_pool_dump_it(DartCtx *ctx, int fmt) {
 		pj_kn (pj, "first_entry_with_code", ctx->it_first_with_code);
 		pj_kn (pj, "canonical_stack_map_entries_offset", ctx->it_canonical_stack_map_offset);
 		pj_ka (pj, "entries");
-		RListIter *it;
 		DartInstructionTableEntry *entry;
-		r_list_foreach (entries, it, entry) {
-			if (!entry) {
-				continue;
-			}
+		R_VEC_FOREACH (entries, entry) {
 			pj_o (pj);
 			pj_kn (pj, "index", entry->index);
 			if (entry->has_code) {
@@ -771,12 +772,8 @@ char *dart_pool_dump_it(DartCtx *ctx, int fmt) {
 	}
 	RStrBuf *sb = fmt == 'r'? r_strbuf_new ("# Dart InstructionTable entries\n"): r_strbuf_new ("");
 	r_strbuf_appendf (sb, "# length=%" PRIu64 " first_entry_with_code=%" PRIu64 " canonical_stack_map_entries_offset=%" PRIu64 "\n", (uint64_t)ctx->it_length, (uint64_t)ctx->it_first_with_code, (uint64_t)ctx->it_canonical_stack_map_offset);
-	RListIter *it;
 	DartInstructionTableEntry *entry;
-	r_list_foreach (entries, it, entry) {
-		if (!entry) {
-			continue;
-		}
+	R_VEC_FOREACH (entries, entry) {
 		if (fmt == 'r') {
 			if (entry->name && *entry->name) {
 				r_strbuf_appendf (sb, "# it[%" PRIu64 "] %s\n", (uint64_t)entry->index, entry->name);

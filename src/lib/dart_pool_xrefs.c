@@ -198,7 +198,7 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 	RList *classes = dart_pool_extract_classes (ctx);
 	ctx->dump_fields = old_dump_fields;
 	RList *strings = dart_pool_extract_strings (ctx);
-	RList *it_entries = dart_pool_extract_instruction_table (ctx);
+	RVecDartInstructionTableEntry *it_entries = dart_pool_extract_instruction_table (ctx);
 	HtPP *strings_by_value = ht_pp_new0 ();
 	if (strings) {
 		RListIter *it;
@@ -261,10 +261,9 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 	}
 	collect_data_image_xrefs (ctx, strings_by_value, xrefs, &count, limit);
 	if (it_entries && !xref_limit_reached (count, limit)) {
-		RListIter *it;
 		DartInstructionTableEntry *entry;
-		r_list_foreach (it_entries, it, entry) {
-			if (!entry || xref_limit_reached (count, limit)) {
+		R_VEC_FOREACH (it_entries, entry) {
+			if (xref_limit_reached (count, limit)) {
 				continue;
 			}
 			char *it_label = xref_it_label (entry->index);

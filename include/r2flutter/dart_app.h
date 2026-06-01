@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <r_core.h>
 #include <r_list.h>
+#include <r_vec.h>
 
 #include <stddef.h>
 #include "dart_r2.h"
@@ -19,12 +20,15 @@ typedef struct DartFunction {
 	int quality;
 } DartFunction;
 
+void dart_function_fini(DartFunction *fn);
+R_VEC_TYPE_WITH_FINI(RVecDartFunction, DartFunction, dart_function_fini);
+
 typedef struct DartApp {
 	RCore *core;
 	ut64 base_addr;
 	ut64 heap_base;
 	char *file_path;
-	RList *functions;
+	RVecDartFunction *functions;
 	DartCtx dctx;
 } DartApp;
 

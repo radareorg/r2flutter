@@ -62,9 +62,11 @@ static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
 	}
 	dart_app_load_info (app);
 
-	if (!quiet && app->functions > 0) {
-		size_t count = r_list_length (app->functions);
-		R_LOG_INFO ("Loaded %d functions from Dart snapshot", count);
+	if (!quiet && app->functions) {
+		size_t count = RVecDartFunction_length (app->functions);
+		if (count > 0) {
+			R_LOG_INFO ("Loaded %zu functions from Dart snapshot", count);
+		}
 	}
 
 	dart_dumper_apply_to_core (app);
@@ -105,9 +107,8 @@ static char *r2flutter_dump_functions(RCore *core, DartCtx *dctx, const char *ar
 	RStrBuf *sb = r_strbuf_new ("");
 	int count = 0;
 	if (app->functions) {
-		RListIter *it;
 		DartFunction *fn;
-		r_list_foreach (app->functions, it, fn) {
+		R_VEC_FOREACH (app->functions, fn) {
 			r_strbuf_appendf (sb, "0x%08" PFMT64x " %s\n", fn->addr, fn->name);
 			count++;
 			if (count >= n) {

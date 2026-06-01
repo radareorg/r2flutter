@@ -2,10 +2,11 @@
 
 #include "../../include/r2flutter/dart_dumper.h"
 
-static bool list_contains_offset(RList *list, ut64 off) {
-	RListIter *it;
+R_VEC_TYPE(RVecDartOffset, ut64);
+
+static bool vec_contains_offset(RVecDartOffset *list, ut64 off) {
 	ut64 *p;
-	r_list_foreach (list, it, p) {
+	R_VEC_FOREACH (list, p) {
 		if (*p == off) {
 			return true;
 		}
@@ -13,7 +14,7 @@ static bool list_contains_offset(RList *list, ut64 off) {
 	return false;
 }
 
-static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets) {
+static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RVecDartOffset *offsets) {
 	if (!core || !offsets) {
 		return;
 	}
@@ -70,13 +71,8 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RList *offsets)
 		memcpy (numbuf, p, len);
 		numbuf[len] = '\0';
 		ut64 val = r_num_get (NULL, numbuf);
-		if (!list_contains_offset (offsets, val)) {
-			ut64 *pv = (ut64 *)calloc (1, sizeof (ut64));
-			if (!pv) {
-				continue;
-			}
-			*pv = val;
-			r_list_append (offsets, pv);
+		if (!vec_contains_offset (offsets, val)) {
+			RVecDartOffset_push_back (offsets, &val);
 		}
 	}
 	r_json_free (j);
@@ -87,22 +83,21 @@ static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
 	if (!app || !app->core || !app->functions) {
 		return;
 	}
-	RList *offsets = r_list_newf (free);
-	RListIter *it;
+	RVecDartOffset offsets;
+	RVecDartOffset_init (&offsets);
 	DartFunction *fn;
-	r_list_foreach (app->functions, it, fn) {
+	R_VEC_FOREACH (app->functions, fn) {
 		if (fn->name && r_str_startswith (fn->name, "sym.imp.")) {
 			continue;
 		}
-		collect_pool_offsets_from_fn (app->core, fn->addr, offsets);
+		collect_pool_offsets_from_fn (app->core, fn->addr, &offsets);
 	}
-	RListIter *it2;
 	ut64 *offp;
-	r_list_foreach (offsets, it2, offp) {
+	R_VEC_FOREACH (&offsets, offp) {
 		r_strbuf_appendf (sb, "f pp.off_0x%" PFMT64x "=PP+0x%" PFMT64x "\n", (uint64_t)*offp, (uint64_t)*offp);
 		r_strbuf_appendf (sb, "'@PP+0x%" PFMT64x "'CC pool_entry_%" PFMT64x "\n", (uint64_t)*offp, (uint64_t)*offp);
 	}
-	r_list_free (offsets);
+	RVecDartOffset_fini (&offsets);
 }
 
 // Build a "method.xxx" flag name, avoiding double "method." prefix
@@ -133,10 +128,9 @@ char *dart_dumper_dump4radare2(DartApp *app) {
 	r_strbuf_appendf (sb, "f app.heap_base = 0x%" PFMT64x "\n", (uint64_t)app->heap_base);
 
 	if (app->functions) {
-		RListIter *it;
 		DartFunction *fn;
-		r_list_foreach (app->functions, it, fn) {
-			if (!fn || !fn->name) {
+		R_VEC_FOREACH (app->functions, fn) {
+			if (!fn->name) {
 				continue;
 			}
 			dump_func_r2 (sb, fn);
@@ -179,11 +173,10 @@ static void dump_func_text(RStrBuf *sb, const DartFunction *fn) {
 }
 
 char *dart_dumper_dump_funcs(DartApp *app, int fmt) {
-	if (!app || !app->functions || r_list_length (app->functions) == 0) {
+	if (!app || !app->functions || RVecDartFunction_length (app->functions) == 0) {
 		return fmt == 'j'? strdup ("[]"): strdup ("");
 	}
 
-	RListIter *it;
 	DartFunction *fn;
 	int count = 0;
 	int limit = dump_funcs_limit (app);
@@ -191,8 +184,8 @@ char *dart_dumper_dump_funcs(DartApp *app, int fmt) {
 	if (fmt == 'j') {
 		PJ *pj = pj_new ();
 		pj_a (pj);
-		r_list_foreach (app->functions, it, fn) {
-			if (!fn || !fn->name) {
+		R_VEC_FOREACH (app->functions, fn) {
+			if (!fn->name) {
 				continue;
 			}
 			if (limit > 0 && count >= limit) {
@@ -206,8 +199,8 @@ char *dart_dumper_dump_funcs(DartApp *app, int fmt) {
 	}
 
 	RStrBuf *sb = r_strbuf_new ("");
-	r_list_foreach (app->functions, it, fn) {
-		if (!fn || !fn->name) {
+	R_VEC_FOREACH (app->functions, fn) {
+		if (!fn->name) {
 			continue;
 		}
 		if (limit > 0 && count >= limit) {
@@ -235,10 +228,9 @@ void dart_dumper_apply_to_core(DartApp *app) {
 	}
 
 	if (app->functions) {
-		RListIter *it;
 		DartFunction *fn;
-		r_list_foreach (app->functions, it, fn) {
-			if (!fn || !fn->name) {
+		R_VEC_FOREACH (app->functions, fn) {
+			if (!fn->name) {
 				continue;
 			}
 			char *flagname = make_method_flagname (fn->name);

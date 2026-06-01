@@ -229,31 +229,18 @@ char *dart_app_extract_embedded_payload(const char *path, const DartAppEmbeddedP
 	return tmpname;
 }
 
-static void free_dart_function(void *p) {
-	DartFunction *fn = (DartFunction *)p;
+void dart_function_fini(DartFunction *fn) {
 	if (!fn) {
 		return;
 	}
-	free (fn->name);
-	free (fn);
+	R_FREE (fn->name);
 }
 
 static ut64 dart_normalize_code_addr(ut64 addr) {
 	return (addr & 1ULL)? addr - 1: addr;
 }
 
-static int dart_function_cmp(const void *a, const void *b) {
-	const DartFunction *fa = (const DartFunction *)a;
-	const DartFunction *fb = (const DartFunction *)b;
-	if (!fa && !fb) {
-		return 0;
-	}
-	if (!fa) {
-		return 1;
-	}
-	if (!fb) {
-		return -1;
-	}
+static int dart_function_cmp(const DartFunction *fa, const DartFunction *fb) {
 	if (fa->addr < fb->addr) {
 		return -1;
 	}
@@ -310,10 +297,9 @@ static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr,
 		free (filtered);
 		filtered = resolved;
 	}
-	RListIter *it;
 	DartFunction *fn;
-	r_list_foreach (app->functions, it, fn) {
-		if (!fn || fn->addr != addr) {
+	R_VEC_FOREACH (app->functions, fn) {
+		if (fn->addr != addr) {
 			continue;
 		}
 		if (size > fn->size) {
@@ -332,7 +318,7 @@ static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr,
 		free (filtered);
 		return;
 	}
-	DartFunction *newfn = (DartFunction *)calloc (1, sizeof (DartFunction));
+	DartFunction *newfn = RVecDartFunction_emplace_back (app->functions);
 	if (!newfn) {
 		free (filtered);
 		return;
@@ -348,7 +334,6 @@ static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr,
 		newfn->name = strdup (buf);
 		newfn->quality = 0;
 	}
-	r_list_append (app->functions, newfn);
 }
 
 static char *dart_sanitize_component(const char *input, bool strip_package_prefix) {
@@ -499,14 +484,13 @@ static char *dart_format_method_full_name(const DartClassInfo *ci, const DartMet
 }
 
 static void dart_app_load_it_functions(DartApp *app) {
-	RList *entries = dart_pool_extract_instruction_table (&app->dctx);
+	RVecDartInstructionTableEntry *entries = dart_pool_extract_instruction_table (&app->dctx);
 	if (!entries) {
 		return;
 	}
-	RListIter *it;
 	DartInstructionTableEntry *entry;
-	r_list_foreach (entries, it, entry) {
-		if (!entry || !entry->has_code || !entry->address) {
+	R_VEC_FOREACH (entries, entry) {
+		if (!entry->has_code || !entry->address) {
 			continue;
 		}
 		dart_app_add_or_update_fn (app,
@@ -556,7 +540,7 @@ DartApp *dart_app_new(const char *path) {
 		return NULL;
 	}
 	app->file_path = path? strdup (path): NULL;
-	app->functions = r_list_newf (free_dart_function);
+	app->functions = RVecDartFunction_new ();
 	return app;
 }
 
@@ -585,7 +569,7 @@ void dart_app_free(DartApp *app) {
 		return;
 	}
 	dart_obf_fini (&app->dctx);
-	r_list_free (app->functions);
+	RVecDartFunction_free (app->functions);
 	free (app->file_path);
 	free (app);
 }
@@ -611,7 +595,7 @@ void dart_app_load_info(DartApp *app) {
 	app->heap_base = 0;
 	dart_app_load_it_functions (app);
 	dart_app_merge_class_methods (app);
-	if (r_list_length (app->functions) == 0) {
+	if (RVecDartFunction_length (app->functions) == 0) {
 		ut64 base = 0, heap_base = 0;
 		int rc = dart_pool_enumerate (&app->dctx, app->file_path, add_fn_cb, app, &base, &heap_base);
 		if (rc == 0) {
@@ -619,8 +603,8 @@ void dart_app_load_info(DartApp *app) {
 			app->heap_base = heap_base;
 		}
 	}
-	r_list_sort (app->functions, (RListComparator)dart_function_cmp);
+	RVecDartFunction_sort (app->functions, dart_function_cmp);
 	if (app->dctx.verbose) {
-		fprintf (stderr, "Found %d functions (from Dart ObjectPool)\n", app->functions? r_list_length (app->functions): 0);
+		fprintf (stderr, "Found %zu functions (from Dart ObjectPool)\n", RVecDartFunction_length (app->functions));
 	}
 }

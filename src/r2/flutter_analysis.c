@@ -17,6 +17,8 @@
 
 #define DART_ANALYSIS_MAX_REGS 32
 
+R_VEC_TYPE(RVecFlutterEntry, ut64);
+
 typedef struct {
 	RList *strings;
 	RList *classes;
@@ -68,7 +70,7 @@ typedef struct {
 
 typedef struct {
 	HtUP *seen;
-	RList *entries;
+	RVecFlutterEntry *entries;
 } FlutterEntryCollector;
 
 static void flutter_stack_slot_free(void *p) {
@@ -484,24 +486,21 @@ static void flutter_apply_model_to_core(FlutterAnalModel *model, RCore *core, Fl
 	}
 }
 
-static void flutter_collect_entries_from_app(HtUP *seen, RList *entries, const DartApp *app) {
+static void flutter_collect_entries_from_app(HtUP *seen, RVecFlutterEntry *entries, const DartApp *app) {
 	if (!seen || !entries || !app || !app->functions) {
 		return;
 	}
-	RListIter *it;
 	DartFunction *fn;
-	r_list_foreach (app->functions, it, fn) {
-		if (!fn || !fn->addr) {
+	R_VEC_FOREACH (app->functions, fn) {
+		if (!fn->addr) {
 			continue;
 		}
 		ut64 addr = flutter_normalize_code_addr (fn->addr);
 		if (ht_up_find (seen, addr, NULL)) {
 			continue;
 		}
-		ut64 *p = R_NEW0 (ut64);
-		*p = addr;
-		r_list_append (entries, p);
-		ht_up_insert (seen, addr, p);
+		RVecFlutterEntry_push_back (entries, &addr);
+		ht_up_insert (seen, addr, entries);
 	}
 }
 
@@ -514,14 +513,12 @@ static bool flutter_collect_flag_entry_cb(RFlagItem *fi, void *user) {
 	if (ht_up_find (collector->seen, addr, NULL)) {
 		return true;
 	}
-	ut64 *p = R_NEW0 (ut64);
-	*p = addr;
-	r_list_append (collector->entries, p);
-	ht_up_insert (collector->seen, addr, p);
+	RVecFlutterEntry_push_back (collector->entries, &addr);
+	ht_up_insert (collector->seen, addr, collector->entries);
 	return true;
 }
 
-static void flutter_collect_entries_from_flags(HtUP *seen, RList *entries, RCore *core) {
+static void flutter_collect_entries_from_flags(HtUP *seen, RVecFlutterEntry *entries, RCore *core) {
 	if (!seen || !entries || !core || !core->flags) {
 		return;
 	}
@@ -537,10 +534,9 @@ static void flutter_apply_app_methods_to_core(RCore *core, const DartApp *app, F
 	if (!core || !app || !app->functions) {
 		return;
 	}
-	RListIter *it;
 	DartFunction *fn;
-	r_list_foreach (app->functions, it, fn) {
-		if (!fn || !fn->addr || !R_STR_ISNOTEMPTY (fn->name)) {
+	R_VEC_FOREACH (app->functions, fn) {
+		if (!fn->addr || !R_STR_ISNOTEMPTY (fn->name)) {
 			continue;
 		}
 		ut64 addr = flutter_normalize_code_addr (fn->addr);
@@ -551,7 +547,7 @@ static void flutter_apply_app_methods_to_core(RCore *core, const DartApp *app, F
 	}
 }
 
-static void flutter_collect_entries_from_model(HtUP *seen, RList *entries, FlutterAnalModel *model) {
+static void flutter_collect_entries_from_model(HtUP *seen, RVecFlutterEntry *entries, FlutterAnalModel *model) {
 	if (!seen || !entries || !model || !model->classes) {
 		return;
 	}
@@ -571,16 +567,14 @@ static void flutter_collect_entries_from_model(HtUP *seen, RList *entries, Flutt
 			if (ht_up_find (seen, addr, NULL)) {
 				continue;
 			}
-			ut64 *p = R_NEW0 (ut64);
-			*p = addr;
-			r_list_append (entries, p);
-			ht_up_insert (seen, addr, p);
+			RVecFlutterEntry_push_back (entries, &addr);
+			ht_up_insert (seen, addr, entries);
 		}
 	}
 }
 
-static RList *flutter_collect_entries(RCore *core, const DartApp *app, FlutterAnalModel *model) {
-	RList *entries = r_list_newf (free);
+static RVecFlutterEntry *flutter_collect_entries(RCore *core, const DartApp *app, FlutterAnalModel *model) {
+	RVecFlutterEntry *entries = RVecFlutterEntry_new ();
 	HtUP *seen = ht_up_new0 ();
 	flutter_collect_entries_from_flags (seen, entries, core);
 	flutter_collect_entries_from_app (seen, entries, app);
@@ -597,7 +591,7 @@ static RAnalFunction *flutter_get_function_at_or_in(RAnal *anal, ut64 addr) {
 	return r_anal_get_fcn_in (anal, addr, 0);
 }
 
-static void flutter_ensure_functions(RCore *core, RList *entries) {
+static void flutter_ensure_functions(RCore *core, RVecFlutterEntry *entries) {
 	if (!core || !core->anal || !entries) {
 		return;
 	}
@@ -606,10 +600,9 @@ static void flutter_ensure_functions(RCore *core, RList *entries) {
 	if (restore_log_level) {
 		r_log_set_level (R_LOG_LEVEL_INFO);
 	}
-	RListIter *it;
 	ut64 *addrp;
-	r_list_foreach (entries, it, addrp) {
-		if (!addrp || !*addrp) {
+	R_VEC_FOREACH (entries, addrp) {
+		if (!*addrp) {
 			continue;
 		}
 		if (!flutter_get_function_at_or_in (core->anal, *addrp)) {
@@ -1014,15 +1007,14 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, RAnalFun
 	flutter_state_fini (&state);
 }
 
-static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, RList *entries, FlutterAnalStats *stats) {
+static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, RVecFlutterEntry *entries, FlutterAnalStats *stats) {
 	if (!core || !model || !entries || !stats) {
 		return;
 	}
 	HtUP *seen_fcns = ht_up_new0 ();
-	RListIter *it;
 	ut64 *addrp;
-	r_list_foreach (entries, it, addrp) {
-		if (!addrp || !*addrp) {
+	R_VEC_FOREACH (entries, addrp) {
+		if (!*addrp) {
 			continue;
 		}
 		RAnalFunction *fcn = flutter_get_function_at_or_in (core->anal, *addrp);
@@ -1056,7 +1048,7 @@ bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 	flutter_apply_app_methods_to_core (core, app, &stats);
 	flutter_apply_model_to_core (&model, core, &stats);
 
-	RList *entries = flutter_collect_entries (core, app, &model);
+	RVecFlutterEntry *entries = flutter_collect_entries (core, app, &model);
 	flutter_ensure_functions (core, entries);
 	flutter_scan_functions (core, &model, entries, &stats);
 
@@ -1071,7 +1063,7 @@ bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 			(int)stats.pp_refs);
 	}
 
-	r_list_free (entries);
+	RVecFlutterEntry_free (entries);
 	flutter_model_fini (&model);
 	dart_app_free (app);
 	return true;
