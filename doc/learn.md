@@ -753,3 +753,5 @@ The project assumes radare2 list constructors (`r_list_new` / `r_list_newf`) do 
 The fallback class-name scanner reads fixed-size chunks that are not guaranteed to be null-terminated. Only inspect `buf[slen]` when `slen < to_read`; printable runs that reach the end of a chunk should be skipped until a delimiter is observed instead of reading past the buffer.
 
 Validate the CLI obfuscation map only after `dart_app_new_from_core ()` copies the initial `DartCtx`; loading it before that copy would share one hash table across two independently finalized contexts. After validation, keep the map loaded in the context that will use it instead of immediately forcing a second lazy parse.
+
+Modern object-header cluster helpers run only after `dart_modern_is_supported_snapshot ()` succeeds. Past that public gate, `ctx`, `ctx->layout`, and compressed 32-bit pointer mode are invariants for `src/lib/dart_pool_modern.c`, so private CID accessors should read layout fields directly and stay `static inline`. Keep null/layout fallback checks on the public gate, not inside every CID comparison or fill-skip path.
