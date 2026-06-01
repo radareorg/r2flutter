@@ -66,12 +66,12 @@ CMDS=<<EOF
 !!../bin/r2flutter --dump-funcs --quiet bins/android/mafia 2>/dev/null | grep -c ' stub.typetest_'
 EOF
 EXPECT=<<EOF
-395
+1277
 EOF
 RUN
 
 # And there must be a healthy population of allocate stubs. On Dart 3.9.0 mafia
-# the count is 4080; if it drops noticeably (e.g. back to zero) the owner-cid
+# the count is 4096; if it drops noticeably (e.g. back to zero) the owner-cid
 # lookup has regressed.
 NAME=funcs-mafia-allocate-stub-count
 FILE=-
@@ -79,6 +79,6 @@ CMDS=<<EOF
 !!../bin/r2flutter --dump-funcs --quiet bins/android/mafia 2>/dev/null | grep -c ' stub.Allocate'
 EOF
 EXPECT=<<EOF
-4080
+4096
 EOF
 RUN

@@ -4,6 +4,8 @@ CFLAGS += -Iinclude
 CFLAGS += $(shell pkg-config --cflags r_core 2>/dev/null || echo "-I/usr/local/include/libr")
 LDFLAGS += $(shell pkg-config --libs r_core 2>/dev/null || echo "-L/usr/local/lib -lr_core -lr_util -ldl")
 DEPFLAGS = -MMD -MP
+R2R_JOBS ?= 1
+R2R_TIMEOUT ?= 30
 
 # Directories
 SRC_DIR = src/lib
@@ -58,7 +60,7 @@ clean:
 
 test-r2r: $(BIN_FILE)
 	$(MAKE) -C src/r2
-	r2r -u -t 30 test/db
+	r2r -u -j$(R2R_JOBS) -t $(R2R_TIMEOUT) test/db
 
 test: $(BIN_FILE)
 	@$(MAKE) -C src/r2

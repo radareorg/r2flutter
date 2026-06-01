@@ -73,6 +73,38 @@ typedef struct {
 	ut8 *discarded_codes;
 } ModernClusterMeta;
 
+typedef struct {
+	const char *op;
+	const char *name;
+} ModernOpNameMap;
+
+static const ModernOpNameMap modern_op_name_map[] = {
+	{ "==", "eq" },
+	{ "<", "lt" },
+	{ ">", "gt" },
+	{ "<=", "lte" },
+	{ ">=", "gte" },
+	{ "=", "assign" },
+	{ "[]", "at" },
+	{ "[]=", "at_assign" },
+	{ "++", "increment" },
+	{ "--", "decrement" },
+	{ "+", "add" },
+	{ "-", "sub" },
+	{ "*", "mul" },
+	{ "~/", "div" },
+	{ "/", "divf" },
+	{ "%", "mod" },
+	{ "&", "LAnd" },
+	{ "|", "LOr" },
+	{ "^", "xor" },
+	{ "~", "not" },
+	{ ">>", "shr" },
+	{ "<<", "shal" },
+	{ ">>>", "ushr" },
+	{ NULL, NULL }
+};
+
 bool dart_modern_is_supported_snapshot(DartCtx *ctx) {
 	return ctx && ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER && ctx->compressed_word_size == 4;
 }
@@ -892,6 +924,68 @@ static bool modern_skip_fill_object_pool(ClusterStream *s, const ModernClusterMe
 	return true;
 }
 
+static bool modern_skip_fill_class(ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+	for (ut64 j = 0; j < meta->count; j++) {
+		ut32 class_id = 0;
+		ut32 tmp32 = 0;
+		for (int k = 0; k < spec->num_refs; k++) {
+			ut64 rv = 0;
+			if (!cs_read_ref_id (s, &rv)) {
+				return false;
+			}
+		}
+		if (!cs_read_tagged32 (s, &class_id) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32)) {
+			return false;
+		}
+		bool is_predefined = j < meta->main_count;
+		bool is_top_level = class_id >= (1U << 20);
+		if (is_predefined || !is_top_level) {
+			ut64 bitmap = 0;
+			if (!cs_read_unsigned (s, &bitmap)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool modern_skip_fill_by_kind(ClusterStream *s, DartCtx *ctx, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+	switch (spec->kind) {
+	case MODERN_FILL_REFS:
+		return modern_skip_fill_refs (s, meta, spec);
+	case MODERN_FILL_CLASS:
+		return modern_skip_fill_class (s, meta, spec);
+	case MODERN_FILL_ARRAY:
+		return modern_skip_fill_array (s, meta);
+	case MODERN_FILL_WEAK_ARRAY:
+		return modern_skip_fill_weak_array (s, meta);
+	case MODERN_FILL_TYPE_ARGUMENTS:
+		return modern_skip_fill_type_arguments (s, meta);
+	case MODERN_FILL_EXCEPTION_HANDLERS:
+		return modern_skip_fill_exception_handlers (s, meta);
+	case MODERN_FILL_CONTEXT:
+		return modern_skip_fill_context (s, meta);
+	case MODERN_FILL_CONTEXT_SCOPE:
+		return modern_skip_fill_context_scope (s, meta);
+	case MODERN_FILL_CODE:
+		return modern_skip_fill_code (s, meta);
+	case MODERN_FILL_OBJECT_POOL:
+		return modern_skip_fill_object_pool (s, meta);
+	case MODERN_FILL_INLINE_BYTES:
+		return modern_skip_fill_inline_bytes (s, meta);
+	case MODERN_FILL_TYPED_DATA:
+		return modern_skip_fill_typed_data (s, ctx, meta);
+	case MODERN_FILL_RECORD:
+		return modern_skip_fill_record (s, meta);
+	case MODERN_FILL_INSTANCE:
+		return modern_skip_fill_instance (s, meta);
+	case MODERN_FILL_NONE:
+		return true;
+	default:
+		return false;
+	}
+}
+
 static int modern_name_quality(const char *name) {
 	if (R_STR_ISEMPTY (name)) {
 		return 0;
@@ -922,6 +1016,18 @@ static void modern_set_name_for_code_index(DartCtx *ctx, ut64 code_index, char *
 	free (name);
 }
 
+static const char *modern_lookup_operator_name(const char *name) {
+	if (R_STR_ISEMPTY (name)) {
+		return NULL;
+	}
+	for (int i = 0; modern_op_name_map[i].op; i++) {
+		if (!strcmp (name, modern_op_name_map[i].op)) {
+			return modern_op_name_map[i].name;
+		}
+	}
+	return NULL;
+}
+
 static const char *modern_resolve_ref_name(char **strings_by_ref, ut64 *class_name_ref, ut64 *library_name_ref, ut64 *patch_wrapped_ref, ut64 *function_name_ref, ut64 refs_count, ut64 ref, int depth) {
 	if (!ref || ref >= refs_count || depth > 8) {
 		return NULL;
@@ -949,11 +1055,20 @@ static char *modern_build_full_name(DartCtx *ctx, const char *owner_name, const 
 	char *method_dup = strdup (method_name);
 	if (owner_dup) {
 		dart_obf_apply (ctx, &owner_dup);
+		if (!strcmp (owner_dup, "::")) {
+			free (owner_dup);
+			owner_dup = NULL;
+		}
 	}
 	dart_obf_apply (ctx, &method_dup);
 	if (method_dup && !strcmp (method_dup, "AnonymousClosure")) {
 		free (method_dup);
 		method_dup = strdup ("_anon_closure");
+	}
+	const char *op_name = modern_lookup_operator_name (method_dup);
+	if (op_name) {
+		free (method_dup);
+		method_dup = r_str_newf ("op_%s", op_name);
 	}
 	char *full = owner_dup && *owner_dup
 		? r_str_newf ("method.%s.%s", owner_dup, method_dup)
@@ -962,6 +1077,150 @@ static char *modern_build_full_name(DartCtx *ctx, const char *owner_name, const 
 	free (owner_dup);
 	free (method_dup);
 	return full;
+}
+
+static bool modern_read_cluster_string(ClusterStream *s, char **out) {
+	ut64 encoded = 0;
+	if (!cs_read_unsigned (s, &encoded)) {
+		return false;
+	}
+	ut64 length = encoded >> 1;
+	bool is_two_byte = (encoded & 1) != 0;
+	if (length == 0) {
+		*out = strdup ("");
+		return true;
+	}
+	if (is_two_byte) {
+		ut64 nbytes = length * 2;
+		if (nbytes > INT32_MAX) {
+			return false;
+		}
+		ut8 *raw = (ut8 *)calloc ((size_t)nbytes + 1, 1);
+		if (!raw || !cs_read_bytes (s, raw, (int)nbytes)) {
+			free (raw);
+			return false;
+		}
+		*out = dart_utf16le_to_utf8 (raw, nbytes);
+		free (raw);
+		return true;
+	}
+	if (length > INT32_MAX) {
+		return false;
+	}
+	char *value = (char *)calloc ((size_t)length + 1, 1);
+	if (!value || !cs_read_bytes (s, (ut8 *)value, (int)length)) {
+		free (value);
+		return false;
+	}
+	*out = value;
+	return true;
+}
+
+static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut64 refs_count) {
+	if (!ctx || !ctx->vm_data || !strings_by_ref || refs_count == 0) {
+		return false;
+	}
+	DartSnapshotHeader sh = { 0 };
+	if (!dart_snapshot_header_read (ctx, ctx->vm_data, &sh) || !sh.ok || sh.nc == 0 || sh.nc > 10000) {
+		return false;
+	}
+	ut64 cluster_start = sh.cluster_start;
+	ut64 cluster_end = ctx->vm_data + sh.total_len;
+	if (cluster_start >= cluster_end || sh.no == 0 || sh.no >= refs_count) {
+		return false;
+	}
+	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)sh.nc, sizeof (ModernClusterMeta));
+	if (!meta) {
+		return false;
+	}
+	ClusterStream s = {
+		.ctx = ctx,
+		.cursor = cluster_start,
+		.end = cluster_end,
+};
+	ut64 next_ref = sh.nb + 1;
+	for (ut64 i = 0; i < sh.nc; i++) {
+		ut32 tags = 0;
+		if (!cs_read_tagged32 (&s, &tags)) {
+			goto fail;
+		}
+		meta[i].cid = (int) ((tags >> 12) & 0xFFFFF);
+		meta[i].is_canonical = ((tags >> 1) & 1) != 0;
+		meta[i].is_immutable = (tags & (1 << 6)) != 0;
+		meta[i].start_ref = next_ref;
+		if (meta[i].cid == modern_cid_string (ctx) || meta[i].cid == modern_cid_one_byte_string (ctx) || meta[i].cid == modern_cid_two_byte_string (ctx)) {
+			ut64 count = 0;
+			if (!cs_read_unsigned (&s, &count)) {
+				goto fail;
+			}
+			meta[i].count = count;
+			for (ut64 j = 0; j < count; j++) {
+				ut64 encoded = 0;
+				if (!cs_read_unsigned (&s, &encoded)) {
+					goto fail;
+				}
+			}
+		} else if (!modern_skip_alloc (&s, ctx, &meta[i])) {
+			goto fail;
+		}
+		next_ref += meta[i].count;
+	}
+	for (ut64 i = 0; i < sh.nc; i++) {
+		ut64 ref = meta[i].start_ref;
+		if (meta[i].cid == modern_cid_string (ctx) || meta[i].cid == modern_cid_one_byte_string (ctx) || meta[i].cid == modern_cid_two_byte_string (ctx)) {
+			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
+				char *value = NULL;
+				if (!modern_read_cluster_string (&s, &value)) {
+					goto fail;
+				}
+				if (ref < refs_count && !strings_by_ref[ref]) {
+					strings_by_ref[ref] = value;
+				} else {
+					free (value);
+				}
+			}
+			continue;
+		}
+		ModernFillSpec spec = modern_get_fill_spec (ctx, meta[i].cid);
+		switch (spec.kind) {
+		case MODERN_FILL_REFS:
+			if (!modern_skip_fill_refs (&s, &meta[i], &spec)) {
+				goto fail;
+			}
+			break;
+		case MODERN_FILL_CLASS:
+		case MODERN_FILL_ARRAY:
+		case MODERN_FILL_WEAK_ARRAY:
+		case MODERN_FILL_TYPE_ARGUMENTS:
+		case MODERN_FILL_EXCEPTION_HANDLERS:
+		case MODERN_FILL_CONTEXT:
+		case MODERN_FILL_CONTEXT_SCOPE:
+		case MODERN_FILL_CODE:
+		case MODERN_FILL_OBJECT_POOL:
+		case MODERN_FILL_INLINE_BYTES:
+		case MODERN_FILL_TYPED_DATA:
+		case MODERN_FILL_RECORD:
+		case MODERN_FILL_INSTANCE:
+		case MODERN_FILL_NONE:
+			if (!modern_skip_fill_by_kind (&s, ctx, &meta[i], &spec)) {
+				goto fail;
+			}
+			break;
+		default:
+			goto fail;
+		}
+	}
+	for (ut64 i = 0; i < sh.nc; i++) {
+		free (meta[i].discarded_codes);
+	}
+	free (meta);
+	return true;
+fail:
+	for (ut64 i = 0; i < sh.nc; i++) {
+		free (meta[i].discarded_codes);
+	}
+	free (meta);
+	return false;
 }
 
 bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen) {
@@ -1002,6 +1261,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 		free (code_owner_cid_by_index);
 		return false;
 	}
+	modern_load_vm_base_strings (ctx, strings_by_ref, total_refs);
 	ClusterStream s = {
 		.ctx = ctx,
 		.cursor = cluster_start,
@@ -1057,39 +1317,14 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 		ut64 ref = meta[i].start_ref;
 		if (meta[i].cid == modern_cid_string (ctx) || meta[i].cid == modern_cid_one_byte_string (ctx) || meta[i].cid == modern_cid_two_byte_string (ctx)) {
 			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
-				ut64 encoded = 0;
-				if (!cs_read_unsigned (&s, &encoded)) {
+				char *value = NULL;
+				if (!modern_read_cluster_string (&s, &value)) {
 					if (ctx->verbose > 0) {
-						fprintf (stderr, "[r2flutter] modern fill: failed string encoded cid=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, i, s.cursor);
+						fprintf (stderr, "[r2flutter] modern fill: failed string cid=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, i, s.cursor);
 					}
 					goto fail;
 				}
-				ut64 length = encoded >> 1;
-				bool is_two_byte = (encoded & 1) != 0;
-				if (is_two_byte) {
-					ut64 nbytes = length * 2;
-					if (nbytes > INT32_MAX) {
-						goto fail;
-					}
-					ut8 *raw = (ut8 *)calloc ((size_t)nbytes + 1, 1);
-					if (!raw || !cs_read_bytes (&s, raw, (int)nbytes)) {
-						free (raw);
-						goto fail;
-					}
-					char *value = dart_utf16le_to_utf8 (raw, nbytes);
-					free (raw);
-					strings_by_ref[ref] = value;
-				} else {
-					if (length > INT32_MAX) {
-						goto fail;
-					}
-					char *value = (char *)calloc ((size_t)length + 1, 1);
-					if (!value || !cs_read_bytes (&s, (ut8 *)value, (int)length)) {
-						free (value);
-						goto fail;
-					}
-					strings_by_ref[ref] = value;
-				}
+				strings_by_ref[ref] = value;
 			}
 			continue;
 		}
@@ -1136,7 +1371,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 				function_name_ref[ref] = name_ref;
 				function_owner_ref[ref] = owner_ref;
 				function_data_ref[ref] = data_ref;
-				function_code_index[ref] = code_index;
+				function_code_index[ref] = code_index? code_index - 1: UT64_MAX;
 			}
 			continue;
 		}

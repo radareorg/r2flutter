@@ -8,7 +8,7 @@ EXPECT=<<EOF
 0x5b6aa4 method.Duration.compareTo
 0x5b6b64 method.Duration.dyn:_
 0x5b6bf4 stub.AllocateDurationStub
-0x5b6c00 method.fn_4
+0x5b6c00 method.Duration.op_sub
 0x5b6c34 method.Duration.dyn:
 EOF
 RUN
@@ -22,7 +22,7 @@ EXPECT=<<EOF
 0x5b6bf4 stub.AllocateDurationStub
 0x5b6f6c stub.typetest_13
 0x5bb750 stub.AllocateStringBufferStub
-alloc=4080
-typetest=395
+alloc=4096
+typetest=1277
 EOF
 RUN
