@@ -1,26 +1,5 @@
 /* r2flutter - MIT - Copyright 2026 - pancake */
 
-#include <stdint.h>
-#include <stdbool.h>
-#include <inttypes.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <r_core.h>
-#include <r_bin.h>
-#include <r_endian.h>
-#include <r_io.h>
-#include <r_util/r_json.h>
-#include <r_util/r_file.h>
-#include <r_util/r_name.h>
-#include <r_util/r_strbuf.h>
-#include <sdb/ht_pp.h>
-#include <r_list.h>
-#include "../../include/r2flutter/dart_obf.h"
-#include "../../include/r2flutter/dart_pool_parse.h"
-#include "../../include/r2flutter/dart_version.h"
-#include "../../include/r2flutter/dart_r2.h"
 #include "dart_pool_parse_priv.h"
 
 static const char *dart_tag_style_names[] = {

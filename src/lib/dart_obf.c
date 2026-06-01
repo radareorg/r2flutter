@@ -1,13 +1,6 @@
 /* r2flutter - MIT - Copyright 2026 - pancake */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <r_core.h>
-#include <r_util/r_file.h>
-#include <r_util/r_json.h>
-#include <r_util/r_str.h>
-#include <sdb/ht_pp.h>
 #include "../../include/r2flutter/dart_obf.h"
 
 static void free_obf_kv(HtPPKv *kv) {

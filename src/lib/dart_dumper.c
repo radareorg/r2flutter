@@ -1,12 +1,5 @@
 /* r2flutter - MIT - Copyright 2026 - pancake */
 
-#include <ctype.h>
-#include <r_core.h>
-#include <r_flag.h>
-#include <r_util/r_name.h>
-#include <r_util/r_json.h>
-#include <r_util/r_str.h>
-#include <r_list.h>
 #include "../../include/r2flutter/dart_dumper.h"
 
 static bool list_contains_offset(RList *list, ut64 off) {

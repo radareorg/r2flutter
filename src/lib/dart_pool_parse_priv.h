@@ -3,17 +3,7 @@
 #ifndef R2C_DART_POOL_PARSE_PRIV_H
 #define R2C_DART_POOL_PARSE_PRIV_H
 
-#include <stdbool.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <r_core.h>
-#include <r_endian.h>
-#include <r_util/r_name.h>
-#include <r_util/r_strbuf.h>
 #include "../../include/r2flutter/dart_obf.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "../../include/r2flutter/dart_r2.h"

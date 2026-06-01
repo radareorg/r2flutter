@@ -1,16 +1,5 @@
 /* r2flutter - MIT - Copyright 2026 - pancake, Ahmeth4n */
 
-#include <ctype.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <r_core.h>
-#include <r_list.h>
-#include <r_util/r_buf.h>
-#include <r_util/r_file.h>
-#include <r_util/r_name.h>
-#include <r_util/r_str.h>
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_obf.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
@@ -164,8 +153,8 @@ bool dart_app_find_macho_embedded_dart(const char *path, DartAppEmbeddedPayload 
 	ut64 fsize = r_buf_size (b);
 	bool found = false;
 	if (fsize >= 32) {
-		ut32 le_magic = r_buf_read_le32_at (b, 0);
-		ut32 be_magic = r_buf_read_be32_at (b, 0);
+		const ut32 le_magic = r_buf_read_le32_at (b, 0);
+		const ut32 be_magic = r_buf_read_be32_at (b, 0);
 		if (le_magic == DART_MACHO_MH_MAGIC_64) {
 			found = find_dart_note_in_macho (b, fsize, 0, out);
 		} else if (be_magic == DART_MACHO_FAT_MAGIC || be_magic == DART_MACHO_FAT_MAGIC_64) {

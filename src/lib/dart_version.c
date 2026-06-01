@@ -5,9 +5,7 @@
 // Supported Dart SDK versions: 2.10.0 - 3.10.7
 // Based on unflutter's version profiles and CID tables.
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+#include <r_core.h>
 #include "../../include/r2flutter/dart_version.h"
 
 static int G_VERBOSE = 0;
