@@ -123,11 +123,13 @@ typedef struct DartInstructionTableEntry {
 	char *name;
 } DartInstructionTableEntry;
 
+typedef void(*DartPoolFunctionCallback)(const char *name, ut64 addr, ut64 size, void *user);
+
 // ============================================================================
 // Main API - all functions take DartCtx*
 // ============================================================================
 
-int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
+int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, DartPoolFunctionCallback on_fn, void *user, ut64 *out_base, ut64 *out_heap_base);
 char *dart_pool_dump_header(DartCtx *ctx, int fmt);
 
 // ============================================================================

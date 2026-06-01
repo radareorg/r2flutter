@@ -15,10 +15,6 @@
 #include "../../include/r2flutter/dart_obf.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 
-extern int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base);
-
-typedef unsigned long long ull;
-
 enum {
 	DART_MACHO_MH_MAGIC_64 = 0xfeedfacf,
 	DART_MACHO_FAT_MAGIC = 0xcafebabe,
@@ -359,7 +355,7 @@ static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr,
 		newfn->name = filtered;
 	} else {
 		char buf[64];
-		snprintf (buf, sizeof (buf), "func_%llx", (unsigned long long)addr);
+		snprintf (buf, sizeof (buf), "func_%" PFMT64x, (ut64)addr);
 		newfn->name = strdup (buf);
 		newfn->quality = 0;
 	}
@@ -605,12 +601,12 @@ void dart_app_free(DartApp *app) {
 	free (app);
 }
 
-static void add_fn_cb(const char *name, unsigned long long addr, unsigned long long size, void *user) {
+static void add_fn_cb(const char *name, ut64 addr, ut64 size, void *user) {
 	DartApp *app = (DartApp *)user;
 	dart_app_add_or_update_fn (app,
 		name,
-		dart_normalize_code_addr ((ut64)addr),
-		(ut64)size,
+		dart_normalize_code_addr (addr),
+		size,
 		dart_function_name_quality (name));
 }
 
@@ -627,11 +623,11 @@ void dart_app_load_info(DartApp *app) {
 	dart_app_load_it_functions (app);
 	dart_app_merge_class_methods (app);
 	if (r_list_length (app->functions) == 0) {
-		unsigned long long base = 0, heap_base = 0;
+		ut64 base = 0, heap_base = 0;
 		int rc = dart_pool_enumerate (&app->dctx, app->file_path, add_fn_cb, app, &base, &heap_base);
 		if (rc == 0) {
-			app->base_addr = (ut64)base;
-			app->heap_base = (ut64)heap_base;
+			app->base_addr = base;
+			app->heap_base = heap_base;
 		}
 	}
 	r_list_sort (app->functions, (RListComparator)dart_function_cmp);

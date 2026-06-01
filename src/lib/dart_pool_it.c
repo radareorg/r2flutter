@@ -107,12 +107,12 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 	dart_obf_apply_buf (ctx, out, outsz);
 }
 
-static void emit_it_entry_record(const DartInstructionTableEntry *entry, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
+static void emit_it_entry_record(const DartInstructionTableEntry *entry, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
 	if (on_it) {
 		on_it (entry, it_user);
 	}
 	if (entry->has_code && on_fn) {
-		on_fn (entry->name? entry->name: "method.unknown", (unsigned long long)entry->address, 0, fn_user);
+		on_fn (entry->name? entry->name: "method.unknown", entry->address, 0, fn_user);
 	}
 }
 
@@ -332,7 +332,7 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 	return false;
 }
 
-int dart_it_emit_linear(DartCtx *ctx, ut64 itlen, ut64 max_entries, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
+int dart_it_emit_linear(DartCtx *ctx, ut64 itlen, ut64 max_entries, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
 	if (!ctx || !ctx->iso_instr) {
 		return -1;
 	}
@@ -358,7 +358,7 @@ int dart_it_emit_linear(DartCtx *ctx, ut64 itlen, ut64 max_entries, void(*on_fn)
 	return 0;
 }
 
-int dart_it_emit_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64 itlen, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
+int dart_it_emit_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64 itlen, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
 	if (!ctx || !ctx->core) {
 		return -1;
 	}
@@ -409,7 +409,7 @@ int dart_it_emit_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64
 	return 0;
 }
 
-int dart_it_emit_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
+int dart_it_emit_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
 	if (!ctx || !ctx->core) {
 		return -1;
 	}

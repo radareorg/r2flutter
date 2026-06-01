@@ -185,7 +185,7 @@ void dart_ctx_fini_layout(DartCtx *ctx, DartVerLayout *owned) {
 }
 
 static int decode_pool_and_emit(DartCtx *ctx,
-	void (*on_fn) (const char *name, unsigned long long addr, unsigned long long size, void *user),
+	DartPoolFunctionCallback on_fn,
 	void *fn_user,
 	DartInstructionTableEntryCallback on_it,
 	void *it_user,
@@ -207,8 +207,8 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	if (ctx->verbose > 1 && sh.flags[0]) {
 		eprintf ("[r2flutter] features: %s\n", sh.flags);
 	}
-	uint64_t total_len = sh.total_len;
-	uint64_t kind = sh.kind;
+	ut64 total_len = sh.total_len;
+	ut64 kind = sh.kind;
 	ut64 nb = sh.nb;
 	ut64 no = sh.no;
 	ut64 nc = sh.nc;
@@ -226,19 +226,19 @@ static int decode_pool_and_emit(DartCtx *ctx,
 	}
 
 	if (ctx->dump_snapshot_json) {
-		printf ("{\"kind\":%llu,\"hash\":\"%s\",\"vm_data\":%llu,\"vm_instr\":%llu,\"iso_data\":%llu,\"iso_instr\":%llu,\"cluster\":{\"base\":%llu,\"objs\":%llu,\"clusters\":%llu,\"it_len\":%llu,\"it_off\":%llu,\"total\":%llu},\"cws\":%d}\n",
-			(unsigned long long)kind,
+		printf ("{\"kind\":%" PFMT64u ",\"hash\":\"%s\",\"vm_data\":%" PFMT64u ",\"vm_instr\":%" PFMT64u ",\"iso_data\":%" PFMT64u ",\"iso_instr\":%" PFMT64u ",\"cluster\":{\"base\":%" PFMT64u ",\"objs\":%" PFMT64u ",\"clusters\":%" PFMT64u ",\"it_len\":%" PFMT64u ",\"it_off\":%" PFMT64u ",\"total\":%" PFMT64u "},\"cws\":%d}\n",
+			(ut64)kind,
 			ctx->snapshot_hash,
-			(unsigned long long)ctx->vm_data,
-			(unsigned long long)ctx->vm_instr,
-			(unsigned long long)ctx->iso_data,
-			(unsigned long long)ctx->iso_instr,
-			(unsigned long long)nb,
-			(unsigned long long)no,
-			(unsigned long long)nc,
-			(unsigned long long)itlen,
-			(unsigned long long)itdata,
-			(unsigned long long)total_len,
+			(ut64)ctx->vm_data,
+			(ut64)ctx->vm_instr,
+			(ut64)ctx->iso_data,
+			(ut64)ctx->iso_instr,
+			(ut64)nb,
+			(ut64)no,
+			(ut64)nc,
+			(ut64)itlen,
+			(ut64)itdata,
+			(ut64)total_len,
 			ctx->compressed_word_size);
 	}
 
@@ -266,7 +266,7 @@ static int decode_pool_and_emit(DartCtx *ctx,
 					char clean_name[256];
 					snprintf (clean_name, sizeof (clean_name), "%s", fname);
 					r_name_filter (clean_name, 0);
-					on_fn (clean_name, (unsigned long long)df->entry_point, 0, fn_user);
+					on_fn (clean_name, df->entry_point, 0, fn_user);
 				}
 			}
 			if (ctx->verbose > 1 && ctx->strings) {
@@ -388,7 +388,7 @@ beach:
 }
 
 static void emit_stub_symbols(DartCtx *ctx,
-	void (*on_fn) (const char *name, unsigned long long addr, unsigned long long size, void *user),
+	DartPoolFunctionCallback on_fn,
 	void *user) {
 	if (!ctx || !ctx->core || !ctx->core->bin || !on_fn) {
 		return;
@@ -421,11 +421,11 @@ static void emit_stub_symbols(DartCtx *ctx,
 				*p = '.';
 			}
 		}
-		on_fn (tmp, (unsigned long long)addr, (unsigned long long)size, user);
+		on_fn (tmp, addr, size, user);
 	}
 }
 
-int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *user, unsigned long long *out_base, unsigned long long *out_heap_base) {
+int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, DartPoolFunctionCallback on_fn, void *user, ut64 *out_base, ut64 *out_heap_base) {
 	(void)libapp_path;
 	if (!ctx || !ctx->core) {
 		return -1;
@@ -433,17 +433,17 @@ int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, void(*on_fn)(cons
 	int ok = find_snapshots (ctx);
 	if (ok == 0) {
 		if (out_base) {
-			*out_base = (unsigned long long)r_bin_get_baddr (ctx->core->bin);
+			*out_base = r_bin_get_baddr (ctx->core->bin);
 		}
 		if (out_heap_base) {
 			*out_heap_base = 0;
 		}
 		if (ctx->verbose > 0) {
-			eprintf ("[r2flutter] Found Dart snapshots: vm_data=0x%llx vm_instr=0x%llx iso_data=0x%llx iso_instr=0x%llx\n",
-				(unsigned long long)ctx->vm_data,
-				(unsigned long long)ctx->vm_instr,
-				(unsigned long long)ctx->iso_data,
-				(unsigned long long)ctx->iso_instr);
+			eprintf ("[r2flutter] Found Dart snapshots: vm_data=0x%" PFMT64x " vm_instr=0x%" PFMT64x " iso_data=0x%" PFMT64x " iso_instr=0x%" PFMT64x "\n",
+				(ut64)ctx->vm_data,
+				(ut64)ctx->vm_instr,
+				(ut64)ctx->iso_data,
+				(ut64)ctx->iso_instr);
 		}
 		DartVerLayout layout_tmp;
 		DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
@@ -738,11 +738,11 @@ RList *dart_pool_extract_instruction_table(DartCtx *ctx) {
 		return NULL;
 	}
 	if (ctx->verbose > 0) {
-		eprintf ("[r2flutter] Found Dart snapshots: vm_data=0x%llx vm_instr=0x%llx iso_data=0x%llx iso_instr=0x%llx\n",
-			(unsigned long long)ctx->vm_data,
-			(unsigned long long)ctx->vm_instr,
-			(unsigned long long)ctx->iso_data,
-			(unsigned long long)ctx->iso_instr);
+		eprintf ("[r2flutter] Found Dart snapshots: vm_data=0x%" PFMT64x " vm_instr=0x%" PFMT64x " iso_data=0x%" PFMT64x " iso_instr=0x%" PFMT64x "\n",
+			(ut64)ctx->vm_data,
+			(ut64)ctx->vm_instr,
+			(ut64)ctx->iso_data,
+			(ut64)ctx->iso_instr);
 	}
 	DartVerLayout layout_tmp;
 	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);

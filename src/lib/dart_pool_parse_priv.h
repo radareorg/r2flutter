@@ -168,8 +168,8 @@ void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_star
 void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end);
 const char *method_kind_name(uint32_t kind_tag);
 
-int dart_it_emit_linear(DartCtx *ctx, ut64 itlen, ut64 max_entries, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user);
-int dart_it_emit_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64 itlen, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user);
-int dart_it_emit_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, void(*on_fn)(const char *name, unsigned long long addr, unsigned long long size, void *user), void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user);
+int dart_it_emit_linear(DartCtx *ctx, ut64 itlen, ut64 max_entries, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user);
+int dart_it_emit_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64 itlen, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user);
+int dart_it_emit_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user);
 
 #endif
