@@ -1,4 +1,4 @@
-/* radare2 - LGPL3 - Copyright 2026 - pancake, Ahmeth4n */
+/* radare2 - LGPL3 - Copyright 2026 - pancake */
 
 #include <r_core.h>
 #include "../../include/r2flutter/version.h"
@@ -11,7 +11,6 @@
 #define R2FLUTTER_CFG_NAMEPOOL "r2flutter.namepool"
 
 static bool r2flutter_core_init(RCorePluginSession *cps) {
-	R_RETURN_VAL_IF_FAIL (cps && cps->core && cps->core->config, false);
 	RConfig *cfg = cps->core->config;
 	r_config_lock (cfg, false);
 	RConfigNode *node = r_config_set (cfg, R2FLUTTER_CFG_MAPFILE, "");
@@ -23,7 +22,6 @@ static bool r2flutter_core_init(RCorePluginSession *cps) {
 }
 
 static bool r2flutter_core_fini(RCorePluginSession *cps) {
-	R_RETURN_VAL_IF_FAIL (cps && cps->core && cps->core->config, false);
 	RConfig *cfg = cps->core->config;
 	r_config_lock (cfg, false);
 	r_config_rm (cfg, R2FLUTTER_CFG_MAPFILE);
@@ -33,7 +31,6 @@ static bool r2flutter_core_fini(RCorePluginSession *cps) {
 }
 
 static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
-	R_RETURN_IF_FAIL (core && core->config && dctx);
 	dctx->obf_map_path = r_config_get (core->config, R2FLUTTER_CFG_MAPFILE);
 	dctx->use_name_pool = r_config_get_b (core->config, R2FLUTTER_CFG_NAMEPOOL);
 }
@@ -65,8 +62,8 @@ static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
 	}
 	dart_app_load_info (app);
 
-	if (!quiet) {
-		size_t count = app->functions? r_list_length (app->functions): 0;
+	if (!quiet && app->functions > 0) {
+		size_t count = r_list_length (app->functions);
 		R_LOG_INFO ("Loaded %d functions from Dart snapshot", count);
 	}
 
@@ -91,6 +88,103 @@ static bool r2flutter_dump_r2script(RCore *core, DartCtx *dctx) {
 	return true;
 }
 
+static char *r2flutter_dump_functions(RCore *core, DartCtx *dctx, const char *args) {
+	int n = 20;
+	if (*args) {
+		int v = atoi (args);
+		if (v > 0) {
+			n = v;
+		}
+	}
+	dctx->quiet = 1;
+	DartApp *app = dart_app_new_from_core (core, dctx);
+	if (!app) {
+		return NULL;
+	}
+	dart_app_load_info (app);
+	RStrBuf *sb = r_strbuf_new ("");
+	int count = 0;
+	if (app->functions) {
+		RListIter *it;
+		DartFunction *fn;
+		r_list_foreach (app->functions, it, fn) {
+			r_strbuf_appendf (sb, "0x%08" PFMT64x " %s\n", fn->addr, fn->name);
+			count++;
+			if (count >= n) {
+				break;
+			}
+		}
+	}
+	dart_app_free (app);
+	return r_strbuf_drain (sb);
+}
+
+static bool r2flutter_handle_option(RCore *core, DartCtx *dctx, const char *args) {
+	R_RETURN_VAL_IF_FAIL (core && dctx && args && *args == '-', false);
+
+	const char flag = args[1];
+	const char *rest = flag? r_str_trim_head_ro (args + 2): "";
+	char *out = NULL;
+
+	switch (flag) {
+	case 'a':
+		r2flutter_analysis_run (core, dctx, dctx->quiet);
+		return true;
+	case 'H':
+		out = dart_pool_dump_header (dctx, 0);
+		break;
+	case 'j':
+		dctx->dump_snapshot_json = 1;
+		dctx->quiet = 1;
+		r2flutter_analyze (core, dctx, 1);
+		return true;
+	case 'i':
+		out = dart_pool_dump_it (dctx, 0);
+		break;
+	case 'r':
+		r2flutter_dump_r2script (core, dctx);
+		return true;
+	case 'f':
+		out = r2flutter_dump_functions (core, dctx, rest);
+		break;
+	case 'q':
+		dctx->quiet = 1;
+		r2flutter_analyze (core, dctx, 1);
+		return true;
+	case 'n':
+		dctx->use_name_pool = true;
+		r2flutter_analyze (core, dctx, 0);
+		return true;
+	case 'c':
+		out = dart_pool_dump_classes (dctx, 'j');
+		break;
+	case 'C':
+		out = dart_pool_dump_classes (dctx, 'r');
+		break;
+	case 'F':
+		dctx->dump_fields = 1;
+		r2flutter_analyze (core, dctx, 0);
+		return true;
+	case 's':
+		out = dart_pool_dump_strings (dctx, 'j');
+		break;
+	case 't':
+		out = dart_pool_dump_strings (dctx, 'r');
+		break;
+	case 'x':
+		out = dart_pool_dump_xrefs (dctx, 0);
+		break;
+	default:
+		r2flutter_help (core);
+		return true;
+	}
+	if (out) {
+		r_cons_println (core->cons, out);
+		free (out);
+	}
+	return true;
+}
+
 static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	R_RETURN_VAL_IF_FAIL (cps && cps->core, false);
 	RCore *core = cps->core;
@@ -104,150 +198,22 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	};
 	r2flutter_apply_config (core, &dctx);
 
-	if (!*args) {
+	const char ch0 = *args;
+	if (!ch0) {
 		r2flutter_analyze (core, &dctx, 0);
 		return true;
 	}
 
-	if (*args == '?') {
+	if (ch0 == '?') {
 		r2flutter_help (core);
 		return true;
 	}
 
-	if (*args != '-') {
-		r2flutter_analyze (core, &dctx, 0);
-		return true;
+	if (ch0 == '-') {
+		return r2flutter_handle_option (core, &dctx, args);
 	}
-	char flag = args[1];
-	const char *rest = args + 2;
-	while (*rest == ' ') {
-		rest++;
-	}
-
-	switch (flag) {
-	case 'a':
-		r2flutter_analysis_run (core, &dctx, dctx.quiet);
-		return true;
-	case 'H':
-		{
-			char *hdr = dart_pool_dump_header (&dctx, 0);
-			if (hdr) {
-				r_cons_printf (core->cons, "%s", hdr);
-				free (hdr);
-			}
-		}
-		return true;
-	case 'j':
-		dctx.dump_snapshot_json = 1;
-		dctx.quiet = 1;
-		r2flutter_analyze (core, &dctx, 1);
-		return true;
-	case 'i':
-		{
-			char *out = dart_pool_dump_it (&dctx, 0);
-			if (out) {
-				r_cons_printf (core->cons, "%s", out);
-				free (out);
-			}
-		}
-		return true;
-	case 'r':
-		r2flutter_dump_r2script (core, &dctx);
-		return true;
-	case 'f':
-		{
-			int n = 20;
-			if (*rest) {
-				int v = atoi (rest);
-				if (v > 0) {
-					n = v;
-				}
-			}
-			dctx.quiet = 1;
-			DartApp *app = dart_app_new_from_core (core, &dctx);
-			if (!app) {
-				return true;
-			}
-			dart_app_load_info (app);
-			int count = 0;
-			if (app->functions) {
-				RListIter *it;
-				DartFunction *fn;
-				r_list_foreach (app->functions, it, fn) {
-					if (!fn || !fn->name) {
-						continue;
-					}
-					r_cons_printf (core->cons, "0x%08" PFMT64x " %s\n", fn->addr, fn->name);
-					if (++count >= n) {
-						break;
-					}
-				}
-			}
-			dart_app_free (app);
-			return true;
-		}
-	case 'q':
-		dctx.quiet = 1;
-		r2flutter_analyze (core, &dctx, 1);
-		return true;
-	case 'n':
-		dctx.use_name_pool = true;
-		r2flutter_analyze (core, &dctx, 0);
-		return true;
-	case 'c':
-		{
-			char *json = dart_pool_dump_classes (&dctx, 'j');
-			if (json) {
-				r_cons_printf (core->cons, "%s\n", json);
-				free (json);
-			}
-		}
-		return true;
-	case 'C':
-		{
-			char *r2out = dart_pool_dump_classes (&dctx, 'r');
-			if (r2out) {
-				r_cons_printf (core->cons, "%s", r2out);
-				free (r2out);
-			}
-		}
-		return true;
-	case 'F':
-		dctx.dump_fields = 1;
-		r2flutter_analyze (core, &dctx, 0);
-		return true;
-	case 's':
-		{
-			char *json = dart_pool_dump_strings (&dctx, 'j');
-			if (json) {
-				r_cons_printf (core->cons, "%s\n", json);
-				free (json);
-			}
-		}
-		return true;
-	case 't':
-		{
-			char *r2out = dart_pool_dump_strings (&dctx, 'r');
-			if (r2out) {
-				r_cons_printf (core->cons, "%s", r2out);
-				free (r2out);
-			}
-		}
-		return true;
-	case 'x':
-		{
-			char *out = dart_pool_dump_xrefs (&dctx, 0);
-			if (out) {
-				r_cons_printf (core->cons, "%s\n", out);
-				free (out);
-			}
-		}
-		return true;
-	default:
-		r2flutter_help (core);
-		return true;
-	}
-	return false;
+	r2flutter_analyze (core, &dctx, 0);
+	return true;
 }
 
 RCorePlugin r_core_plugin_flutter = {
