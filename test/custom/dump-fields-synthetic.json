@@ -5,10 +5,11 @@
   "timeout": 10,
   "expect": {
     "contains": [
-      "class TestClass (size=24)",
+      "class TestClass (size=32)",
       "library: package:test",
       "fields:",
-      "+0x10 int fieldA"
+      "+0x10 int fieldA",
+      "+0x18 List<int> items"
     ]
   }
 }

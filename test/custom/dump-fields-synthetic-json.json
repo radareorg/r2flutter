@@ -9,6 +9,9 @@
       "\"fields\":[{\"name\":\"fieldA\"",
       "\"type\":\"int\"",
       "\"offset\":16",
+      "\"name\":\"items\"",
+      "\"type\":\"List<int>\"",
+      "\"offset\":24",
       "\"static\":false"
     ]
   }
