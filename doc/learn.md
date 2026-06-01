@@ -349,8 +349,8 @@ Practical implication:
 
 Current gaps:
 
-- `DartStringInfo.references` exists but is not populated yet, so reverse `string -> metadata users` xrefs are still missing
-- object-pool offsets can be collected from code, but pool entries are not decoded yet, so `code -> string/class/field/method` xrefs are not end-to-end
+- `DartStringInfo.references` is now populated from decoded class/library/field/method metadata, so `-s` can show reverse `string -> metadata users` links when the metadata survives
+- object-pool offsets can be collected from code, and `-x` can resolve some `PP+imm` slots into `code -> string/class/type/field/method` xrefs when `anal.gp` is set and the slot target is a readable string or an existing Dart flag
 - library URI resolution works when metadata survives, and `Field.type_ref`
   links now resolve simple `Type` objects, `TypeArguments` for generic field
   types, `TypeParameter` placeholders like `X0`, and simple `FunctionType`
@@ -364,7 +364,8 @@ The repo now exposes the currently recoverable subset through:
 - CLI: `-x`
 - radare2 plugin: `r2flutter -x`
 
-The new dumper intentionally stops at metadata/data-image edges. Disassembly-derived object-pool xrefs and call/use edges are still future work.
+The xref dumper is still conservative. It does not invent code-use edges without
+an object-pool base, and it does not reconstruct indirect dispatch/call graphs.
 
 ## Object-Oriented Metadata Recovery Is Layered
 
@@ -383,13 +384,13 @@ confidence layers:
   handles some disassembly-derived annotations
 
 The most valuable next work is therefore not "add field extraction" from
-scratch. It is production coverage for these metadata paths, populating reverse
-string references, documenting/recovering mixin application chains, and
-decoding object-pool entries so PP-offset observations can become real
-`code -> object` xrefs. Field attachment, generic field type rendering,
-type-parameter field types, function-shaped field types, class interface edges,
-and cluster-backed method signatures now have direct synthetic text/JSON/xref
-coverage.
+scratch. It is production coverage for these metadata paths, recovering mixin
+application chains when the VM metadata carries enough signal, and broadening
+object-pool decoding beyond the current readable-string/live-flag targets. Field
+attachment, generic field type rendering, type-parameter field types,
+function-shaped field types, class interface edges, reverse string metadata
+references, and cluster-backed method signatures now have direct synthetic
+text/JSON/xref coverage.
 
 ## `r2flutter -a` Uses Live `RCore` Metadata But Keeps PP Resolution Conservative
 
@@ -403,8 +404,15 @@ This closes part of the old "metadata only" gap for code xrefs without pretendin
 
 Important current limitation:
 
-- the shipped samples do not populate `anal.gp`, and the repo still does not decode object-pool entries end-to-end
-- so `-a` can reliably annotate PP-relative slot usage and indirect-call breadcrumbs, but not yet resolve every `PP+imm` load into a final string/class/method object
+- the shipped CLI samples do not populate `anal.gp`; object-pool resolution in
+  `-x` is therefore a live-r2-session feature, not a normal standalone CLI
+  fixture result
+- current pool decoding tries raw/tag-stripped pointers plus compressed
+  `app.heap_base` candidates and stops at readable strings or existing Dart
+  flags; broader Dart object decoding is still future work
+- `-a` can reliably annotate PP-relative slot usage and indirect-call
+  breadcrumbs, but still does not resolve dispatch-table targets or build a full
+  call graph
 
 ## Recovering Methods Without Class Clusters
 

@@ -43,6 +43,8 @@ typedef struct DartStringRef {
 	ut64 object_ref;
 	ut32 object_type;
 	ut32 field_offset;
+	char *kind;
+	char *object_name;
 } DartStringRef;
 
 #define DART_REF_FUNCTION 1

@@ -19,6 +19,13 @@ typedef struct {
 	ut64 dst_addr;
 } DartXrefInfo;
 
+typedef struct {
+	ut64 at;
+	ut64 fn_index;
+	ut64 pp_off;
+	char *fn_name;
+} DartPoolUseInfo;
+
 static void dart_xref_info_free(void *p) {
 	DartXrefInfo *xi = (DartXrefInfo *)p;
 	if (xi) {
@@ -30,6 +37,12 @@ static void dart_xref_info_free(void *p) {
 		free (xi->dst_name);
 		free (xi);
 	}
+}
+
+static void dart_pool_use_info_free(void *p) {
+	DartPoolUseInfo *ui = (DartPoolUseInfo *)p;
+	free (ui->fn_name);
+	free (ui);
 }
 
 static char *xref_join_names(const char *owner, const char *name) {
@@ -79,6 +92,13 @@ static DartStringInfo *xref_find_string(HtPP *strings_by_value, const char *valu
 		return NULL;
 	}
 	return ht_pp_find (strings_by_value, value, NULL);
+}
+
+static DartClassInfo *xref_find_class(HtPP *classes_by_name, const char *name) {
+	if (!classes_by_name || R_STR_ISEMPTY (name)) {
+		return NULL;
+	}
+	return ht_pp_find (classes_by_name, name, NULL);
 }
 
 static bool xref_limit_reached(ut64 count, ut64 limit) {
@@ -193,6 +213,276 @@ static void collect_data_image_xrefs(DartCtx *ctx, HtPP *strings_by_value, RList
 	dart_ctx_fini_layout (ctx, layout_owned);
 }
 
+static bool xref_parse_pp_offset(const char *opstr, ut64 *out) {
+	if (R_STR_ISEMPTY (opstr) || !out) {
+		return false;
+	}
+	const char *b = strstr (opstr, "[x27");
+	if (!b) {
+		return false;
+	}
+	const char *comma = strchr (b, ',');
+	if (!comma) {
+		*out = 0;
+		return true;
+	}
+	const char *p = comma + 1;
+	while (*p == ' ' || *p == '\t' || *p == '#') {
+		p++;
+	}
+	if (r_str_startswith (p, "0x") || r_str_startswith (p, "0X")) {
+		p += 2;
+		const char *q = p;
+		while (isxdigit ((ut8)*q)) {
+			q++;
+		}
+		if (q == p) {
+			return false;
+		}
+		char numbuf[32];
+		size_t len = q - p;
+		if (len > sizeof (numbuf) - 3) {
+			len = sizeof (numbuf) - 3;
+		}
+		numbuf[0] = '0';
+		numbuf[1] = 'x';
+		memcpy (numbuf + 2, p, len);
+		numbuf[len + 2] = '\0';
+		*out = r_num_get (NULL, numbuf);
+		return true;
+	}
+	const char *q = p;
+	while (isdigit ((ut8)*q)) {
+		q++;
+	}
+	if (q == p) {
+		return false;
+	}
+	char numbuf[32];
+	size_t len = q - p;
+	if (len >= sizeof (numbuf)) {
+		len = sizeof (numbuf) - 1;
+	}
+	memcpy (numbuf, p, len);
+	numbuf[len] = '\0';
+	*out = r_num_get (NULL, numbuf);
+	return true;
+}
+
+static ut64 xref_object_pool_base(DartCtx *ctx) {
+	if (!ctx || !ctx->core || !ctx->core->config) {
+		return 0;
+	}
+	st64 gp = r_config_get_i (ctx->core->config, "anal.gp");
+	return gp > 0? (ut64)gp: 0;
+}
+
+static ut64 xref_flag_addr(RCore *core, const char *name) {
+	if (!core || !core->flags || R_STR_ISEMPTY (name)) {
+		return 0;
+	}
+	RFlagItem *fi = r_flag_get (core->flags, name);
+	return fi? fi->addr: 0;
+}
+
+static RFlagItem *xref_flag_at(RCore *core, ut64 addr) {
+	if (!core || !core->flags || !addr) {
+		return NULL;
+	}
+	RFlagItem *fi = r_flag_get_in (core->flags, addr);
+	if (!fi && ! (addr & 1ULL)) {
+		fi = r_flag_get_in (core->flags, addr + 1);
+	}
+	return fi;
+}
+
+static const char *xref_pool_flag_kind(const char *name, const char **dst_type, const char **dst_name) {
+	if (R_STR_ISEMPTY (name) || !dst_type || !dst_name) {
+		return NULL;
+	}
+	const struct {
+		const char *prefix;
+		const char *kind;
+		const char *type;
+	} map[] = {
+		{ "dart.str.", "code.string", "string" },
+		{ "str.", "code.string", "string" },
+		{ "dart.class.", "code.class", "class" },
+		{ "dart.type.", "code.type", "type" },
+		{ "dart.field.", "code.field", "field" },
+		{ "dart.method.", "code.method", "method" },
+		{ "method.", "code.method", "method" },
+};
+	for (size_t i = 0; i < sizeof (map) / sizeof (map[0]); i++) {
+		if (!r_str_startswith (name, map[i].prefix)) {
+			continue;
+		}
+		*dst_type = map[i].type;
+		*dst_name = name + strlen (map[i].prefix);
+		return map[i].kind;
+	}
+	return NULL;
+}
+
+static bool xref_pool_use_seen(HtUP *seen, ut64 at, ut64 pp_off) {
+	ut64 key = at ^ (pp_off << 8) ^ (pp_off >> 8);
+	if (ht_up_find (seen, key, NULL)) {
+		return true;
+	}
+	ht_up_insert (seen, key, (void *)1);
+	return false;
+}
+
+static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTableEntry *entry, RList *uses, HtUP *seen) {
+	if (!ctx || !ctx->core || !entry || !entry->address || !uses || !seen) {
+		return;
+	}
+	r_strf_var (cmd, 128, "pdfj @ 0x%" PFMT64x, entry->address);
+	char *s = r_core_cmd_str (ctx->core, cmd);
+	if (!s) {
+		return;
+	}
+	RJson *j = r_json_parse (s);
+	if (!j) {
+		free (s);
+		return;
+	}
+	const RJson *ops = r_json_get (j, "ops");
+	const RJson *arr = ops? ops: j;
+	for (size_t i = 0;; i++) {
+		const RJson *item = r_json_item (arr, i);
+		if (!item) {
+			break;
+		}
+		const char *opstr = r_json_get_str (item, "opstr");
+		if (R_STR_ISEMPTY (opstr)) {
+			opstr = r_json_get_str (item, "opcode");
+		}
+		ut64 pp_off = 0;
+		if (!xref_parse_pp_offset (opstr, &pp_off)) {
+			continue;
+		}
+		ut64 at = (ut64)r_json_get_num (item, "offset");
+		if (!at) {
+			at = entry->address;
+		}
+		if (xref_pool_use_seen (seen, at, pp_off)) {
+			continue;
+		}
+		DartPoolUseInfo *ui = R_NEW0 (DartPoolUseInfo);
+		ui->at = at;
+		ui->fn_index = entry->index;
+		ui->pp_off = pp_off;
+		ui->fn_name = R_STR_ISNOTEMPTY (entry->name)? strdup (entry->name): xref_it_label (entry->index);
+		r_list_append (uses, ui);
+	}
+	r_json_free (j);
+	free (s);
+}
+
+static RList *collect_pool_uses(DartCtx *ctx, RVecDartInstructionTableEntry *entries, ut64 limit) {
+	RList *uses = r_list_newf (dart_pool_use_info_free);
+	if (!ctx || !entries || RVecDartInstructionTableEntry_length (entries) == 0) {
+		return uses;
+	}
+	HtUP *seen = ht_up_new0 ();
+	ut64 scanned = 0;
+	ut64 scan_limit = limit > 0? limit: 4096;
+	DartInstructionTableEntry *entry;
+	R_VEC_FOREACH (entries, entry) {
+		if (!entry->has_code || !entry->address) {
+			continue;
+		}
+		if (scan_limit > 0 && scanned >= scan_limit) {
+			break;
+		}
+		collect_pool_uses_from_entry (ctx, entry, uses, seen);
+		scanned++;
+	}
+	ht_up_free (seen);
+	return uses;
+}
+
+static bool append_string_pool_xref(DartCtx *ctx, RList *xrefs, HtPP *strings_by_value, HtPP *classes_by_name, ut64 *count, ut64 limit, const DartPoolUseInfo *use, ut64 target) {
+	char buf[256];
+	if (!try_read_dart_string (ctx, target, buf, sizeof (buf))) {
+		return false;
+	}
+	DartStringInfo *si = xref_find_string (strings_by_value, buf);
+	append_xref_info (xrefs, count, limit, "code", "code.string", "code", use->fn_name, use->fn_index, use->at, "string", si? si->value: buf, si? si->ref_id: 0, si && si->address? si->address: target);
+	if (classes_by_name && xref_find_class (classes_by_name, buf) && !xref_limit_reached (*count, limit)) {
+		append_xref_info (xrefs, count, limit, "code", "code.class", "code", use->fn_name, use->fn_index, use->at, "class", buf, 0, si && si->address? si->address: target);
+	}
+	return true;
+}
+
+static bool append_flag_pool_xref(DartCtx *ctx, RList *xrefs, ut64 *count, ut64 limit, const DartPoolUseInfo *use, ut64 target) {
+	RFlagItem *fi = xref_flag_at (ctx->core, target);
+	if (!fi) {
+		return false;
+	}
+	const char *dst_type = NULL;
+	const char *dst_name = NULL;
+	const char *kind = xref_pool_flag_kind (fi->name, &dst_type, &dst_name);
+	if (!kind) {
+		return false;
+	}
+	append_xref_info (xrefs, count, limit, "code", kind, "code", use->fn_name, use->fn_index, use->at, dst_type, dst_name, 0, fi->addr);
+	return true;
+}
+
+static bool resolve_pool_entry_xref(DartCtx *ctx, RList *xrefs, HtPP *strings_by_value, HtPP *classes_by_name, ut64 *count, ut64 limit, const DartPoolUseInfo *use, ut64 raw, ut64 heap_base) {
+	ut64 candidates[9];
+	int n = 0;
+	candidates[n++] = raw;
+	candidates[n++] = raw & ~1ULL;
+	candidates[n++] = raw & ~3ULL;
+	if (heap_base && raw < 0xffffffffULL) {
+		candidates[n++] = heap_base + raw;
+		candidates[n++] = heap_base + (raw & ~1ULL);
+		candidates[n++] = heap_base + (raw & ~3ULL);
+	}
+	for (int i = 0; i < n && !xref_limit_reached (*count, limit); i++) {
+		ut64 target = candidates[i];
+		if (!target) {
+			continue;
+		}
+		if (append_string_pool_xref (ctx, xrefs, strings_by_value, classes_by_name, count, limit, use, target)) {
+			return true;
+		}
+		if (append_flag_pool_xref (ctx, xrefs, count, limit, use, target)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void collect_object_pool_xrefs(DartCtx *ctx, RVecDartInstructionTableEntry *it_entries, HtPP *strings_by_value, HtPP *classes_by_name, RList *xrefs, ut64 *count, ut64 limit) {
+	if (!ctx || !ctx->core || !it_entries || !strings_by_value || !xrefs || xref_limit_reached (*count, limit)) {
+		return;
+	}
+	ut64 pool_base = xref_object_pool_base (ctx);
+	if (!pool_base) {
+		return;
+	}
+	RList *uses = collect_pool_uses (ctx, it_entries, limit);
+	ut64 heap_base = xref_flag_addr (ctx->core, "app.heap_base");
+	RListIter *it;
+	DartPoolUseInfo *use;
+	r_list_foreach (uses, it, use) {
+		if (!use || xref_limit_reached (*count, limit)) {
+			continue;
+		}
+		ut64 entry_addr = pool_base + use->pp_off;
+		ut64 raw = 0;
+		if (!read_u64_at (ctx, entry_addr, &raw)) {
+			continue;
+		}
+		(void)resolve_pool_entry_xref (ctx, xrefs, strings_by_value, classes_by_name, count, limit, use, raw, heap_base);
+	}
+	r_list_free (uses);
+}
+
 static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
 		return NULL;
@@ -207,6 +497,7 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 	RList *strings = dart_pool_extract_strings (ctx);
 	RVecDartInstructionTableEntry *it_entries = dart_pool_extract_instruction_table (ctx);
 	HtPP *strings_by_value = ht_pp_new0 ();
+	HtPP *classes_by_name = ht_pp_new0 ();
 	if (strings) {
 		RListIter *it;
 		DartStringInfo *si;
@@ -217,6 +508,16 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 			if (!ht_pp_find (strings_by_value, si->value, NULL)) {
 				ht_pp_insert (strings_by_value, si->value, si);
 			}
+		}
+	}
+	if (classes) {
+		RListIter *it;
+		DartClassInfo *ci;
+		r_list_foreach (classes, it, ci) {
+			if (!ci || R_STR_ISEMPTY (ci->name) || ht_pp_find (classes_by_name, ci->name, NULL)) {
+				continue;
+			}
+			ht_pp_insert (classes_by_name, ci->name, ci);
 		}
 	}
 	if (classes) {
@@ -306,6 +607,7 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 			}
 		}
 	}
+	collect_object_pool_xrefs (ctx, it_entries, strings_by_value, classes_by_name, xrefs, &count, limit);
 	collect_data_image_xrefs (ctx, strings_by_value, xrefs, &count, limit);
 	if (it_entries && !xref_limit_reached (count, limit)) {
 		DartInstructionTableEntry *entry;
@@ -318,6 +620,7 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 			free (it_label);
 		}
 	}
+	ht_pp_free (classes_by_name);
 	ht_pp_free (strings_by_value);
 	dart_class_list_free (classes);
 	dart_string_list_free (strings);

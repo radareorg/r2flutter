@@ -29,31 +29,77 @@ EXPECT=<<EOF
 EOF
 RUN
 
+NAME=strings-fields-synthetic
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -s bins/synthetic/field_snapshot.bin 2>/dev/null
+EOF
+EXPECT=<<EOF
+0x00000018   74 :app "00000000000000000000000000000000product arm64 macos no-compressed-pointers"
+0x0000006e    9 :lib "TestClass"
+#   referenced by 1 objects
+#     class.name class TestClass [ref=12]
+0x00000078   12 :lib "package:test"
+#   referenced by 1 objects
+#     library.name library package:test [ref=11]
+0x00000085    6 :lib "fieldA"
+#   referenced by 1 objects
+#     field.name field TestClass.fieldA [ref=25]
+0x00000090    5 :lib "items"
+#   referenced by 1 objects
+#     field.name field TestClass.items [ref=26]
+0x00000096   12 :lib "genericItems"
+#   referenced by 1 objects
+#     field.name field TestClass.genericItems [ref=27]
+0x000000a3    8 :lib "callback"
+#   referenced by 1 objects
+#     field.name field TestClass.callback [ref=28]
+0x000000ac    7 :lib "compute"
+#   referenced by 1 objects
+#     method.name function TestClass.compute [ref=29]
+0x000000b4   13 :lib "TestInterface"
+#   referenced by 2 objects
+#     class.interface class TestClass [ref=12]
+#     class.name class TestInterface [ref=13]
+
+EOF
+RUN
+
+NAME=json-strings-fields-synthetic
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j -s bins/synthetic/field_snapshot.bin 2>/dev/null
+EOF
+EXPECT=<<EOF
+[{"ref":0,"len":74,"value":"00000000000000000000000000000000product arm64 macos no-compressed-pointers","category":"app","two_byte":false,"canonical":true,"addr":24},{"ref":1,"len":9,"value":"TestClass","category":"lib","two_byte":false,"canonical":true,"addr":110,"refs":[{"obj":12,"type":"class","kind":"class.name","name":"TestClass"}]},{"ref":2,"len":12,"value":"package:test","category":"lib","two_byte":false,"canonical":true,"addr":120,"refs":[{"obj":11,"type":"library","kind":"library.name","name":"package:test"}]},{"ref":3,"len":6,"value":"fieldA","category":"lib","two_byte":false,"canonical":true,"addr":133,"refs":[{"obj":25,"type":"field","kind":"field.name","name":"TestClass.fieldA"}]},{"ref":4,"len":5,"value":"items","category":"lib","two_byte":false,"canonical":true,"addr":144,"refs":[{"obj":26,"type":"field","kind":"field.name","name":"TestClass.items"}]},{"ref":5,"len":12,"value":"genericItems","category":"lib","two_byte":false,"canonical":true,"addr":150,"refs":[{"obj":27,"type":"field","kind":"field.name","name":"TestClass.genericItems"}]},{"ref":6,"len":8,"value":"callback","category":"lib","two_byte":false,"canonical":true,"addr":163,"refs":[{"obj":28,"type":"field","kind":"field.name","name":"TestClass.callback"}]},{"ref":7,"len":7,"value":"compute","category":"lib","two_byte":false,"canonical":true,"addr":172,"refs":[{"obj":29,"type":"function","kind":"method.name","name":"TestClass.compute"}]},{"ref":8,"len":13,"value":"TestInterface","category":"lib","two_byte":false,"canonical":true,"addr":180,"refs":[{"obj":12,"type":"class","kind":"class.interface","name":"TestClass"},{"obj":13,"type":"class","kind":"class.name","name":"TestInterface"}]}]
+EOF
+RUN
+
 NAME=xrefs-fields-synthetic
 FILE=-
 CMDS=<<EOF
 !!../bin/r2flutter -x bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
-metadata class.name class TestClass [ref=12] -> string TestClass [ref=2]
+metadata class.name class TestClass [ref=12] -> string TestClass [ref=2] @ 0x6e
 metadata class.library class TestClass [ref=12] -> library package:test [ref=11]
 metadata class.interface class TestClass [ref=12] -> type TestInterface [ref=23]
 metadata field.owner field TestClass.fieldA [ref=25] -> class TestClass [ref=12]
-metadata field.name field TestClass.fieldA [ref=25] -> string fieldA [ref=4]
+metadata field.name field TestClass.fieldA [ref=25] -> string fieldA [ref=4] @ 0x85
 metadata field.type field TestClass.fieldA [ref=25] -> type int [ref=19]
 metadata field.owner field TestClass.items [ref=26] -> class TestClass [ref=12]
-metadata field.name field TestClass.items [ref=26] -> string items [ref=6]
+metadata field.name field TestClass.items [ref=26] -> string items [ref=6] @ 0x90
 metadata field.type field TestClass.items [ref=26] -> type List<int> [ref=20]
 metadata field.owner field TestClass.genericItems [ref=27] -> class TestClass [ref=12]
-metadata field.name field TestClass.genericItems [ref=27] -> string genericItems [ref=7]
+metadata field.name field TestClass.genericItems [ref=27] -> string genericItems [ref=7] @ 0x96
 metadata field.type field TestClass.genericItems [ref=27] -> type List<X0> [ref=21]
 metadata field.owner field TestClass.callback [ref=28] -> class TestClass [ref=12]
-metadata field.name field TestClass.callback [ref=28] -> string callback [ref=8]
+metadata field.name field TestClass.callback [ref=28] -> string callback [ref=8] @ 0xa3
 metadata field.type field TestClass.callback [ref=28] -> type (int) => String [ref=24]
 metadata method.owner method TestClass.compute [ref=29] -> class TestClass [ref=12]
-metadata method.name method TestClass.compute [ref=29] -> string compute [ref=9]
+metadata method.name method TestClass.compute [ref=29] -> string compute [ref=9] @ 0xac
 metadata method.signature method TestClass.compute [ref=29] -> type (int) => String [ref=24]
-metadata class.name class TestInterface [ref=13] -> string TestInterface [ref=10]
+metadata class.name class TestInterface [ref=13] -> string TestInterface [ref=10] @ 0xb4
 metadata class.library class TestInterface [ref=13] -> library package:test [ref=11]
 EOF
 RUN

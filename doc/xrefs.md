@@ -50,9 +50,9 @@ These do not all come from the same source.
 | Field -> name string | `Field.name_` | Yes | No | Implemented |
 | Field -> type | `Field.type_` | Yes | No | Implemented for direct, generic, type-parameter, and simple function types |
 | String -> address/value | string cluster or raw/packed bytes | Yes | No | Implemented |
-| String -> metadata users | reverse of `name_ref`/`owner_ref`/etc. | Yes | No | Not populated yet |
+| String -> metadata users | reverse of `name_ref`/`owner_ref`/etc. | Yes | No | Implemented for decoded class/library/field/method metadata |
 | Code -> object-pool slot | `ldr ..., [x27, #imm]` and peers | No | Yes | Offset collection implemented |
-| Code -> string/class/method/field | object-pool slot contents or inline targets | No | Yes | Not implemented end-to-end |
+| Code -> string/class/method/field | object-pool slot contents or inline targets | No | Yes | Partly implemented when `anal.gp` and target strings/flags are available |
 | Function -> callee | branch targets / dispatch sites | No | Yes | Not implemented |
 | Code -> field access | field offsets in loads/stores | No | Yes | Requires receiver/type inference |
 
@@ -265,18 +265,26 @@ That means:
 
 - current function -> object-pool slot at offset `imm`
 
-The repo already extracts these offsets in `dart_dumper.c` by parsing `pdfj` output and looking for `[x27, ...]`.
+The repo extracts these offsets in `dart_dumper.c` and `dart_pool_xrefs.c` by
+parsing `pdfj` output and looking for `[x27, ...]`. Both hexadecimal
+`#0x...` and decimal displacements are accepted.
 
 What this gives today:
 
 - function -> pool offset
+- when `anal.gp` is non-zero, pool offset -> raw pool entry
+- pool entry -> string/class/type/field/method when the target is a readable
+  Dart string or an already-created Dart flag
 
 What is still missing:
 
-- pool offset -> decoded pool entry
-- decoded pool entry -> actual string/class/code/function/field target
+- full ObjectPool entry kind decoding
+- general Dart object decoding for arbitrary pool entries
+- dispatch target and call-graph reconstruction
 
-Without that second step, PP offsets are useful breadcrumbs but not full semantic xrefs.
+Without `anal.gp`, PP offsets are still breadcrumbs rather than full semantic
+xrefs. With `anal.gp`, the xref dumper emits only relationships it can resolve
+directly.
 
 ### Code -> String
 
@@ -295,7 +303,9 @@ To recover `function -> string` you need:
 - object-pool entry decoding
 - string-object resolution
 
-So this is a code-analysis xref, not a pure metadata xref.
+So this is a code-analysis xref, not a pure metadata xref. Current `-x` support
+handles the direct string-object case when the object pool base is known through
+`anal.gp`.
 
 ### Code -> Class / Type
 
@@ -312,6 +322,11 @@ Recovering them needs:
 - disassembly
 - object-pool decoding
 - Dart-version-specific interpretation of the loaded object
+
+Current `-x` support only claims a class/type xref when the pool entry resolves
+to a readable class-name string or to a live `dart.class.*` / `dart.type.*`
+flag. It does not yet decode arbitrary Class, Type, TypeArguments, or allocation
+stub objects directly from the pool entry.
 
 ### Code -> Field
 
@@ -428,7 +443,7 @@ For metadata users, you can reverse-index:
 - library name refs
 - any future `Type` name refs
 
-That is a metadata-only xref and should be implemented by filling `DartStringInfo.references`.
+That is a metadata-only xref and is implemented by filling `DartStringInfo.references`.
 
 For code users, you need:
 
@@ -441,8 +456,10 @@ So `string -> metadata users` is dumpable from the binary structure itself.
 Current repo state:
 
 - `DartStringInfo.references` exists
-- it is printed if populated
-- but it is not currently filled anywhere
+- it is filled from decoded class/library/field/method metadata
+- text and JSON string dumps include the metadata user kind and object name
+- production string-only fallback classes are intentionally skipped because they
+  do not carry a real metadata reference
 
 ### Method References
 
@@ -552,11 +569,14 @@ With current repo code, the main directly dumpable pieces are:
   - field/method attachment when data-image scans succeed
 - `-s`
   - string values and byte addresses
+  - reverse metadata users for decoded class/library/field/method name refs
 - `-x`
   - flattened metadata/object-graph xrefs
   - class -> string/library/super links
   - field -> owner/name/type links when metadata survives
   - method -> owner/name/entry links when data-image scans succeed
+  - code -> string/class/type/field/method links when `anal.gp` and readable
+    pool targets are available
   - instruction-table entry -> code/stub address links
 - `-R`
   - recovered function flags
@@ -566,14 +586,15 @@ From radare2, the equivalent entrypoint is:
 
 - `r2flutter -x`
 
-This first version is intentionally limited to:
+The xref dumper remains intentionally limited to:
 
 - metadata xrefs
 - data-image object scan xrefs
+- conservative object-pool xrefs tied to a live `anal.gp` value
 
 It does not yet include:
 
-- object-pool/code-use xrefs from disassembly
+- full ObjectPool entry kind decoding
 - call graph edges
 - field-use xrefs from load/store analysis
 
@@ -581,17 +602,12 @@ It does not yet include:
 
 To get richer xrefs, the next missing pieces are:
 
-- reverse-index metadata users into `DartStringInfo.references`
 - resolve library URI/name strings fully
-- resolve `Field.type_ref` into readable type names
-- keep interface/type edges from class metadata instead of discarding them
-- decode object-pool entries, not just PP offsets
-- use those pool entries to recover:
-  - code -> string
-  - code -> class
-  - code -> static field
-  - code -> method / stub target
+- broaden ObjectPool decoding beyond readable strings and live Dart flags
+- decode Class/Type/TypeArguments/static-field entries directly from pool
+  objects instead of relying on flags or string-name inference
 - build a real call graph from disassembly
+- recover complete field-use xrefs through receiver-type inference
 
 ## Practical Bottom Line
 

@@ -57,19 +57,38 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RVecDartOffset 
 			p++;
 		}
 		const char *q = p;
-		while (isxdigit ((ut8)*q)) {
-			q++;
-		}
-		if (q == p) {
-			continue;
-		}
 		char numbuf[32];
-		size_t len = q - p;
-		if (len >= sizeof (numbuf)) {
-			len = sizeof (numbuf) - 1;
+		if (r_str_startswith (p, "0x") || r_str_startswith (p, "0X")) {
+			p += 2;
+			q = p;
+			while (isxdigit ((ut8)*q)) {
+				q++;
+			}
+			if (q == p) {
+				continue;
+			}
+			size_t len = q - p;
+			if (len > sizeof (numbuf) - 3) {
+				len = sizeof (numbuf) - 3;
+			}
+			numbuf[0] = '0';
+			numbuf[1] = 'x';
+			memcpy (numbuf + 2, p, len);
+			numbuf[len + 2] = '\0';
+		} else {
+			while (isdigit ((ut8)*q)) {
+				q++;
+			}
+			if (q == p) {
+				continue;
+			}
+			size_t len = q - p;
+			if (len >= sizeof (numbuf)) {
+				len = sizeof (numbuf) - 1;
+			}
+			memcpy (numbuf, p, len);
+			numbuf[len] = '\0';
 		}
-		memcpy (numbuf, p, len);
-		numbuf[len] = '\0';
 		ut64 val = r_num_get (NULL, numbuf);
 		if (!vec_contains_offset (offsets, val)) {
 			RVecDartOffset_push_back (offsets, &val);
