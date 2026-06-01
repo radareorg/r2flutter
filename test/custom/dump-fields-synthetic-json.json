@@ -12,6 +12,9 @@
       "\"name\":\"items\"",
       "\"type\":\"List<int>\"",
       "\"offset\":24",
+      "\"name\":\"genericItems\"",
+      "\"type\":\"List<X0>\"",
+      "\"offset\":32",
       "\"static\":false"
     ]
   }

@@ -1,0 +1,14 @@
+{
+  "name": "dump-fields-synthetic-xrefs",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-x", "bins/synthetic/field_snapshot.bin"],
+  "timeout": 10,
+  "expect": {
+    "contains": [
+      "field.type field TestClass.items",
+      "type List<int>",
+      "field.type field TestClass.genericItems",
+      "type List<X0>"
+    ]
+  }
+}

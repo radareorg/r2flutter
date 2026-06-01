@@ -352,8 +352,9 @@ Current gaps:
 - `DartStringInfo.references` exists but is not populated yet, so reverse `string -> metadata users` xrefs are still missing
 - object-pool offsets can be collected from code, but pool entries are not decoded yet, so `code -> string/class/field/method` xrefs are not end-to-end
 - library URI resolution works when metadata survives, and `Field.type_ref`
-  links now resolve simple `Type` objects plus `TypeArguments` for generic
-  field types; `TypeParameter` and `FunctionType` remain incomplete
+  links now resolve simple `Type` objects, `TypeArguments` for generic field
+  types, and `TypeParameter` placeholders like `X0`; `FunctionType` remains
+  incomplete
 
 The repo now exposes the currently recoverable subset through:
 
@@ -379,11 +380,11 @@ confidence layers:
   handles some disassembly-derived annotations
 
 The most valuable next work is therefore not "add field extraction" from
-scratch. It is resolving `TypeParameter` / `FunctionType` / interface arrays,
-extending method/signature coverage, populating reverse string references, and
-decoding object-pool entries so PP-offset observations can become real
-`code -> object` xrefs. Field attachment and generic field type rendering now
-have direct synthetic text/JSON coverage.
+scratch. It is resolving `FunctionType` / interface arrays, extending
+method/signature coverage, populating reverse string references, and decoding
+object-pool entries so PP-offset observations can become real `code -> object`
+xrefs. Field attachment, generic field type rendering, and type-parameter field
+types now have direct synthetic text/JSON coverage.
 
 ## `r2flutter -a` Uses Live `RCore` Metadata But Keeps PP Resolution Conservative
 

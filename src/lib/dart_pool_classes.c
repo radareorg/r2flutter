@@ -26,6 +26,7 @@ typedef enum {
 #define DART_TYPE_CLASS_ID_SHIFT 3
 #define DART_TYPE_CLASS_ID_MASK ((1U << 20) - 1)
 #define DART_TYPE_RESOLVE_MAX_DEPTH 8
+#define DART_TYPE_PARAMETER_FUNCTION_FLAG (1 << 3)
 
 typedef struct {
 	ut64 ref_id;
@@ -217,6 +218,55 @@ static int decode_type_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *type_l
 	return 0;
 }
 
+static int decode_type_parameter_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *type_list, ut64 *ref_counter) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return -1;
+	}
+	if (count == 0 || count > 50000) {
+		return 0;
+	}
+	if (ctx->verbose > 1) {
+		fprintf (stderr, "[r2flutter] TypeParameter cluster: count=%" PRIu64 "\n", count);
+	}
+	for (ut64 i = 0; i < count; i++) {
+		DartTypeInfo *ti = R_NEW0 (DartTypeInfo);
+		ti->ref_id = (*ref_counter)++;
+		ti->kind = kTypeParameterCid;
+		ut64 type_test_stub_ref = 0;
+		ut64 hash_ref = 0;
+		ut64 owner_ref = 0;
+		cs_read_ref_id (s, &type_test_stub_ref);
+		cs_read_ref_id (s, &hash_ref);
+		cs_read_ref_id (s, &owner_ref);
+		(void)type_test_stub_ref;
+		(void)hash_ref;
+		ti->owner_ref = owner_ref;
+		ut8 raw16[2] = { 0 };
+		if (!cs_read_bytes (s, raw16, sizeof (raw16))) {
+			dart_type_info_free (ti);
+			return -1;
+		}
+		ti->base = r_read_le16 (raw16);
+		if (!cs_read_bytes (s, raw16, sizeof (raw16))) {
+			dart_type_info_free (ti);
+			return -1;
+		}
+		ti->index = r_read_le16 (raw16);
+		ut8 flags = 0;
+		if (!cs_read_u8 (s, &flags)) {
+			dart_type_info_free (ti);
+			return -1;
+		}
+		ti->flags = flags;
+		r_list_append (type_list, ti);
+		if (ctx->refs && ti->ref_id < ctx->refs_count) {
+			ctx->refs[ti->ref_id] = ti;
+		}
+	}
+	return 0;
+}
+
 static int decode_class_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *class_list, ut64 *ref_counter) {
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
@@ -384,6 +434,19 @@ static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *typ
 	}
 	if (R_STR_ISNOTEMPTY (ti->name)) {
 		return strdup (ti->name);
+	}
+	if (ti->kind == kTypeParameterCid) {
+		bool is_function_param = (ti->flags & DART_TYPE_PARAMETER_FUNCTION_FLAG) != 0;
+		const char *base_prefix = is_function_param? "F": "C";
+		const char *index_prefix = is_function_param? "Y": "X";
+		ut32 index = ti->index >= ti->base? ti->index - ti->base: ti->index;
+		char *name = ti->base > 0
+			? r_str_newf ("%s%u%s%u", base_prefix, ti->base, index_prefix, index)
+			: r_str_newf ("%s%u", index_prefix, index);
+		if (name) {
+			ti->name = strdup (name);
+		}
+		return name;
 	}
 	char *name = NULL;
 	const char *builtin = builtin_type_name (ti->type_class_ref);
@@ -932,6 +995,9 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 				break;
 			case kTypeCid:
 				rc = decode_type_cluster_ext (&stream, ctx, type_list, &ref_counter);
+				break;
+			case kTypeParameterCid:
+				rc = decode_type_parameter_cluster_ext (&stream, ctx, type_list, &ref_counter);
 				break;
 			case kTypeArgumentsCid:
 				rc = decode_type_arguments_cluster_ext (&stream, ctx, type_args_list, &ref_counter);
