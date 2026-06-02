@@ -354,7 +354,7 @@ Plugin commands:
 | `r2flutter -q` | Analyze quietly. |
 | `r2flutter -n` | Analyze with name-pool fallback enabled. |
 | `r2flutter -c` | Dump classes as JSON. |
-| `r2flutter -C` | Dump classes as radare2 type definitions. |
+| `r2flutter -C` | Apply Dart classes, fields, methods, and types to r2. |
 | `r2flutter -F` | Analyze with field extraction enabled. |
 | `r2flutter -s` | Dump strings as JSON. |
 | `r2flutter -t` | Dump strings as radare2 commands. |
@@ -373,8 +373,8 @@ The `-R` path emits:
 - `app.base` and `app.heap_base` flags
 - `method.*` flags for recovered functions
 - comments at method entrypoints
-- `PP=x27` and PP offset helper flags found by disassembling functions and
-  looking for loads from `[x27, imm]`
+- `PP=x27`; per-function PP offset helper scanning is intentionally skipped by
+  default in script output because it is too slow on large apps
 
 ## Practical Limits
 

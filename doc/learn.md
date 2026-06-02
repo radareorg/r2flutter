@@ -780,22 +780,22 @@ The `test/db/extras` cases exercise the `r2flutter` command inside radare2, not 
 Current r2 command export is split across the standalone `-R` script mode, the per-action `-r` renderers, and the in-r2 plugin's direct core mutations:
 
 - [x] `bin/r2flutter -R` emits a loadable script header, `e emu.str=true`, `f app.base`, `f app.heap_base`, one `f method.* = addr` per recovered Dart function, and a `CC` comment at each method address with the recovered name.
-- [x] `bin/r2flutter -R` also sets Dart's pool pointer view with `dr x27=\`e anal.gp\`` and `'f PP=x27`, then scans recovered functions with `pdfj` for `[x27, imm]` loads and emits `f pp.off_0xN=PP+0xN` plus comments on those pool slots.
+- [x] `bin/r2flutter -R` also sets Dart's pool pointer view with `dr x27=\`e anal.gp\`` and `'f PP=x27`. The expensive per-function `pdj 96` PP-offset scan is skipped by default because large apps can have tens of thousands of recovered functions; use xref/analysis paths when pool-slot refs are needed.
 - [x] `bin/r2flutter -r -f` emits only method flags and method-name comments. It does not create functions with `af`, assign calling conventions, or attach classes.
 - [x] `bin/r2flutter -r -s` emits `# Dart Strings` and `iz+ addr len` entries. It registers strings in r2's string table; it does not use `Cs`, string flags, or string-content comments in this renderer.
 - [x] `bin/r2flutter -r -H` emits snapshot flags (`f dart.vm_data`, `f dart.vm_instr`, `f dart.iso_data`, `f dart.iso_instr`, container flags when present) and `CC` comments for snapshot hash/version/tag-style/alignment metadata.
 - [x] `bin/r2flutter -r -i` emits `f it.code_N = addr` / `f it.stub_N = addr` InstructionTable flags and `# it[N] name` comments.
 - [x] `bin/r2flutter -r -x` emits human-readable xref comments and `f xref.* = dst_addr` flags for xrefs with concrete destination addresses. It does not currently emit `ax` commands.
-- [x] `bin/r2flutter -r -c` and `-r -T` preserve the legacy `td struct.dart.*` output, then append a class metadata script section.
+- [x] `bin/r2flutter -r -c` and `-r -T` emit quoted C-like `td struct Name { ... };` commands, then append a class metadata script section.
 - [x] The class metadata section emits `ic+Class @ 0` for each recovered class and `ic+Class.method @ addr` for methods with concrete entrypoints, using dot-free sanitized names so `ic+` parsing is stable.
 - [x] The class metadata section mirrors the same classes into r2 analysis classes with `ac Class`, adds methods with `acm Class method addr`, and records extends/interfaces as hierarchy edges with `acb Class Base 0`.
 - [x] Interfaces have no dedicated r2 analysis-class primitive today, so they are exported as `acb` hierarchy edges plus `# interface ... implements ...` comments.
-- [x] Fields are still represented by the `td struct.dart.*` type body and `# field Class.field +offset type=... static/final/const/late` comments. There is no field-specific `ic+`/`ac` command in the current r2 class APIs.
-- [x] Methods with entrypoints now get `af @ addr`, `afc dyncc:x0+8,^:x0` for static-like methods, and `afc dyncc:x0+8,^:x0!T0` for methods that carry a Dart receiver. The `!T0` role follows `doc/dyncc.md`: instance-ness is represented by a T role, not by a separate static/instance mode.
-- [x] Method signature/kind/static metadata is attached as `CCu base64:... @ addr` comments when an entrypoint exists. Methods without entrypoints remain in comments only.
+- [x] Fields are represented by C-safe `td` struct members plus `# field Class.field +offset type=... static/final/const/late` comments. Original Dart field types are preserved in comments and, for the plugin path, in `RBinField.type`.
+- [x] Methods with entrypoints are exported to the script class section with `ic+Class.method @ addr`, `acm Class method addr`, and method comments. The class script does not emit `af`/`afc`, because that depends on functions already existing in the current r2 analysis state.
+- [x] The generic Dart AOT dyncc string remains available in method comments: `dyncc:x0+8,^:x0` for static-like methods and `dyncc:x0+8,^:x0!T0` for methods that carry a Dart receiver. The `!T0` role follows `doc/dyncc.md`: instance-ness is represented by a T role, not by a separate static/instance mode.
 - [ ] The generic Dart AOT dyncc string models the ARM64 value-register ABI (`x0..x7`, stack tail, `x0` return) but is not yet narrowed per recovered signature arity or optional/named argument shape.
-- [ ] Existing `td struct.dart.*` output can still be too Dart-shaped for r2's C parser when fields use generics or function types, for example `List<int>` or `(int) => String`. The new `ic+`/`ac` metadata section remains usable even when those type definitions warn.
-- [ ] The in-r2 plugin analysis path mutates the core directly: it applies method flags/comments, class/type/field/string flags, xrefs, `af` function creation, and direct-ref comments. It does not currently replay the standalone `ic+`/`ac` class metadata script internally.
+- [x] Current r2 `td` parsing accepts quoted C-like struct definitions but not `struct.dart.Name`, member offsets (`@ 0x...`), generic types (`List<int>`), or function types (`(int) => String`) as field declarations. The renderer maps Dart fields to C-safe storage declarations and keeps Dart-specific type text out of the parser path.
+- [x] The in-r2 plugin `r2flutter -C` path mutates the core directly: it adds Dart classes, methods, and fields to `RBinClass` for `ic`; mirrors classes/methods/bases into `RAnal` classes; and registers struct types with `r_anal_save_base_type`. It does not replay the standalone script internally.
 
 ## Parser Split Boundaries
 
@@ -833,6 +833,26 @@ The fallback class-name scanner reads fixed-size chunks that are not guaranteed 
 Validate the CLI obfuscation map only after `dart_app_new_from_core ()` copies the initial `DartCtx`; loading it before that copy would share one hash table across two independently finalized contexts. After validation, keep the map loaded in the context that will use it instead of immediately forcing a second lazy parse.
 
 Modern object-header cluster helpers run only after `dart_modern_is_supported_snapshot ()` succeeds. Past that public gate, `ctx`, `ctx->layout`, and compressed 32-bit pointer mode are invariants for `src/lib/dart_pool_modern.c`, so private CID accessors should read layout fields directly and stay `static inline`. Keep null/layout fallback checks on the public gate, not inside every CID comparison or fill-skip path.
+
+## 2026-06-01: Class and Field Cluster Recovery
+
+Modern Dart AOT Class and Field metadata is not available in the alloc phase.
+`ClassSerializationCluster::WriteAlloc` only assigns refs and writes class IDs;
+`FieldSerializationCluster::WriteAlloc` only assigns refs. Names, owners,
+instance sizes, method refs, field kind bits, and field offset refs are emitted
+later in `WriteFill`. A parser that tries to decode fields during alloc will
+desynchronize and eventually fall back to string-only class names.
+
+For compressed ObjectHeader snapshots (`cws=4`, e.g. Android mafia / Dart
+3.9.2), `dart_modern_extract_classes_from_clusters ()` now walks the alloc
+section to collect cluster ref ranges and Smi/Mint values, then walks fill to
+recover Class, Field, Function, and String metadata. This populates `ic` with
+real class members and avoids the old `0fields` class-only result.
+
+Non-compressed ObjectHeader snapshots (`cws=8`, e.g. Android first and the iOS
+sample) still need a separate ROData string/ref path. Until that exists, the
+class extractor skips the legacy alloc-phase decoder and reports string-based
+fallback classes explicitly instead of logging bogus huge CIDs.
 
 ## RVec Conversion Boundaries
 

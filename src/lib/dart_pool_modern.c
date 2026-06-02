@@ -1200,6 +1200,407 @@ fail:
 	return false;
 }
 
+static bool modern_can_extract_classes(DartCtx *ctx) {
+	if (!ctx || !ctx->layout || ctx->layout->tag_style != DART_TAG_STYLE_OBJECT_HEADER) {
+		return false;
+	}
+	return ctx->compressed_word_size == 4;
+}
+
+static inline int modern_cid_field(DartCtx *ctx) {
+	(void)ctx;
+	return 11;
+}
+
+static char *modern_dup_ref_name(DartCtx *ctx, char **strings_by_ref, ut64 refs_count, ut64 ref, const char *fallback, ut64 id) {
+	char *name = NULL;
+	if (ref > 0 && ref < refs_count && R_STR_ISNOTEMPTY (strings_by_ref[ref])) {
+		name = strdup (strings_by_ref[ref]);
+		dart_obf_apply (ctx, &name);
+	}
+	if (R_STR_ISEMPTY (name)) {
+		free (name);
+		name = r_str_newf ("%s_%" PFMT64u, fallback, id);
+	}
+	return name;
+}
+
+static DartClassInfo *modern_class_by_ref(DartClassInfo **class_by_ref, ut64 refs_count, RList *classes, ut64 ref) {
+	if (ref > 0 && ref < refs_count && class_by_ref && class_by_ref[ref]) {
+		return class_by_ref[ref];
+	}
+	if (!classes) {
+		return NULL;
+	}
+	RListIter *it;
+	DartClassInfo *ci;
+	r_list_foreach (classes, it, ci) {
+		if (ci && ci->ref_id == ref) {
+			return ci;
+		}
+	}
+	return NULL;
+}
+
+static void modern_finalize_class_names(DartCtx *ctx, RList *classes, char **strings_by_ref, ut64 refs_count) {
+	RListIter *cit;
+	DartClassInfo *ci;
+	r_list_foreach (classes, cit, ci) {
+		if (!ci) {
+			continue;
+		}
+		if (!ci->name) {
+			ci->name = modern_dup_ref_name (ctx, strings_by_ref, refs_count, ci->name_ref, "class", ci->ref_id);
+		}
+		if (ci->fields) {
+			RListIter *fit;
+			DartFieldInfo *fi;
+			r_list_foreach (ci->fields, fit, fi) {
+				if (!fi) {
+					continue;
+				}
+				if (!fi->name) {
+					fi->name = modern_dup_ref_name (ctx, strings_by_ref, refs_count, fi->name_ref, "field", fi->ref_id);
+				}
+				if (!fi->type_name) {
+					fi->type_name = strdup ("dynamic");
+				}
+			}
+		}
+		if (ci->methods) {
+			RListIter *mit;
+			DartMethodInfo *mi;
+			r_list_foreach (ci->methods, mit, mi) {
+				if (!mi) {
+					continue;
+				}
+				if (!mi->name) {
+					mi->name = modern_dup_ref_name (ctx, strings_by_ref, refs_count, mi->name_ref, "method", mi->ref_id);
+				}
+				if (!mi->owner_name) {
+					mi->owner_name = strdup (ci->name);
+				}
+			}
+		}
+	}
+}
+
+static bool modern_read_mint_alloc(ClusterStream *s, ModernClusterMeta *meta, int64_t *mint_values, ut8 *mint_ok, ut64 refs_count) {
+	ut64 count = 0;
+	if (!cs_read_unsigned (s, &count)) {
+		return false;
+	}
+	if (count > 1000000) {
+		return false;
+	}
+	meta->count = count;
+	for (ut64 i = 0; i < count; i++) {
+		int64_t value = 0;
+		if (!cs_read_tagged64 (s, &value)) {
+			return false;
+		}
+		ut64 ref = meta->start_ref + i;
+		if (ref < refs_count) {
+			mint_values[ref] = value;
+			mint_ok[ref] = 1;
+		}
+	}
+	return true;
+}
+
+static bool modern_read_class_fill(DartCtx *ctx, ClusterStream *s, const ModernClusterMeta *meta, RList *classes, DartClassInfo **class_by_ref, ut64 refs_count) {
+	const int word_size = ctx->compressed_word_size? ctx->compressed_word_size: 4;
+	ut64 ref = meta->start_ref;
+	for (ut64 j = 0; j < meta->count; j++, ref++) {
+		ut64 refs[13] = { 0 };
+		ut32 class_id = 0;
+		ut32 instance_size_words = 0;
+		ut32 next_field_offset_words = 0;
+		ut32 type_args_offset_words = 0;
+		ut32 num_type_args = 0;
+		ut32 num_native_fields = 0;
+		ut32 state_bits = 0;
+		for (int k = 0; k < 13; k++) {
+			if (!cs_read_ref_id (s, &refs[k])) {
+				return false;
+			}
+		}
+		if (!cs_read_tagged32 (s, &class_id) ||
+			!cs_read_tagged32 (s, &instance_size_words) ||
+			!cs_read_tagged32 (s, &next_field_offset_words) ||
+			!cs_read_tagged32 (s, &type_args_offset_words) ||
+			!cs_read_tagged32 (s, &num_type_args) ||
+			!cs_read_tagged32 (s, &num_native_fields) ||
+			!cs_read_tagged32 (s, &state_bits)) {
+			return false;
+		}
+		bool is_predefined = j < meta->main_count;
+		bool is_top_level = class_id >= (1U << 20);
+		if (is_predefined || !is_top_level) {
+			ut64 bitmap = 0;
+			if (!cs_read_unsigned (s, &bitmap)) {
+				return false;
+			}
+		}
+		(void)next_field_offset_words;
+		(void)num_native_fields;
+		(void)state_bits;
+		DartClassInfo *ci = R_NEW0 (DartClassInfo);
+		ci->ref_id = ref;
+		ci->name_ref = refs[0];
+		ci->instance_size = instance_size_words * word_size;
+		ci->type_argument_offset = type_args_offset_words? type_args_offset_words * word_size: 0;
+		ci->num_type_parameters = num_type_args;
+		if (is_top_level) {
+			ci->flags |= DART_CLASS_TOPLEVEL;
+		}
+		ci->fields = r_list_newf ((RListFree)dart_field_info_free);
+		ci->interfaces = r_list_newf (NULL);
+		ci->methods = r_list_newf ((RListFree)dart_method_info_free);
+		r_list_append (classes, ci);
+		if (ref < refs_count) {
+			class_by_ref[ref] = ci;
+		}
+	}
+	return true;
+}
+
+static void modern_field_flags_from_kind(ut32 kind_bits, ut32 *out_flags) {
+	ut32 flags = 0;
+	if (kind_bits & (1U << 0)) {
+		flags |= DART_FIELD_CONST;
+	}
+	if (kind_bits & (1U << 1)) {
+		flags |= DART_FIELD_STATIC;
+	}
+	if (kind_bits & (1U << 2)) {
+		flags |= DART_FIELD_FINAL;
+	}
+	if (kind_bits & (1U << 10)) {
+		flags |= DART_FIELD_LATE;
+	}
+	*out_flags = flags;
+}
+
+static bool modern_read_field_fill(DartCtx *ctx, ClusterStream *s, const ModernClusterMeta *meta, RList *classes, DartClassInfo **class_by_ref, int64_t *mint_values, ut8 *mint_ok, ut64 refs_count) {
+	const int word_size = ctx->compressed_word_size? ctx->compressed_word_size: 4;
+	ut64 ref = meta->start_ref;
+	for (ut64 j = 0; j < meta->count; j++, ref++) {
+		ut64 name_ref = 0;
+		ut64 owner_ref = 0;
+		ut64 type_ref = 0;
+		ut64 initializer_ref = 0;
+		ut32 kind_bits = 0;
+		ut64 offset_ref = 0;
+		if (!cs_read_ref_id (s, &name_ref) ||
+			!cs_read_ref_id (s, &owner_ref) ||
+			!cs_read_ref_id (s, &type_ref) ||
+			!cs_read_ref_id (s, &initializer_ref) ||
+			!cs_read_tagged32 (s, &kind_bits) ||
+			!cs_read_ref_id (s, &offset_ref)) {
+			return false;
+		}
+		(void)initializer_ref;
+		DartClassInfo *owner = modern_class_by_ref (class_by_ref, refs_count, classes, owner_ref);
+		if (!owner || !owner->fields) {
+			continue;
+		}
+		DartFieldInfo *fi = R_NEW0 (DartFieldInfo);
+		fi->ref_id = ref;
+		fi->name_ref = name_ref;
+		fi->owner_ref = owner_ref;
+		fi->type_ref = type_ref;
+		modern_field_flags_from_kind (kind_bits, &fi->flags);
+		if (! (fi->flags & DART_FIELD_STATIC) && offset_ref < refs_count && mint_ok[offset_ref]) {
+			int64_t word_off = mint_values[offset_ref];
+			if (word_off > 0 && word_off < INT32_MAX / word_size) {
+				fi->offset = (ut32) (word_off * word_size);
+			}
+		}
+		r_list_append (owner->fields, fi);
+	}
+	return true;
+}
+
+static bool modern_read_function_fill(ClusterStream *s, const ModernClusterMeta *meta, RList *methods) {
+	ut64 ref = meta->start_ref;
+	for (ut64 j = 0; j < meta->count; j++, ref++) {
+		ut64 name_ref = 0;
+		ut64 owner_ref = 0;
+		ut64 sig_ref = 0;
+		ut64 data_ref = 0;
+		ut64 code_index = 0;
+		ut32 kind_tag = 0;
+		if (!cs_read_ref_id (s, &name_ref) ||
+			!cs_read_ref_id (s, &owner_ref) ||
+			!cs_read_ref_id (s, &sig_ref) ||
+			!cs_read_ref_id (s, &data_ref) ||
+			!cs_read_unsigned (s, &code_index) ||
+			!cs_read_tagged32 (s, &kind_tag)) {
+			return false;
+		}
+		DartMethodInfo *mi = R_NEW0 (DartMethodInfo);
+		mi->ref_id = ref;
+		mi->name_ref = name_ref;
+		mi->owner_ref = owner_ref;
+		mi->signature_ref = sig_ref;
+		mi->data_ref = data_ref;
+		mi->code_index = code_index? code_index - 1: UT64_MAX;
+		mi->kind_tag = kind_tag;
+		r_list_append (methods, mi);
+	}
+	return true;
+}
+
+static void modern_attach_methods(RList *methods, RList *classes, DartClassInfo **class_by_ref, ut64 refs_count) {
+	while (!r_list_empty (methods)) {
+		DartMethodInfo *mi = (DartMethodInfo *)r_list_pop_head (methods);
+		DartClassInfo *owner = modern_class_by_ref (class_by_ref, refs_count, classes, mi->owner_ref);
+		if (owner && owner->methods) {
+			r_list_append (owner->methods, mi);
+		} else {
+			dart_method_info_free (mi);
+		}
+	}
+}
+
+static void modern_free_strings(char **strings_by_ref, ut64 refs_count) {
+	if (!strings_by_ref) {
+		return;
+	}
+	for (ut64 i = 0; i < refs_count; i++) {
+		free (strings_by_ref[i]);
+	}
+	free (strings_by_ref);
+}
+
+bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, RList *class_list) {
+	if (!modern_can_extract_classes (ctx) || !class_list || cluster_start >= cluster_end || num_clusters == 0 || num_clusters > 100000) {
+		return false;
+	}
+	ut64 total_refs = ctx->num_base_objects + ctx->num_objects + 16;
+	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)num_clusters, sizeof (ModernClusterMeta));
+	char **strings_by_ref = (char **)calloc ((size_t)total_refs, sizeof (char *));
+	DartClassInfo **class_by_ref = (DartClassInfo **)calloc ((size_t)total_refs, sizeof (DartClassInfo *));
+	int64_t *mint_values = (int64_t *)calloc ((size_t)total_refs, sizeof (int64_t));
+	ut8 *mint_ok = (ut8 *)calloc ((size_t)total_refs, 1);
+	RList *tmp_classes = r_list_newf ((RListFree)dart_class_info_free);
+	RList *tmp_methods = r_list_newf ((RListFree)dart_method_info_free);
+	if (!meta || !strings_by_ref || !class_by_ref || !mint_values || !mint_ok) {
+		free (meta);
+		modern_free_strings (strings_by_ref, total_refs);
+		free (class_by_ref);
+		free (mint_values);
+		free (mint_ok);
+		r_list_free (tmp_classes);
+		r_list_free (tmp_methods);
+		return false;
+	}
+	modern_load_vm_base_strings (ctx, strings_by_ref, total_refs);
+	ClusterStream s = {
+		.ctx = ctx,
+		.cursor = cluster_start,
+		.end = cluster_end,
+};
+	ut64 next_ref = ctx->num_base_objects + 1;
+	for (ut64 i = 0; i < num_clusters; i++) {
+		ut32 tags = 0;
+		if (!cs_read_tagged32 (&s, &tags)) {
+			goto fail;
+		}
+		meta[i].cid = (int) ((tags >> 12) & 0xFFFFF);
+		meta[i].is_canonical = ((tags >> 1) & 1) != 0;
+		meta[i].is_immutable = (tags & (1 << 6)) != 0;
+		meta[i].start_ref = next_ref;
+		if (meta[i].cid == modern_cid_mint (ctx)) {
+			if (!modern_read_mint_alloc (&s, &meta[i], mint_values, mint_ok, total_refs)) {
+				goto fail;
+			}
+		} else if (!modern_skip_alloc (&s, ctx, &meta[i])) {
+			if (ctx->verbose > 0) {
+				fprintf (stderr, "[r2flutter] modern classes alloc: failed cid=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, i, s.cursor);
+			}
+			goto fail;
+		}
+		next_ref += meta[i].count;
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		ModernFillSpec spec = modern_get_fill_spec (ctx, meta[i].cid);
+		ut64 ref = meta[i].start_ref;
+		if (modern_is_string_cid (ctx, meta[i].cid)) {
+			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
+				char *value = NULL;
+				if (!modern_read_cluster_string (&s, &value)) {
+					goto fail;
+				}
+				if (ref < total_refs) {
+					free (strings_by_ref[ref]);
+					strings_by_ref[ref] = value;
+				} else {
+					free (value);
+				}
+			}
+			continue;
+		}
+		if (spec.kind == MODERN_FILL_CLASS) {
+			if (!modern_read_class_fill (ctx, &s, &meta[i], tmp_classes, class_by_ref, total_refs)) {
+				goto fail;
+			}
+			continue;
+		}
+		if (meta[i].cid == modern_cid_field (ctx)) {
+			if (!modern_read_field_fill (ctx, &s, &meta[i], tmp_classes, class_by_ref, mint_values, mint_ok, total_refs)) {
+				goto fail;
+			}
+			continue;
+		}
+		if (meta[i].cid == modern_cid_function (ctx)) {
+			if (!modern_read_function_fill (&s, &meta[i], tmp_methods)) {
+				goto fail;
+			}
+			continue;
+		}
+		if (!modern_skip_fill_by_kind (&s, ctx, &meta[i], &spec)) {
+			if (ctx->verbose > 0) {
+				fprintf (stderr, "[r2flutter] modern classes fill: failed cid=%d kind=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, spec.kind, i, s.cursor);
+			}
+			goto fail;
+		}
+	}
+	modern_attach_methods (tmp_methods, tmp_classes, class_by_ref, total_refs);
+	modern_finalize_class_names (ctx, tmp_classes, strings_by_ref, total_refs);
+	if (r_list_length (tmp_classes) == 0) {
+		goto fail;
+	}
+	while (!r_list_empty (tmp_classes)) {
+		DartClassInfo *ci = (DartClassInfo *)r_list_pop_head (tmp_classes);
+		r_list_append (class_list, ci);
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		free (meta[i].discarded_codes);
+	}
+	free (meta);
+	modern_free_strings (strings_by_ref, total_refs);
+	free (class_by_ref);
+	free (mint_values);
+	free (mint_ok);
+	r_list_free (tmp_classes);
+	r_list_free (tmp_methods);
+	return true;
+fail:
+	for (ut64 i = 0; i < num_clusters; i++) {
+		free (meta[i].discarded_codes);
+	}
+	free (meta);
+	modern_free_strings (strings_by_ref, total_refs);
+	free (class_by_ref);
+	free (mint_values);
+	free (mint_ok);
+	r_list_free (tmp_classes);
+	r_list_free (tmp_methods);
+	return false;
+}
+
 bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen) {
 	if (!dart_modern_is_supported_snapshot (ctx) || !itlen || cluster_start >= cluster_end) {
 		return false;

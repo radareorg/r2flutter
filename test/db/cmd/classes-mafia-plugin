@@ -1,0 +1,19 @@
+NAME=r2-plugin-C-mafia-future
+FILE=-
+CMDS=<<EOF
+!!sh -c "r2 -NN -q -escr.color=0 -e bin.relocs.apply=true -i ../src/r2/core_flutter.dylib -qc \"r2flutter -C\" -qc \"ic dart_Future\" -qc q bins/android/mafia/libapp.so 2>&1"
+EOF
+EXPECT=<<EOF
+INFO: Applied 8986 Dart classes, 1756 fields, 26609 methods
+class dart_Future
+0x00000000 method dart_Future      Future_error
+0x00000000 method dart_Future      Future_
+0x00000000 method dart_Future      _anonymous_closure_
+0x00000000 method dart_Future      Future_value
+0x00000000 method dart_Future      wait
+0x00000000 method dart_Future      handleError
+0x00000000 method dart_Future      Future_delayed
+0x00000000 method dart_Future      Future_microtask
+0x00000000 method dart_Future      Future_sync
+EOF
+RUN

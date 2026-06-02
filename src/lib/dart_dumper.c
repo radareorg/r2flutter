@@ -18,7 +18,7 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RVecDartOffset 
 	if (!core || !offsets) {
 		return;
 	}
-	r_strf_var (cmd, 128, "pdfj @ 0x%" PFMT64x, addr);
+	r_strf_var (cmd, 128, "pdj 96 @ 0x%" PFMT64x, addr);
 	char *s = r_core_cmd_str (core, cmd);
 	if (!s) {
 		return;
@@ -100,6 +100,10 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RVecDartOffset 
 
 static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
 	if (!app || !app->core || !app->functions) {
+		return;
+	}
+	if (!app->dctx.verbose) {
+		r_strbuf_append (sb, "# PP offset scan skipped by default; use xrefs/analysis for pool-slot refs\n");
 		return;
 	}
 	RVecDartOffset offsets;

@@ -2,12 +2,21 @@ NAME=text-classes-mafia
 FILE=-
 CMDS=!!../bin/r2flutter -c bins/android/mafia 2>/dev/null | head -6
 EXPECT=<<EOF
-class Handle (size=0)
-class MonomorphicSmiableCall (size=0)
-class ClosureData (size=0)
-class _NativeFinalizer (size=0)
-class _FunctionType (size=0)
-class Uint64List (size=0)
+class Pointer (size=32)
+  methods:
+    0x00000000 get:hashCode (GetterFunction)
+    0x00000000 == (RegularFunction)
+class NativeType (size=16)
+class NativeFunction (size=16)
+EOF
+RUN
+
+NAME=text-classes-mafia-modern-members
+FILE=-
+CMDS=!!../bin/r2flutter -c bins/android/mafia 2>/dev/null | awk '/class _RawReceivePort@1026248/{raw=1} raw && /_portMap@1026248 static final/{field=1} /firstMatch/{method=1} END { print "field=" field + 0; print "method=" method + 0 }'
+EXPECT=<<EOF
+field=1
+method=1
 EOF
 RUN
 
@@ -16,11 +25,11 @@ FILE=-
 CMDS=!!../bin/r2flutter -r -c bins/android/mafia 2>/dev/null | head -7
 EXPECT=<<EOF
 # Dart classes extracted from snapshot
-# class Handle (size=0)
-"td struct.dart.Handle { };"
-# class MonomorphicSmiableCall (size=0)
-"td struct.dart.MonomorphicSmiableCall { };"
-# class ClosureData (size=0)
-"td struct.dart.ClosureData { };"
+# class Pointer (size=32)
+#   type_params: 1
+"td struct dart_Pointer { };"
+#   method 0x00000000 get:hashCode (GetterFunction)
+#   method 0x00000000 == (RegularFunction)
+# class NativeType (size=16)
 EOF
 RUN

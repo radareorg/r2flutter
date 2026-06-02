@@ -3,7 +3,7 @@ FILE=-
 CMDS=<<EOF
 !!../bin/r2flutter -h
 ?e ===
-r2flutter -h
+!!r2 -NN -q -i ../src/r2/core_flutter.dylib -qc 'r2flutter -h' -
 EOF
 EXPECT=<<EOF
 Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
@@ -33,7 +33,7 @@ Usage: r2flutter [-ajirfqncFstxH] [args]
 | r2flutter          analyze dart snapshot and apply flags/comments
 | r2flutter -a       run Dart-aware code analysis and recover code refs
 | r2flutter -c       dump classes as JSON
-| r2flutter -C       dump classes as r2 type definitions
+| r2flutter -C       apply Dart classes, fields, methods and types
 | r2flutter -F       include field info in class output
 | r2flutter -f [n]   list first N discovered functions (default 20)
 | r2flutter -H       dump Dart AOT snapshot header info

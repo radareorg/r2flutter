@@ -323,7 +323,7 @@ static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTabl
 	if (!ctx || !ctx->core || !entry || !entry->address || !uses || !seen) {
 		return;
 	}
-	r_strf_var (cmd, 128, "pdfj @ 0x%" PFMT64x, entry->address);
+	r_strf_var (cmd, 128, "pdj 96 @ 0x%" PFMT64x, entry->address);
 	char *s = r_core_cmd_str (ctx->core, cmd);
 	if (!s) {
 		return;

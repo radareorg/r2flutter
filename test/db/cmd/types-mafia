@@ -4,12 +4,12 @@ CMDS=<<EOF
 !!../bin/r2flutter -T bins/android/mafia 2>/dev/null | head -6
 EOF
 EXPECT=<<EOF
-class Handle (size=0)
-class MonomorphicSmiableCall (size=0)
-class ClosureData (size=0)
-class _NativeFinalizer (size=0)
-class _FunctionType (size=0)
-class Uint64List (size=0)
+class Pointer (size=32)
+  methods:
+    0x00000000 get:hashCode (GetterFunction)
+    0x00000000 == (RegularFunction)
+class NativeType (size=16)
+class NativeFunction (size=16)
 EOF
 RUN
 
@@ -20,11 +20,11 @@ CMDS=<<EOF
 EOF
 EXPECT=<<EOF
 # Dart classes extracted from snapshot
-# class Handle (size=0)
-"td struct.dart.Handle { };"
-# class MonomorphicSmiableCall (size=0)
-"td struct.dart.MonomorphicSmiableCall { };"
-# class ClosureData (size=0)
-"td struct.dart.ClosureData { };"
+# class Pointer (size=32)
+#   type_params: 1
+"td struct dart_Pointer { };"
+#   method 0x00000000 get:hashCode (GetterFunction)
+#   method 0x00000000 == (RegularFunction)
+# class NativeType (size=16)
 EOF
 RUN

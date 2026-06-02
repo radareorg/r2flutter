@@ -72,7 +72,7 @@ typedef struct DartFieldInfo {
 #define DART_FIELD_CONST (1 << 0)
 #define DART_FIELD_STATIC (1 << 1)
 #define DART_FIELD_FINAL (1 << 2)
-#define DART_FIELD_LATE (1 << 6)
+#define DART_FIELD_LATE (1 << 10)
 
 typedef struct DartClassInfo {
 	ut64 ref_id;
@@ -167,6 +167,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt);
 
 RList *dart_pool_extract_classes(DartCtx *ctx);
 char *dart_pool_dump_classes(DartCtx *ctx, int fmt);
+int dart_pool_apply_classes_to_core(DartCtx *ctx);
 
 // Free functions
 void dart_field_info_free(DartFieldInfo *fi);

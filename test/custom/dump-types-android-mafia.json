@@ -6,7 +6,7 @@
   "expect": {
     "contains": [
       "Handle",
-      "ClosureData",
+      "_RegExp@0150898",
       "_FunctionType"
     ]
   }

@@ -1471,6 +1471,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	RList *array_list = r_list_newf (free_array_info);
 	ctx->strings = r_list_newf (free_dart_string);
 	RList *libraries = r_list_newf (free_library_info);
+	bool modern_classes = false;
 	if (header_valid) {
 		ctx->num_base_objects = nb;
 		ctx->num_objects = no;
@@ -1478,6 +1479,39 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		ut64 total_refs = nb + no + 16;
 		ctx->refs_count = total_refs;
 		ctx->refs = (void **)calloc (total_refs, sizeof (void *));
+		modern_classes = dart_modern_extract_classes_from_clusters (ctx, cluster_start, snapshot_base + total_len, nc, class_list);
+		if (modern_classes) {
+			if (ctx->verbose > 0) {
+				int modern_fields = 0;
+				int modern_methods = 0;
+				RListIter *cit;
+				DartClassInfo *mci;
+				r_list_foreach (class_list, cit, mci) {
+					modern_fields += mci->fields? r_list_length (mci->fields): 0;
+					modern_methods += mci->methods? r_list_length (mci->methods): 0;
+				}
+				fprintf (stderr, "[r2flutter] Extracted classes from modern fill: %d fields=%d methods=%d\n", r_list_length (class_list), modern_fields, modern_methods);
+			}
+		}
+	}
+	bool synthetic_legacy_parse = ctx->layout &&
+		ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER &&
+		ctx->compressed_word_size == 8 &&
+		itlen == 0 &&
+		no < 1000 &&
+		nc < 100;
+	if (synthetic_legacy_parse) {
+		for (int i = 0; i < 32; i++) {
+			if (ctx->snapshot_hash[i] != '0') {
+				synthetic_legacy_parse = false;
+				break;
+			}
+		}
+	}
+	bool legacy_class_parse = !ctx->layout ||
+		ctx->layout->tag_style != DART_TAG_STYLE_OBJECT_HEADER ||
+		synthetic_legacy_parse;
+	if (header_valid && !modern_classes && legacy_class_parse) {
 		ClusterStream stream = {
 			.ctx = ctx,
 			.cursor = cluster_start,
@@ -1558,7 +1592,9 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] Extracted fields from clusters: %d\n", r_list_length (field_list));
 		}
-	} else {
+	} else if (header_valid && !modern_classes && ctx->verbose > 0) {
+		fprintf (stderr, "[r2flutter] class extraction: ObjectHeader fill parser unavailable for cws=%d, using string fallback\n", ctx->compressed_word_size);
+	} else if (!header_valid) {
 		if (ctx->verbose > 0) {
 			fprintf (stderr, "[r2flutter] class extraction: skipping cluster parse (clusters=%" PRIu64 " objs=%" PRIu64 ")\n", nc, no);
 		}
@@ -1817,6 +1853,11 @@ static char *member_export_name(const char *name, const char *fallback) {
 			*p = '_';
 		}
 	}
+	if (isdigit ((ut8)*safe)) {
+		char *prefixed = r_str_newf ("%s_%s", fallback, safe);
+		free (safe);
+		safe = prefixed;
+	}
 	if (R_STR_ISEMPTY (safe)) {
 		free (safe);
 		return strdup (fallback);
@@ -1881,6 +1922,54 @@ static char *method_dyncc(const DartClassInfo *ci, const DartMethodInfo *mi) {
 	return r_str_newf ("dyncc:x0+8,^:x0%s", method_has_receiver (ci, mi)? "!T0": "");
 }
 
+static const char *field_c_type(const DartFieldInfo *fi) {
+	if (!fi || R_STR_ISEMPTY (fi->type_name)) {
+		return "uint64_t";
+	}
+	if (!strcmp (fi->type_name, "double")) {
+		return "double";
+	}
+	if (!strcmp (fi->type_name, "int")) {
+		return "int64_t";
+	}
+	return "void *";
+}
+
+static void append_c_padding(RStrBuf *sb, ut32 *cursor, ut32 target, int *pad_idx) {
+	if (!sb || !cursor || !pad_idx || target <= *cursor) {
+		return;
+	}
+	r_strbuf_appendf (sb, " uint8_t _pad%d[0x%x];", *pad_idx, target - *cursor);
+	(*pad_idx)++;
+	*cursor = target;
+}
+
+static void append_class_struct_members(RStrBuf *sb, const DartClassInfo *ci) {
+	if (!sb || !ci || !ci->fields || r_list_length (ci->fields) == 0) {
+		return;
+	}
+	ut32 cursor = 0;
+	int pad_idx = 0;
+	RListIter *fit;
+	DartFieldInfo *fi;
+	r_list_foreach (ci->fields, fit, fi) {
+		if (!fi || R_STR_ISEMPTY (fi->name) || (fi->flags & DART_FIELD_STATIC)) {
+			continue;
+		}
+		if (ci->instance_size > 0 && fi->offset >= ci->instance_size) {
+			continue;
+		}
+		if (fi->offset < cursor) {
+			continue;
+		}
+		append_c_padding (sb, &cursor, fi->offset, &pad_idx);
+		char *field_name = member_export_name (fi->name, "field");
+		r_strbuf_appendf (sb, " %s %s;", field_c_type (fi), field_name);
+		cursor = fi->offset + 8;
+		free (field_name);
+	}
+}
+
 static void append_comment_cmd(RStrBuf *sb, ut64 addr, const char *msg) {
 	if (!sb || !addr || R_STR_ISEMPTY (msg)) {
 		return;
@@ -1901,6 +1990,11 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci) {
 	r_strbuf_appendf (sb, "# r2 class %s original=%s\n", class_name, ci->name);
 	r_strbuf_appendf (sb, "ic+%s @ 0\n", class_name);
 	r_strbuf_appendf (sb, "ac %s\n", class_name);
+#if 0
+	// TOO SLOW
+	r_strbuf_appendf (sb, "af @ 0x%" PFMT64x "\n", addr);
+	r_strbuf_appendf (sb, "afc %s @ 0x%" PFMT64x "\n", cc, addr);
+#endif
 	if (R_STR_ISNOTEMPTY (ci->super_class_name)) {
 		char *super_name = class_export_name (ci->super_class_name);
 		r_strbuf_appendf (sb, "ac %s\n", super_name);
@@ -1928,7 +2022,13 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci) {
 			if (!fi || R_STR_ISEMPTY (fi->name)) {
 				continue;
 			}
-			r_strbuf_appendf (sb, "# field %s.%s +0x%x type=%s %s%s%s%s\n", class_name, fi->name, fi->offset, R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic", (fi->flags & DART_FIELD_STATIC)? "static": "instance", (fi->flags & DART_FIELD_FINAL)? " final": "", (fi->flags & DART_FIELD_CONST)? " const": "", (fi->flags & DART_FIELD_LATE)? " late": "");
+			r_strbuf_appendf (sb, "# field %s.%s +0x%x type=%s %s%s%s%s\n",
+				class_name, fi->name, fi->offset,
+				R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic",
+				(fi->flags & DART_FIELD_STATIC)? "static": "instance",
+				(fi->flags & DART_FIELD_FINAL)? " final": "",
+				(fi->flags & DART_FIELD_CONST)? " const": "",
+			       	(fi->flags & DART_FIELD_LATE)? " late": "");
 		}
 	}
 	if (ci->methods) {
@@ -1949,8 +2049,6 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci) {
 			if (addr) {
 				r_strbuf_appendf (sb, "ic+%s.%s @ 0x%" PFMT64x "\n", class_name, method_name, addr);
 				r_strbuf_appendf (sb, "acm %s %s 0x%" PFMT64x "\n", class_name, method_name, addr);
-				r_strbuf_appendf (sb, "af @ 0x%" PFMT64x "\n", addr);
-				r_strbuf_appendf (sb, "afc %s @ 0x%" PFMT64x "\n", cc, addr);
 				char *msg = r_str_newf ("dart: method %s.%s kind=%s mode=%s cc=%s%s%s",
 					ci->name,
 					mi->name,
@@ -1979,19 +2077,13 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool 
 		ci->enums &&
 		r_list_length (ci->enums) > 0;
 	if (emit_r2) {
-		char safe_name[256];
-		snprintf (safe_name, sizeof (safe_name), "%s", ci->name);
-		r_name_filter (safe_name, 0);
-		for (char *p = safe_name; *p; p++) {
-			if (*p == '.') {
-				*p = '_';
-			}
-		}
+		char *safe_name = class_export_name (ci->name);
 		if (emit_enum_literal) {
 			r_strbuf_appendf (sb, "# enum %s", ci->name);
 			append_enum_values (sb, ci);
 			r_strbuf_append (sb, "\n");
-			r_strbuf_appendf (sb, "\"td struct.dart.%s { };\"\n", safe_name);
+			r_strbuf_appendf (sb, "\"td struct %s { };\"\n", safe_name);
+			free (safe_name);
 			return;
 		}
 		r_strbuf_appendf (sb, "# class %s", ci->name);
@@ -2016,14 +2108,8 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool 
 		if (ci->num_type_parameters > 0) {
 			r_strbuf_appendf (sb, "#   type_params: %u\n", ci->num_type_parameters);
 		}
-		r_strbuf_appendf (sb, "\"td struct.dart.%s {", safe_name);
-		if (ci->fields && r_list_length (ci->fields) > 0) {
-			RListIter *fit;
-			DartFieldInfo *fi;
-			r_list_foreach (ci->fields, fit, fi) {
-				r_strbuf_appendf (sb, " %s %s @ 0x%x;", r_str_get (fi->type_name), r_str_get (fi->name), fi->offset);
-			}
-		}
+		r_strbuf_appendf (sb, "\"td struct %s {", safe_name);
+		append_class_struct_members (sb, ci);
 		r_strbuf_append (sb, " };\"\n");
 		if (ci->methods && r_list_length (ci->methods) > 0) {
 			RListIter *mit;
@@ -2036,6 +2122,7 @@ static void dump_class_text(RStrBuf *sb, const DartClassInfo *ci, int fmt, bool 
 				r_strbuf_appendf (sb, " (%s)\n", method_kind_name (mi->kind_tag));
 			}
 		}
+		free (safe_name);
 		return;
 	}
 	if (emit_enum_literal) {
@@ -2139,4 +2226,318 @@ char *dart_pool_dump_classes(DartCtx *ctx, int fmt) {
 	}
 	dart_class_list_free (classes);
 	return r_strbuf_drain (sb);
+}
+
+static RBinClass *core_bin_get_class(RCore *core, const char *class_name) {
+	if (!core || R_STR_ISEMPTY (class_name)) {
+		return NULL;
+	}
+	RList *klasses = r_bin_get_classes (core->bin);
+	if (!klasses) {
+		return NULL;
+	}
+	RListIter *it;
+	RBinClass *klass;
+	r_list_foreach (klasses, it, klass) {
+		if (!klass || !klass->name) {
+			continue;
+		}
+		const char *name = r_bin_name_tostring (klass->name);
+		if (name && !strcmp (name, class_name)) {
+			return klass;
+		}
+	}
+	return NULL;
+}
+
+static RBinClass *core_bin_get_or_add_class(RCore *core, const char *class_name, const DartClassInfo *ci) {
+	RBinClass *klass = core_bin_get_class (core, class_name);
+	if (klass) {
+		return klass;
+	}
+	RList *klasses = r_bin_get_classes (core->bin);
+	if (!klasses) {
+		return NULL;
+	}
+	klass = r_bin_class_new (class_name, NULL, 0);
+	if (!klass) {
+		return NULL;
+	}
+	klass->origin = R_BIN_CLASS_ORIGIN_USER;
+	klass->addr = 0;
+	klass->instance_size = ci? ci->instance_size: 0;
+	klass->index = r_list_length (klasses);
+	r_list_append (klasses, klass);
+	return klass;
+}
+
+static bool bin_class_has_method(RBinClass *klass, const char *method_name) {
+	if (!klass || R_STR_ISEMPTY (method_name)) {
+		return false;
+	}
+	RBinSymbol *sym;
+	R_VEC_FOREACH (&klass->methods, sym) {
+		if (!sym || !sym->name) {
+			continue;
+		}
+		const char *name = r_bin_name_tostring (sym->name);
+		if (name && !strcmp (name, method_name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool bin_class_has_field(RBinClass *klass, const char *field_name) {
+	if (!klass || R_STR_ISEMPTY (field_name)) {
+		return false;
+	}
+	RBinField *field;
+	R_VEC_FOREACH (&klass->fields, field) {
+		if (!field || !field->name) {
+			continue;
+		}
+		const char *name = r_bin_name_tostring (field->name);
+		if (name && !strcmp (name, field_name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void core_apply_bin_field(RBinClass *klass, const DartFieldInfo *fi, int *count) {
+	if (!klass || !fi || R_STR_ISEMPTY (fi->name)) {
+		return;
+	}
+	char *field_name = member_export_name (fi->name, "field");
+	if (bin_class_has_field (klass, field_name)) {
+		free (field_name);
+		return;
+	}
+	char *comment = r_str_newf ("dart field type=%s offset=0x%x%s%s%s%s",
+		R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic",
+		fi->offset,
+		(fi->flags & DART_FIELD_STATIC)? " static": "",
+		(fi->flags & DART_FIELD_FINAL)? " final": "",
+		(fi->flags & DART_FIELD_CONST)? " const": "",
+		(fi->flags & DART_FIELD_LATE)? " late": "");
+	RBinField *field = RVecRBinField_emplace_back (&klass->fields);
+	if (field) {
+		memset (field, 0, sizeof (*field));
+		field->name = r_bin_name_new (field_name);
+		field->comment = comment;
+		comment = NULL;
+		field->vaddr = fi->offset;
+		field->paddr = fi->offset;
+		field->value = fi->offset;
+		field->size = 8;
+		field->offset = fi->offset;
+		field->kind = R_BIN_FIELD_KIND_FIELD;
+		field->type = r_bin_name_new (R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic");
+		(*count)++;
+	}
+	free (comment);
+	free (field_name);
+}
+
+static void core_apply_bin_method(RBinClass *klass, const DartMethodInfo *mi, int *count) {
+	ut64 addr = method_export_addr (mi);
+	if (!klass || !mi || R_STR_ISEMPTY (mi->name)) {
+		return;
+	}
+	char *method_name = member_export_name (mi->name, "method");
+	if (bin_class_has_method (klass, method_name)) {
+		free (method_name);
+		return;
+	}
+	RBinSymbol *sym = RVecRBinSymbol_emplace_back (&klass->methods);
+	if (sym) {
+		memset (sym, 0, sizeof (*sym));
+		sym->name = r_bin_name_new (method_name);
+		sym->classname = strdup (r_bin_name_tostring (klass->name));
+		sym->type = "method";
+		sym->paddr = addr;
+		sym->vaddr = addr;
+		sym->size = 0;
+		(*count)++;
+	}
+	free (method_name);
+}
+
+static void core_apply_anal_class(RCore *core, const DartClassInfo *ci, const char *class_name, int *method_count) {
+	if (!core || !ci || R_STR_ISEMPTY (class_name)) {
+		return;
+	}
+	if (!r_anal_class_exists (core->anal, class_name)) {
+		r_anal_class_create (core->anal, class_name);
+	}
+	if (R_STR_ISNOTEMPTY (ci->super_class_name)) {
+		char *super_name = class_export_name (ci->super_class_name);
+		if (!r_anal_class_exists (core->anal, super_name)) {
+			r_anal_class_create (core->anal, super_name);
+		}
+		RAnalBaseClass base = {
+			.id = strdup (super_name),
+			.offset = 0,
+			.class_name = strdup (super_name),
+};
+		r_anal_class_base_set (core->anal, class_name, &base);
+		r_anal_class_base_fini (&base);
+		free (super_name);
+	}
+	if (ci->interfaces) {
+		RListIter *iit;
+		DartInterfaceInfo *ii;
+		r_list_foreach (ci->interfaces, iit, ii) {
+			if (!ii || R_STR_ISEMPTY (ii->name)) {
+				continue;
+			}
+			char *iface_name = class_export_name (ii->name);
+			if (!r_anal_class_exists (core->anal, iface_name)) {
+				r_anal_class_create (core->anal, iface_name);
+			}
+			RAnalBaseClass base = {
+				.id = strdup (iface_name),
+				.offset = 0,
+				.class_name = strdup (iface_name),
+};
+			r_anal_class_base_set (core->anal, class_name, &base);
+			r_anal_class_base_fini (&base);
+			free (iface_name);
+		}
+	}
+	if (ci->methods) {
+		RListIter *mit;
+		DartMethodInfo *mi;
+		r_list_foreach (ci->methods, mit, mi) {
+			ut64 addr = method_export_addr (mi);
+			if (!mi || R_STR_ISEMPTY (mi->name) || !addr) {
+				continue;
+			}
+			char *method_name = member_export_name (mi->name, "method");
+			RAnalMethod method = {
+				.name = method_name,
+				.addr = addr,
+				.vtable_offset = -1,
+};
+			if (r_anal_class_method_set (core->anal, class_name, &method) == R_ANAL_CLASS_ERR_SUCCESS) {
+				(*method_count)++;
+			}
+			free (method_name);
+		}
+	}
+}
+
+static void core_apply_type(RCore *core, const DartClassInfo *ci, const char *class_name, int *field_count) {
+	if (!core || !ci || R_STR_ISEMPTY (class_name)) {
+		return;
+	}
+	RAnalBaseType *type = r_anal_base_type_new (R_ANAL_BASE_TYPE_KIND_STRUCT);
+	if (!type) {
+		return;
+	}
+	type->name = strdup (class_name);
+	type->size = ci->instance_size;
+	if (ci->fields) {
+		RListIter *fit;
+		DartFieldInfo *fi;
+		r_list_foreach (ci->fields, fit, fi) {
+			if (!fi || R_STR_ISEMPTY (fi->name) || (fi->flags & DART_FIELD_STATIC)) {
+				continue;
+			}
+			if (ci->instance_size > 0 && fi->offset >= ci->instance_size) {
+				continue;
+			}
+			char *field_name = member_export_name (fi->name, "field");
+			RAnalStructMember member = {
+				.name = field_name,
+				.type = strdup (field_c_type (fi)),
+				.offset = fi->offset,
+				.size = 64,
+};
+			RAnalStructMember *slot = RVecAnalStructMember_emplace_back (&type->struct_data.members);
+			if (slot) {
+				*slot = member;
+				(*field_count)++;
+			} else {
+				anal_struct_member_fini (&member);
+			}
+		}
+	}
+	r_anal_save_base_type (core->anal, type);
+	r_anal_base_type_free (type);
+}
+
+static void core_apply_method_comments(RCore *core, const DartClassInfo *ci, const char *class_name) {
+	if (!core || !ci || !ci->methods) {
+		return;
+	}
+	RListIter *mit;
+	DartMethodInfo *mi;
+	r_list_foreach (ci->methods, mit, mi) {
+		ut64 addr = method_export_addr (mi);
+		if (!mi || R_STR_ISEMPTY (mi->name) || !addr) {
+			continue;
+		}
+		char *cc = method_dyncc (ci, mi);
+		char *msg = r_str_newf ("dart: method %s.%s kind=%s mode=%s cc=%s%s%s",
+			R_STR_ISNOTEMPTY (class_name)? class_name: ci->name,
+			mi->name,
+			method_kind_name (mi->kind_tag),
+			method_mode_name (mi),
+			cc,
+			R_STR_ISNOTEMPTY (mi->signature)? " signature=": "",
+			R_STR_ISNOTEMPTY (mi->signature)? mi->signature: "");
+		r_meta_set_string (core->anal, R_META_TYPE_COMMENT, addr, msg);
+		free (msg);
+		free (cc);
+	}
+}
+
+int dart_pool_apply_classes_to_core(DartCtx *ctx) {
+	if (!ctx || !ctx->core) {
+		return 0;
+	}
+	RList *classes = dart_pool_extract_classes (ctx);
+	if (!classes) {
+		return 0;
+	}
+	int class_count = 0;
+	int field_count = 0;
+	int method_count = 0;
+	int type_field_count = 0;
+	int anal_method_count = 0;
+	RListIter *it;
+	DartClassInfo *ci;
+	r_list_foreach (classes, it, ci) {
+		if (!ci || R_STR_ISEMPTY (ci->name)) {
+			continue;
+		}
+		char *class_name = class_export_name (ci->name);
+		RBinClass *bin_class = core_bin_get_or_add_class (ctx->core, class_name, ci);
+		if (bin_class && ci->fields) {
+			RListIter *fit;
+			DartFieldInfo *fi;
+			r_list_foreach (ci->fields, fit, fi) {
+				core_apply_bin_field (bin_class, fi, &field_count);
+			}
+		}
+		if (bin_class && ci->methods) {
+			RListIter *mit;
+			DartMethodInfo *mi;
+			r_list_foreach (ci->methods, mit, mi) {
+				core_apply_bin_method (bin_class, mi, &method_count);
+			}
+		}
+		core_apply_anal_class (ctx->core, ci, class_name, &anal_method_count);
+		core_apply_type (ctx->core, ci, class_name, &type_field_count);
+		core_apply_method_comments (ctx->core, ci, ci->name);
+		class_count++;
+		free (class_name);
+	}
+	dart_class_list_free (classes);
+	if (!ctx->quiet) {
+		R_LOG_INFO ("Applied %d Dart classes, %d fields, %d methods", class_count, field_count, method_count);
+	}
+	return class_count;
 }

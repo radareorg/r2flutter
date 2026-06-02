@@ -21,10 +21,10 @@ EOF
 EXPECT=<<EOF
 # Dart classes extracted from snapshot
 # class _Uint16List (size=0)
-"td struct.dart._Uint16List { };"
+"td struct dart__Uint16List { };"
 # class _ExternalInt64Array (size=0)
-"td struct.dart._ExternalInt64Array { };"
+"td struct dart__ExternalInt64Array { };"
 # class FutureOr (size=0)
-"td struct.dart.FutureOr { };"
+"td struct dart_FutureOr { };"
 EOF
 RUN

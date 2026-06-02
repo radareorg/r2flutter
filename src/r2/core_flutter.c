@@ -41,7 +41,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter          analyze dart snapshot and apply flags/comments\n"
 		"| r2flutter -a       run Dart-aware code analysis and recover code refs\n"
 		"| r2flutter -c       dump classes as JSON\n"
-		"| r2flutter -C       dump classes as r2 type definitions\n"
+		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
 		"| r2flutter -F       include field info in class output\n"
 		"| r2flutter -f [n]   list first N discovered functions (default 20)\n"
 		"| r2flutter -H       dump Dart AOT snapshot header info\n"
@@ -160,8 +160,10 @@ static bool r2flutter_handle_option(RCore *core, DartCtx *dctx, const char *args
 		out = dart_pool_dump_classes (dctx, 'j');
 		break;
 	case 'C':
-		out = dart_pool_dump_classes (dctx, 'r');
-		break;
+		dctx->dump_classes = 1;
+		dctx->dump_fields = 1;
+		dart_pool_apply_classes_to_core (dctx);
+		return true;
 	case 'F':
 		dctx->dump_fields = 1;
 		r2flutter_analyze (core, dctx, 0);

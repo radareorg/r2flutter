@@ -265,8 +265,8 @@ That means:
 
 - current function -> object-pool slot at offset `imm`
 
-The repo extracts these offsets in `dart_dumper.c` and `dart_pool_xrefs.c` by
-parsing `pdfj` output and looking for `[x27, ...]`. Both hexadecimal
+The repo extracts these offsets in `dart_pool_xrefs.c` by
+parsing bounded `pdj` output and looking for `[x27, ...]`. Both hexadecimal
 `#0x...` and decimal displacements are accepted.
 
 What this gives today:

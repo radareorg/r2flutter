@@ -7,3 +7,15 @@ EXPECT=<<EXPECT_END
 OK
 EXPECT_END
 RUN
+
+NAME=r2script-pp-scan-skipped
+FILE=-
+CMDS=<<CMDS_END
+!!../bin/r2flutter -R bins/android/mafia 2>/dev/null | tail -4 | head -3
+CMDS_END
+EXPECT=<<EXPECT_END
+dr x27=`e anal.gp`
+'f PP=x27
+# PP offset scan skipped by default; use xrefs/analysis for pool-slot refs
+EXPECT_END
+RUN
