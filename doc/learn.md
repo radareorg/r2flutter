@@ -782,7 +782,7 @@ Current r2 command export is split across the standalone `-R` script mode, the p
 - [x] `bin/r2flutter -R` emits a loadable script header, `e emu.str=true`, `f app.base`, `f app.heap_base`, one `f method.* = addr` per recovered Dart function, and a `CC` comment at each method address with the recovered name.
 - [x] `bin/r2flutter -R` also sets Dart's pool pointer view with `dr x27=\`e anal.gp\`` and `'f PP=x27`. The expensive per-function `pdj 96` PP-offset scan is skipped by default because large apps can have tens of thousands of recovered functions; use xref/analysis paths when pool-slot refs are needed.
 - [x] `bin/r2flutter -r -f` emits only method flags and method-name comments. It does not create functions with `af`, assign calling conventions, or attach classes.
-- [x] `bin/r2flutter -r -z` emits `# Dart Strings` and `iz+ addr len` entries. It registers strings in r2's string table; it does not use `Cs`, string flags, or string-content comments in this renderer.
+- [x] `bin/r2flutter -r -z` emits `# Dart Strings`, `iz+ addr len`, `f str.*`, and `Cs*` entries so the generated script registers strings in both the bin string table and r2 metadata.
 - [x] `bin/r2flutter -r -H` emits snapshot flags (`f dart.vm_data`, `f dart.vm_instr`, `f dart.iso_data`, `f dart.iso_instr`, container flags when present) and `CC` comments for snapshot hash/version/tag-style/alignment metadata.
 - [x] `bin/r2flutter -r -i` emits `f it.code_N = addr` / `f it.stub_N = addr` InstructionTable flags and `# it[N] name` comments.
 - [x] `bin/r2flutter -r -x` emits human-readable xref comments and `f xref.* = dst_addr` flags for xrefs with concrete destination addresses. It does not currently emit `ax` commands.

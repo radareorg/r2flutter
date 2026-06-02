@@ -1,14 +1,15 @@
 NAME=r2-strings-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r -z bins/android/mafia 2>/dev/null | head -6
+!!../bin/r2flutter -r -z bins/android/mafia 2>/dev/null | head -7
 EOF
 EXPECT=<<EOF
 # Dart Strings
 iz+ 0x00000354 167
+f str._7ff04a728735e6b6b098bdf983faabaproduct_no_code_comments_no_dwarf_stack_traces_mode_dedup_instructions_no_tsan_no_msan_no_shared_data_arm64_android_compressed_pointers.0x354 167 @ 0x00000354
+Cs8 167 @ 0x00000354
 iz+ 0x00000855 15
-iz+ 0x00000865 6
-#   referenced by 1 objects
-iz+ 0x00000870 22
+f str._optimized_out_.0x855 15 @ 0x00000855
+Cs8 15 @ 0x00000855
 EOF
 RUN

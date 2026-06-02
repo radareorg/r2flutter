@@ -720,6 +720,19 @@ static void dump_string_json(PJ *pj, const DartStringInfo *si) {
 	pj_end (pj);
 }
 
+static char *make_string_flagname(const DartStringInfo *si) {
+	const char *value = si && R_STR_ISNOTEMPTY (si->value)? si->value: "string";
+	char *safe = strdup (value);
+	r_name_filter (safe, 0);
+	if (R_STR_ISEMPTY (safe)) {
+		free (safe);
+		safe = strdup ("string");
+	}
+	char *flagname = r_str_newf ("str.%s.0x%" PFMT64x, safe, si? si->address: 0);
+	free (safe);
+	return flagname;
+}
+
 static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt) {
 	if (!si || !si->value) {
 		return;
@@ -727,6 +740,10 @@ static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt) {
 	if (fmt == 'r') {
 		// | iz+ ([addr]) ([len]) ([type])  add string manually (addr=current seek if not specified, len=auto, type=auto-detect)
 		r_strbuf_appendf (sb, "iz+ 0x%08" PFMT64x " %d\n", si->address, si->length);
+		char *flagname = make_string_flagname (si);
+		r_strbuf_appendf (sb, "f %s %d @ 0x%08" PFMT64x "\n", flagname, si->length, si->address);
+		free (flagname);
+		r_strbuf_appendf (sb, "%s %d @ 0x%08" PFMT64x "\n", (si->flags & DART_STRING_TWO_BYTE)? "Csw": "Cs8", si->length, si->address);
 	} else {
 		char *str = r_str_escape_utf8 (si->value, false, true);
 		r_strbuf_appendf (sb, "0x%08" PRIx64 " %4d :%s \"%s\"\n", si->address, si->length, string_category_name (si->category), str);

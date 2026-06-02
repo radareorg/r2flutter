@@ -8,24 +8,12 @@
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "../../include/r2flutter/version.h"
 
-typedef enum {
-	ACTION_NONE = 0,
-	ACTION_DUMP_STRINGS,
-	ACTION_DUMP_CLASSES,
-	ACTION_DUMP_TYPES,
-	ACTION_DUMP_HEADER,
-	ACTION_DUMP_FUNCS,
-	ACTION_DUMP_IT,
-	ACTION_DUMP_XREFS,
-	ACTION_DUMP_R2SCRIPT,
-} DumpAction;
-
 static const char usage_text[] =
 	"Usage: %s [options] <libapp_path_or_dir>\n"
 	"Modifiers:\n"
 	"  -h                    Show help\n"
 	"  -j                    Output in JSON format\n"
-	"  -r                    Format output for r2 commands\n"
+	"  -r                    Output r2 commands for the selected action\n"
 	"  -V                    Show version\n"
 	"  -q                    Suppress non-essential output\n"
 	"  -v                    Verbose (stderr debug info)\n"
@@ -111,7 +99,7 @@ int main(int argc, char **argv) {
 	const char *libapp_path_in = NULL;
 	bool opt_json = false;
 	bool opt_r2 = false;
-	DumpAction action = ACTION_NONE;
+	char action = 0;
 	DartCtx dctx = {
 		.no_stubs = true
 	};
@@ -121,19 +109,19 @@ int main(int argc, char **argv) {
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
 		case 'c':
-			action = ACTION_DUMP_CLASSES;
+			action = c;
 			break;
 		case 'f':
-			action = ACTION_DUMP_FUNCS;
+			action = c;
 			break;
 		case 'H':
-			action = ACTION_DUMP_HEADER;
+			action = c;
 			break;
 		case 'h':
 			print_usage (argv[0]);
 			return 0;
 		case 'i':
-			action = ACTION_DUMP_IT;
+			action = c;
 			dctx.dump_it = true;
 			break;
 		case 'j':
@@ -155,13 +143,13 @@ int main(int argc, char **argv) {
 			opt_r2 = true;
 			break;
 		case 'R':
-			action = ACTION_DUMP_R2SCRIPT;
+			action = c;
 			break;
 		case 'z':
-			action = ACTION_DUMP_STRINGS;
+			action = c;
 			break;
 		case 'T':
-			action = ACTION_DUMP_TYPES;
+			action = c;
 			break;
 		case 'v':
 			dctx.verbose++;
@@ -170,7 +158,7 @@ int main(int argc, char **argv) {
 			printf ("r2flutter %s\n", R2FLUTTER_VERSION);
 			return 0;
 		case 'x':
-			action = ACTION_DUMP_XREFS;
+			action = c;
 			break;
 		case 0:
 			R_LOG_ERROR ("Long options are not supported");
@@ -240,32 +228,32 @@ int main(int argc, char **argv) {
 					: 0;
 
 	switch (action) {
-	case ACTION_DUMP_STRINGS:
+	case 'z':
 		output = dart_pool_dump_strings (&dctx, fmt);
 		break;
-	case ACTION_DUMP_CLASSES:
+	case 'c':
 		dctx.dump_classes = 1;
 		dctx.dump_fields = 1;
 		output = dart_pool_dump_classes (&dctx, fmt);
 		break;
-	case ACTION_DUMP_TYPES:
+	case 'T':
 		dctx.dump_classes = 3;
 		output = dart_pool_dump_classes (&dctx, fmt);
 		break;
-	case ACTION_DUMP_HEADER:
+	case 'H':
 		output = dart_pool_dump_header (&app->dctx, fmt);
 		break;
-	case ACTION_DUMP_FUNCS:
+	case 'f':
 		dart_app_load_info (app);
 		output = dart_dumper_dump_funcs (app, fmt);
 		break;
-	case ACTION_DUMP_IT:
+	case 'i':
 		output = dart_pool_dump_it (&app->dctx, fmt);
 		break;
-	case ACTION_DUMP_XREFS:
+	case 'x':
 		output = dart_pool_dump_xrefs (&dctx, fmt);
 		break;
-	case ACTION_DUMP_R2SCRIPT:
+	case 'R':
 		dart_app_load_info (app);
 		if (dctx.verbose) {
 			R_LOG_ERROR ("Dumping radare2 script");
@@ -274,7 +262,7 @@ int main(int argc, char **argv) {
 		printf ("%s\n", s);
 		free (s);
 		break;
-	case ACTION_NONE:
+	case 0:
 	default:
 		R_LOG_ERROR ("no action specified. Use --help for available actions");
 		ret = 1;

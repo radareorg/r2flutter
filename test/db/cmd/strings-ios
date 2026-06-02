@@ -1,14 +1,15 @@
 NAME=r2-strings-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r -z bins/ios/Runner.app 2>/dev/null | sed -n '1,6p'
+!!../bin/r2flutter -r -z bins/ios/Runner.app 2>/dev/null | sed -n '1,7p'
 EOF
 EXPECT=<<EOF
 # Dart Strings
 iz+ 0x001b0914 186
+f str.d20a1be77c3d3c41b2a5accaee1ce549product_no_code_comments_no_dwarf_stack_traces_mode_no_lazy_dispatchers_dedup_instructions_no_tsan_no_asserts_arm64_ios_no_compressed_pointers_null_safety.0x1b0914 186 @ 0x001b0914
+Cs8 186 @ 0x001b0914
 iz+ 0x001b1db0 11
-iz+ 0x001b1dd0 19
-iz+ 0x001b1e00 17
-iz+ 0x001b1e20 8
+f str._Uint16List.0x1b1db0 11 @ 0x001b1db0
+Cs8 11 @ 0x001b1db0
 EOF
 RUN

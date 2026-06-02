@@ -16,14 +16,15 @@ RUN
 NAME=r2-strings-android
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r -z bins/android/first 2>/dev/null | head -6
+!!../bin/r2flutter -r -z bins/android/first 2>/dev/null | head -7
 EOF
 EXPECT=<<EOF
 # Dart Strings
 iz+ 0x00000214 165
+f str.f91b8b03bf7f30a5e983fd19b23d978dproduct_no_code_comments_no_dwarf_stack_traces_mode_no_lazy_dispatchers_dedup_instructions_no_tsan_arm64_linux_no_compressed_pointers.0x214 165 @ 0x00000214
+Cs8 165 @ 0x00000214
 iz+ 0x00001660 11
-iz+ 0x00001680 19
-iz+ 0x000016b0 17
-iz+ 0x000016d0 8
+f str._Uint16List.0x1660 11 @ 0x00001660
+Cs8 11 @ 0x00001660
 EOF
 RUN

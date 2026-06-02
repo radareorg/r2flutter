@@ -47,7 +47,7 @@ Usage: bin/r2flutter [options] <libapp_path_or_dir>
 Modifiers:
   -h                    Show help
   -j                    Output in JSON format
-  -r                    Format output for r2 commands
+  -r                    Output r2 commands for the selected action
   -V                    Show version
   -q                    Suppress non-essential output
   -v                    Verbose (stderr debug info)
@@ -73,12 +73,13 @@ Options:
 
 `-n` is intentionally opt-in. It consumes `package:` and `dart:` strings from the data image as a sequential fallback for otherwise unnamed functions, so it can produce plausible but incorrect names when the string order does not match the instruction table.
 
-`-i` honors the global format modifiers:
+Dump actions honor the global format modifiers:
 
 ```bash
 bin/r2flutter -i test/bins/ios/Runner.app
 bin/r2flutter -j -l 16 -i test/bins/ios/Runner.app
 bin/r2flutter -r -l 16 -i test/bins/ios/Runner.app
+bin/r2flutter -rz test/bins/ios/Runner.app
 ```
 
 ## Dependencies

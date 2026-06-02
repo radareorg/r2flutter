@@ -29,7 +29,12 @@ Coding Rules
 - Use tabs instead of spaces to indent the code
 - Follow the `radare2` coding style
 
-Reference Sources
+## Core plugin
+
+* The -q, -j and -r flags are modifiers, all commands that print stuff must be modified to print quiet, json or r2 commands
+* Help message of the core plugin must include the `r2flutter` prefix, not just the flag
+
+## Reference Sources
 - Third party code is found in the `./third_party` directory
 - radare2 source code `./third_party/radare2` see the `libr/include` directory for the headers
 - blutter is the original project in python+c++ that we used as inspiration for this project. the source code is in `./third_party/blutter`

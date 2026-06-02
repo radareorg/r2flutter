@@ -340,25 +340,42 @@ Config keys:
 - `r2flutter.mapfile`: Flutter obfuscation map JSON path
 - `r2flutter.namepool`: enable heuristic name-pool fallback
 
-Plugin commands:
+Plugin format modifiers:
+
+| Modifier | Support |
+|----------|---------|
+| `-j` | JSON output for dump actions. |
+| `-r` | radare2 command output for dump actions. |
+| `-q` | Suppress non-essential output. |
+| `-n` | Enable heuristic name-pool fallback for otherwise unnamed functions. |
+| `-v`, `-vv` | Increase parser diagnostics. |
+| `-l N` | Limit function, instruction-table, or xref output depending on the action. |
+| `-o file` | Load a Flutter obfuscation map JSON file. |
+
+Plugin actions:
 
 | Command | Support |
 |---------|---------|
 | `r2flutter` | Analyze Dart snapshot, apply method flags/comments, and set `e emu.str=true`. |
 | `r2flutter -a` | Run Dart-aware code analysis and recover refs/comments. |
 | `r2flutter -H` | Print snapshot header info. |
-| `r2flutter -j` | Analyze quietly and print one JSON snapshot header line. |
 | `r2flutter -i` | Print instruction-table entries. |
-| `r2flutter -r` | Print radare2 script output. |
-| `r2flutter -f [n]` | List first `n` discovered functions, default 20. |
-| `r2flutter -q` | Analyze quietly. |
-| `r2flutter -n` | Analyze with name-pool fallback enabled. |
-| `r2flutter -c` | Dump classes as JSON. |
+| `r2flutter -R` | Print full radare2 script output. |
+| `r2flutter -f` | Dump recovered functions. |
+| `r2flutter -c` | Dump classes. |
 | `r2flutter -C` | Apply Dart classes, fields, methods, and types to r2. |
 | `r2flutter -F` | Analyze with field extraction enabled. |
-| `r2flutter -t` | Dump strings as radare2 commands. |
 | `r2flutter -x` | Dump xrefs as text. |
-| `r2flutter -z` | Dump strings as JSON. |
+| `r2flutter -z` | Dump strings. |
+
+Examples:
+
+```bash
+r2flutter -c       # classes as text
+r2flutter -jc      # classes as JSON
+r2flutter -rz      # string registration commands (`iz+`, `f str.*`, `Cs*`)
+r2flutter -jH      # snapshot header as JSON
+```
 
 The Dart-aware analysis pass creates or reuses functions at recovered Dart
 entrypoints, tracks AArch64 register values, follows PP-relative loads through

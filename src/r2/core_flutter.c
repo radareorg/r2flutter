@@ -1,5 +1,6 @@
 /* radare2 - MIT - Copyright 2026 - pancake */
 
+#include <ctype.h>
 #include <r_core.h>
 #include "../../include/r2flutter/version.h"
 #include "../../include/r2flutter/dart_app.h"
@@ -9,6 +10,13 @@
 
 #define R2FLUTTER_CFG_MAPFILE "r2flutter.mapfile"
 #define R2FLUTTER_CFG_NAMEPOOL "r2flutter.namepool"
+
+typedef struct {
+	char action;
+	int fmt;
+	bool help;
+	char *obf_map_path;
+} R2FlutterCmd;
 
 static bool r2flutter_core_init(RCorePluginSession *cps) {
 	RConfig *cfg = cps->core->config;
@@ -37,22 +45,28 @@ static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [-ajirfqncFztxH] [args]\n"
+		"Usage: r2flutter [-jrqnv] [-l N] [-o file] <action>\n"
 		"| r2flutter          analyze dart snapshot and apply flags/comments\n"
-		"| r2flutter -a       run Dart-aware code analysis and recover code refs\n"
-		"| r2flutter -c       dump classes as JSON\n"
-		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
-		"| r2flutter -F       include field info in class output\n"
-		"| r2flutter -f [n]   list first N discovered functions (default 20)\n"
-		"| r2flutter -H       dump Dart AOT snapshot header info\n"
-		"| r2flutter -i       dump instruction table entries to output\n"
-		"| r2flutter -j       dump snapshot header as JSON\n"
+		"| r2flutter -j <act> output JSON for dump actions\n"
+		"| r2flutter -r <act> output r2 commands for dump actions\n"
+		"| r2flutter -q       quiet analysis output\n"
 		"| r2flutter -n       use heuristic name-pool fallback; names may be wrong\n"
-		"| r2flutter -q       analyze quietly (no extra output)\n"
-		"| r2flutter -r       output r2 script (like rabin2 -r)\n"
-		"| r2flutter -t       dump strings as r2 comments\n"
+		"| r2flutter -v       increase parser verbosity\n"
+		"| r2flutter -l N     limit function/instruction-table/xref output\n"
+		"| r2flutter -o file  load Flutter obfuscation map JSON\n"
+		"| r2flutter -a       run Dart-aware code analysis and recover code refs\n"
+		"| r2flutter -c       dump classes\n"
+		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
+		"| r2flutter -F       analyze with field extraction enabled\n"
+		"| r2flutter -f       dump recovered functions\n"
+		"| r2flutter -H       dump Dart AOT snapshot header info\n"
+		"| r2flutter -h       show this help\n"
+		"| r2flutter -i       dump instruction table entries\n"
+		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
+		"| r2flutter -T       dump string-based type names\n"
+		"| r2flutter -V       show version\n"
 		"| r2flutter -x       dump metadata/data-image xrefs\n"
-		"| r2flutter -z       dump all strings as JSON\n");
+		"| r2flutter -z       dump all strings\n");
 }
 
 static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
@@ -90,75 +104,185 @@ static bool r2flutter_dump_r2script(RCore *core, DartCtx *dctx) {
 	return true;
 }
 
-static char *r2flutter_dump_functions(RCore *core, DartCtx *dctx, const char *args) {
-	int n = 20;
-	if (*args) {
-		int v = atoi (args);
-		if (v > 0) {
-			n = v;
-		}
-	}
-	dctx->quiet = 1;
+static char *r2flutter_dump_functions(RCore *core, DartCtx *dctx, int fmt) {
 	DartApp *app = dart_app_new_from_core (core, dctx);
 	if (!app) {
 		return NULL;
 	}
 	dart_app_load_info (app);
-	RStrBuf *sb = r_strbuf_new ("");
-	int count = 0;
-	if (app->functions) {
-		DartFunction *fn;
-		R_VEC_FOREACH (app->functions, fn) {
-			r_strbuf_appendf (sb, "0x%08" PFMT64x " %s\n", fn->addr, fn->name);
-			count++;
-			if (count >= n) {
+	char *out = dart_dumper_dump_funcs (app, fmt);
+	dart_app_free (app);
+	return out;
+}
+
+static bool r2flutter_is_number(const char *s) {
+	if (R_STR_ISEMPTY (s)) {
+		return false;
+	}
+	const char *p = s;
+	if (*p == '-') {
+		p++;
+	}
+	for (; *p; p++) {
+		if (!isdigit ((ut8)*p)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static const char *r2flutter_opt_arg(const char *tail, char **words, int nwords, int *word_index) {
+	if (R_STR_ISNOTEMPTY (tail)) {
+		return tail;
+	}
+	if (*word_index + 1 >= nwords) {
+		return NULL;
+	}
+	(*word_index)++;
+	return words[*word_index];
+}
+
+static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *cmd) {
+	cmd->action = 0;
+	cmd->fmt = 0;
+	cmd->help = false;
+	cmd->obf_map_path = NULL;
+	char *dup = strdup (args);
+	int nwords = r_str_word_set0 (dup);
+	char **words = R_NEWS0 (char *, nwords);
+	for (int i = 0; i < nwords; i++) {
+		words[i] = (char *)r_str_word_get0 (dup, i);
+	}
+	for (int i = 0; i < nwords; i++) {
+		char *word = words[i];
+		if (R_STR_ISEMPTY (word)) {
+			continue;
+		}
+		if (word[0] != '-') {
+			continue;
+		}
+		const char *flags = word + 1;
+		for (int j = 0; flags[j]; j++) {
+			const char flag = flags[j];
+			const char *tail = flags + j + 1;
+			switch (flag) {
+			case 'a':
+				cmd->action = flag;
+				break;
+			case 'c':
+				cmd->action = flag;
+				break;
+			case 'C':
+				cmd->action = flag;
+				break;
+			case 'F':
+				cmd->action = flag;
+				break;
+			case 'f':
+				cmd->action = flag;
+				if (r2flutter_is_number (tail)) {
+					dctx->dump_fns_limit = atoi (tail);
+					j += strlen (tail);
+				} else if (!tail[0] && i + 1 < nwords && r2flutter_is_number (words[i + 1])) {
+					i++;
+					dctx->dump_fns_limit = atoi (words[i]);
+				}
+				break;
+			case 'H':
+				cmd->action = flag;
+				break;
+			case 'h':
+				cmd->help = true;
+				break;
+			case 'i':
+				dctx->dump_it = true;
+				cmd->action = flag;
+				break;
+			case 'j':
+				cmd->fmt = 'j';
+				break;
+			case 'l':
+				{
+					const char *arg = r2flutter_opt_arg (tail, words, nwords, &i);
+					if (!arg) {
+						cmd->help = true;
+						break;
+					}
+					dctx->dump_fns_limit = atoi (arg);
+					j += strlen (tail);
+					break;
+				}
+			case 'n':
+				dctx->use_name_pool = true;
+				break;
+			case 'o':
+				{
+					const char *arg = r2flutter_opt_arg (tail, words, nwords, &i);
+					if (!arg) {
+						cmd->help = true;
+						break;
+					}
+					free (cmd->obf_map_path);
+					cmd->obf_map_path = strdup (arg);
+					dctx->obf_map_path = cmd->obf_map_path;
+					j += strlen (tail);
+					break;
+				}
+			case 'q':
+				dctx->quiet = 1;
+				break;
+			case 'r':
+				cmd->fmt = 'r';
+				break;
+			case 'R':
+				cmd->action = flag;
+				break;
+			case 'T':
+				cmd->action = flag;
+				break;
+			case 'V':
+				cmd->action = flag;
+				break;
+			case 'v':
+				dctx->verbose++;
+				break;
+			case 'x':
+				cmd->action = flag;
+				break;
+			case 'z':
+				cmd->action = flag;
+				break;
+			default:
+				cmd->help = true;
+				break;
+			}
+			if (cmd->help || (R_STR_ISNOTEMPTY (tail) && (flag == 'l' || flag == 'o'))) {
 				break;
 			}
 		}
+		if (cmd->help) {
+			break;
+		}
 	}
-	dart_app_free (app);
-	return r_strbuf_drain (sb);
+	free (words);
+	free (dup);
+	return !cmd->help;
 }
 
-static bool r2flutter_handle_option(RCore *core, DartCtx *dctx, const char *args) {
-	R_RETURN_VAL_IF_FAIL (core && dctx && args && *args == '-', false);
-
-	const char flag = args[1];
-	const char *rest = flag? r_str_trim_head_ro (args + 2): "";
+static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cmd) {
 	char *out = NULL;
 
-	switch (flag) {
+	switch (cmd->action) {
+	case 0:
+		if (cmd->fmt) {
+			r2flutter_help (core);
+			return true;
+		}
+		r2flutter_analyze (core, dctx, dctx->quiet);
+		return true;
 	case 'a':
 		r2flutter_analysis_run (core, dctx, dctx->quiet);
 		return true;
-	case 'H':
-		out = dart_pool_dump_header (dctx, 0);
-		break;
-	case 'j':
-		dctx->dump_snapshot_json = 1;
-		dctx->quiet = 1;
-		r2flutter_analyze (core, dctx, 1);
-		return true;
-	case 'i':
-		out = dart_pool_dump_it (dctx, 0);
-		break;
-	case 'r':
-		r2flutter_dump_r2script (core, dctx);
-		return true;
-	case 'f':
-		out = r2flutter_dump_functions (core, dctx, rest);
-		break;
-	case 'q':
-		dctx->quiet = 1;
-		r2flutter_analyze (core, dctx, 1);
-		return true;
-	case 'n':
-		dctx->use_name_pool = true;
-		r2flutter_analyze (core, dctx, 0);
-		return true;
-	case 'c':
-		out = dart_pool_dump_classes (dctx, 'j');
-		break;
 	case 'C':
 		dctx->dump_classes = 1;
 		dctx->dump_fields = 1;
@@ -166,16 +290,37 @@ static bool r2flutter_handle_option(RCore *core, DartCtx *dctx, const char *args
 		return true;
 	case 'F':
 		dctx->dump_fields = 1;
-		r2flutter_analyze (core, dctx, 0);
+		r2flutter_analyze (core, dctx, dctx->quiet);
+		return true;
+	case 'c':
+		dctx->dump_classes = 1;
+		dctx->dump_fields = 1;
+		out = dart_pool_dump_classes (dctx, cmd->fmt);
+		break;
+	case 'f':
+		out = r2flutter_dump_functions (core, dctx, cmd->fmt);
+		break;
+	case 'H':
+		out = dart_pool_dump_header (dctx, cmd->fmt);
+		break;
+	case 'i':
+		out = dart_pool_dump_it (dctx, cmd->fmt);
+		break;
+	case 'R':
+		r2flutter_dump_r2script (core, dctx);
 		return true;
 	case 'z':
-		out = dart_pool_dump_strings (dctx, 'j');
+		out = dart_pool_dump_strings (dctx, cmd->fmt);
 		break;
-	case 't':
-		out = dart_pool_dump_strings (dctx, 'r');
+	case 'T':
+		dctx->dump_classes = 3;
+		out = dart_pool_dump_classes (dctx, cmd->fmt);
 		break;
+	case 'V':
+		r_cons_printf (core->cons, "r2flutter %s\n", R2FLUTTER_VERSION);
+		return true;
 	case 'x':
-		out = dart_pool_dump_xrefs (dctx, 0);
+		out = dart_pool_dump_xrefs (dctx, cmd->fmt);
 		break;
 	default:
 		r2flutter_help (core);
@@ -213,7 +358,15 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	}
 
 	if (ch0 == '-') {
-		return r2flutter_handle_option (core, &dctx, args);
+		R2FlutterCmd cmd;
+		if (!r2flutter_parse_cmd (args, &dctx, &cmd) || cmd.help) {
+			free (cmd.obf_map_path);
+			r2flutter_help (core);
+			return true;
+		}
+		bool ret = r2flutter_run_cmd (core, &dctx, &cmd);
+		free (cmd.obf_map_path);
+		return ret;
 	}
 	r2flutter_analyze (core, &dctx, 0);
 	return true;

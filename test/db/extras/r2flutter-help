@@ -10,7 +10,7 @@ Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
 Modifiers:
   -h                    Show help
   -j                    Output in JSON format
-  -r                    Format output for r2 commands
+  -r                    Output r2 commands for the selected action
   -V                    Show version
   -q                    Suppress non-essential output
   -v                    Verbose (stderr debug info)
@@ -29,21 +29,27 @@ Options:
   -n                    Heuristic fallback for unknown functions; may assign wrong names
   -o <file>             Load Flutter obfuscation map JSON
 ===
-Usage: r2flutter [-ajirfqncFztxH] [args]
+Usage: r2flutter [-jrqnv] [-l N] [-o file] <action>
 | r2flutter          analyze dart snapshot and apply flags/comments
-| r2flutter -a       run Dart-aware code analysis and recover code refs
-| r2flutter -c       dump classes as JSON
-| r2flutter -C       apply Dart classes, fields, methods and types
-| r2flutter -F       include field info in class output
-| r2flutter -f [n]   list first N discovered functions (default 20)
-| r2flutter -H       dump Dart AOT snapshot header info
-| r2flutter -i       dump instruction table entries to output
-| r2flutter -j       dump snapshot header as JSON
+| r2flutter -j <act> output JSON for dump actions
+| r2flutter -r <act> output r2 commands for dump actions
+| r2flutter -q       quiet analysis output
 | r2flutter -n       use heuristic name-pool fallback; names may be wrong
-| r2flutter -q       analyze quietly (no extra output)
-| r2flutter -r       output r2 script (like rabin2 -r)
-| r2flutter -t       dump strings as r2 comments
+| r2flutter -v       increase parser verbosity
+| r2flutter -l N     limit function/instruction-table/xref output
+| r2flutter -o file  load Flutter obfuscation map JSON
+| r2flutter -a       run Dart-aware code analysis and recover code refs
+| r2flutter -c       dump classes
+| r2flutter -C       apply Dart classes, fields, methods and types
+| r2flutter -F       analyze with field extraction enabled
+| r2flutter -f       dump recovered functions
+| r2flutter -H       dump Dart AOT snapshot header info
+| r2flutter -h       show this help
+| r2flutter -i       dump instruction table entries
+| r2flutter -R       dump full radare2 script (like standalone -R)
+| r2flutter -T       dump string-based type names
+| r2flutter -V       show version
 | r2flutter -x       dump metadata/data-image xrefs
-| r2flutter -z       dump all strings as JSON
+| r2flutter -z       dump all strings
 EOF
 RUN
