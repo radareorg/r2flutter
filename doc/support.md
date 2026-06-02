@@ -334,7 +334,7 @@ Directory inputs are resolved as Android first (`libapp.so`), then iOS
 ## radare2 Plugin Support
 
 The core plugin command is `r2flutter`. Running it with no flags shows help.
-Use `r2flutter -A` to analyze the current file and apply flags/comments.
+Use repeated `A` actions for analysis depth: `-A`, `-AA`, and `-AAA`.
 
 Config keys:
 
@@ -359,14 +359,14 @@ Plugin actions:
 |---------|---------|
 | `r2flutter` | Show help. |
 | `r2flutter -A` | Analyze Dart snapshot, apply method flags/comments, and set `e emu.str=true`. |
-| `r2flutter -a` | Run Dart-aware code analysis and recover refs/comments. |
+| `r2flutter -AA` | Analyze with field extraction enabled. |
+| `r2flutter -AAA` | Run Dart-aware code analysis and recover refs/comments. |
 | `r2flutter -H` | Print snapshot header info. |
 | `r2flutter -i` | Print instruction-table entries. |
 | `r2flutter -R` | Print full radare2 script output. |
 | `r2flutter -f` | Dump recovered functions. |
 | `r2flutter -c` | Dump classes. |
 | `r2flutter -C` | Apply Dart classes, fields, methods, and types to r2. |
-| `r2flutter -F` | Analyze with field extraction enabled. |
 | `r2flutter -x` | Dump xrefs as text. |
 | `r2flutter -z` | Dump strings. |
 

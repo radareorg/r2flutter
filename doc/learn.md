@@ -240,7 +240,7 @@ The parser also needs a wider scan than the raw `it_off` hint on some iOS sample
 
 ## String Dump Flag Matches `rabin2 -z`
 
-**Finding**: The standalone CLI and radare2 plugin use `-z` for JSON string dumping, matching `rabin2 -z`.
+**Finding**: The standalone CLI and radare2 plugin use `-z` for string dumping, matching `rabin2 -z`. Use `-j` with `-z` when JSON output is needed.
 
 This leaves `-t` for r2 comment/script-style string output and keeps public examples/tests on the same strings flag users already know from rabin2.
 
@@ -248,7 +248,7 @@ This leaves `-t` for r2 comment/script-style string output and keeps public exam
 
 The standalone `bin/r2flutter` parser now uses `r_getopt`, so every option is a single-character flag. Keep CLI tests and examples on these action flags: `-A` analyze/apply, `-c` classes, `-f` functions, `-H` header, `-i` instruction table, `-R` r2 script, `-T` types, `-x` xrefs, and `-z` strings. Shared modifiers are `-j`, `-q`, `-r`, `-n`, and `-v`; argument options are `-l` and `-o`.
 
-Bare `r2flutter` must be help-only in both the standalone CLI and core plugin. The analyze/apply flow is explicit under `-A`, while lowercase `-a` remains the Dart-aware code analysis pass.
+Bare `r2flutter` must be help-only in both the standalone CLI and core plugin. The core plugin analysis ladder is explicit under repeated `A`: `-A` applies recovered method flags/comments, `-AA` enables the field-extraction analysis layer, and `-AAA` runs the Dart-aware code refs/comments pass.
 
 `-q` is an output modifier, not an action. It keeps the selected action intact while compacting text/r2 dumps by dropping explanatory comments and nested detail where the dump has a shorter useful form.
 
@@ -384,7 +384,7 @@ confidence layers:
   classes by owner/name
 - string fallback recovers many type-looking names but does not carry reliable
   hierarchy, library, field, or method ownership
-- `-x` emits the metadata/data-image edge subset, while plugin `r2flutter -a`
+- `-x` emits the metadata/data-image edge subset, while plugin `r2flutter -AAA`
   handles some disassembly-derived annotations
 
 The most valuable next work is therefore not "add field extraction" from
@@ -396,7 +396,7 @@ function-shaped field types, class interface edges, reverse string metadata
 references, and cluster-backed method signatures now have direct synthetic
 text/JSON/xref coverage.
 
-## `r2flutter -a` Uses Live `RCore` Metadata But Keeps PP Resolution Conservative
+## `r2flutter -AAA` Uses Live `RCore` Metadata But Keeps PP Resolution Conservative
 
 **Finding**: The new plugin-side analysis pass now runs inside the already loaded `RCore` session, reuses the current function/flag state, normalizes tagged Dart entrypoints to executable addresses, and scans analyzed ARM64 ops to recover:
 
@@ -414,7 +414,7 @@ Important current limitation:
 - current pool decoding tries raw/tag-stripped pointers plus compressed
   `app.heap_base` candidates and stops at readable strings or existing Dart
   flags; broader Dart object decoding is still future work
-- `-a` can reliably annotate PP-relative slot usage and indirect-call
+- `-AAA` can reliably annotate PP-relative slot usage and indirect-call
   breadcrumbs, but still does not resolve dispatch-table targets or build a full
   call graph
 
@@ -777,7 +777,7 @@ Rerunning the compatible `poc/app` target into a fresh directory produced the sa
 
 The `test/db/extras` cases exercise the `r2flutter` command inside radare2, not only the standalone `bin/r2flutter` CLI. Running `r2r test/db/extras` from a checkout with no user-installed plugin leaves those commands unhandled, which looks like empty stdout instead of a parser failure. Keep the extras fixtures self-contained by loading `../src/r2/core_flutter.so` in their `CMDS` blocks, and make `make test-r2r` build `src/r2/core_flutter.so` before invoking r2r.
 
-`r2flutter -a` can internally ask radare2 to create functions for recovered Dart entrypoints. Some entrypoints are already present in radare2's exact-address function table before they have blocks, so checking only `r_anal_get_fcn_in ()` can miss them and trigger noisy duplicate-function warnings from `af`. Check `r_anal_get_function_at ()` first and suppress warning-level logs around the internal `af` loop; the user-facing analysis summary should remain the only plugin log line.
+`r2flutter -AAA` can internally ask radare2 to create functions for recovered Dart entrypoints. Some entrypoints are already present in radare2's exact-address function table before they have blocks, so checking only `r_anal_get_fcn_in ()` can miss them and trigger noisy duplicate-function warnings from `af`. Check `r_anal_get_function_at ()` first and suppress warning-level logs around the internal `af` loop; the user-facing analysis summary should remain the only plugin log line.
 
 ## Radare2 Script Export Audit
 

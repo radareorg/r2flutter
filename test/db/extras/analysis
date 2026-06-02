@@ -1,8 +1,9 @@
 NAME=analysis android
 FILE=bins/android/first/libapp.so
-ARGS=-e bin.relocs.apply=true
+ARGS=-NN -e bin.relocs.apply=true
 CMDS=<<EOF
-r2flutter -a
+.!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; printf \"L %s\\n\" \"\$p\""
+r2flutter -AAA
 f~dart.class
 s 0x66a70
 EOF

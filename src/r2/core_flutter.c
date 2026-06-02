@@ -14,6 +14,7 @@
 typedef struct {
 	char action;
 	int fmt;
+	int analysis_depth;
 	bool help;
 	char *obf_map_path;
 } R2FlutterCmd;
@@ -55,10 +56,10 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -l N     limit function/instruction-table/xref output\n"
 		"| r2flutter -o file  load Flutter obfuscation map JSON\n"
 		"| r2flutter -A       analyze dart snapshot and apply flags/comments\n"
-		"| r2flutter -a       run Dart-aware code analysis and recover code refs\n"
+		"| r2flutter -AA      analyze with field extraction enabled\n"
+		"| r2flutter -AAA     run Dart-aware code analysis and recover code refs\n"
 		"| r2flutter -c       dump classes\n"
 		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
-		"| r2flutter -F       analyze with field extraction enabled\n"
 		"| r2flutter -f       dump recovered functions\n"
 		"| r2flutter -H       dump Dart AOT snapshot header info\n"
 		"| r2flutter -h       show this help\n"
@@ -146,6 +147,7 @@ static const char *r2flutter_opt_arg(const char *tail, char **words, int nwords,
 static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *cmd) {
 	cmd->action = 0;
 	cmd->fmt = 0;
+	cmd->analysis_depth = 0;
 	cmd->help = false;
 	cmd->obf_map_path = NULL;
 	char *dup = strdup (args);
@@ -169,17 +171,12 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 			switch (flag) {
 			case 'A':
 				cmd->action = flag;
-				break;
-			case 'a':
-				cmd->action = flag;
+				cmd->analysis_depth++;
 				break;
 			case 'c':
 				cmd->action = flag;
 				break;
 			case 'C':
-				cmd->action = flag;
-				break;
-			case 'F':
 				cmd->action = flag;
 				break;
 			case 'f':
@@ -281,19 +278,19 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		r2flutter_help (core);
 		return true;
 	case 'A':
-		r2flutter_analyze (core, dctx, dctx->quiet);
-		return true;
-	case 'a':
-		r2flutter_analysis_run (core, dctx, dctx->quiet);
+		if (cmd->analysis_depth >= 2) {
+			dctx->dump_fields = 1;
+		}
+		if (cmd->analysis_depth >= 3) {
+			r2flutter_analysis_run (core, dctx, dctx->quiet);
+		} else {
+			r2flutter_analyze (core, dctx, dctx->quiet);
+		}
 		return true;
 	case 'C':
 		dctx->dump_classes = 1;
 		dctx->dump_fields = 1;
 		dart_pool_apply_classes_to_core (dctx);
-		return true;
-	case 'F':
-		dctx->dump_fields = 1;
-		r2flutter_analyze (core, dctx, dctx->quiet);
 		return true;
 	case 'c':
 		dctx->dump_classes = 1;

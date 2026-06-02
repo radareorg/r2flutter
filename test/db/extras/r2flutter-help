@@ -44,10 +44,10 @@ Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>
 | r2flutter -l N     limit function/instruction-table/xref output
 | r2flutter -o file  load Flutter obfuscation map JSON
 | r2flutter -A       analyze dart snapshot and apply flags/comments
-| r2flutter -a       run Dart-aware code analysis and recover code refs
+| r2flutter -AA      analyze with field extraction enabled
+| r2flutter -AAA     run Dart-aware code analysis and recover code refs
 | r2flutter -c       dump classes
 | r2flutter -C       apply Dart classes, fields, methods and types
-| r2flutter -F       analyze with field extraction enabled
 | r2flutter -f       dump recovered functions
 | r2flutter -H       dump Dart AOT snapshot header info
 | r2flutter -h       show this help
@@ -70,10 +70,10 @@ Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>
 | r2flutter -l N     limit function/instruction-table/xref output
 | r2flutter -o file  load Flutter obfuscation map JSON
 | r2flutter -A       analyze dart snapshot and apply flags/comments
-| r2flutter -a       run Dart-aware code analysis and recover code refs
+| r2flutter -AA      analyze with field extraction enabled
+| r2flutter -AAA     run Dart-aware code analysis and recover code refs
 | r2flutter -c       dump classes
 | r2flutter -C       apply Dart classes, fields, methods and types
-| r2flutter -F       analyze with field extraction enabled
 | r2flutter -f       dump recovered functions
 | r2flutter -H       dump Dart AOT snapshot header info
 | r2flutter -h       show this help
