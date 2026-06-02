@@ -567,7 +567,7 @@ With current repo code, the main directly dumpable pieces are:
   - class/type names
   - surviving superclass/library metadata when present
   - field/method attachment when data-image scans succeed
-- `-s`
+- `-z`
   - string values and byte addresses
   - reverse metadata users for decoded class/library/field/method name refs
 - `-x`

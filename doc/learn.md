@@ -86,7 +86,7 @@ Handle 82 1a 82 34 MonomorphicSmiableCall ...
 
 The printable text is still plain, but it is separated by cluster metadata bytes instead of `0x00`.
 
-**Implication**: `-s` can recover some of these today with non-NUL-delimited text scanning, but complete support should come from snapshot-aware string-cluster decoding rather than classic C-string assumptions.
+**Implication**: `-z` can recover some of these today with non-NUL-delimited text scanning, but complete support should come from snapshot-aware string-cluster decoding rather than classic C-string assumptions.
 
 ## Snapshot `WriteUnsigned` Is Not Standard ULEB128
 
@@ -238,21 +238,21 @@ The command now:
 
 The parser also needs a wider scan than the raw `it_off` hint on some iOS samples, because the offset can land inside the table payload rather than exactly on the `InstructionsTable::Data` header.
 
-## Plugin String Dump Flag Uses Lowercase `-s`
+## String Dump Flag Matches `rabin2 -z`
 
-**Finding**: The radare2 plugin now uses `r2flutter -s` for JSON string dumping instead of `r2flutter -S`.
+**Finding**: The standalone CLI and radare2 plugin use `-z` for JSON string dumping, matching `rabin2 -z`.
 
-This keeps the short command set lowercase for string-oriented output (`-s` JSON, `-t` r2 comments) and avoids carrying an unnecessary uppercase-only alias in the plugin help and parser.
+This leaves `-t` for r2 comment/script-style string output and keeps public examples/tests on the same strings flag users already know from rabin2.
 
 ## Standalone CLI Uses Short Flags Only
 
-The standalone `bin/r2flutter` parser now uses `r_getopt`, so every option is a single-character flag. Keep CLI tests and examples on these action flags: `-c` classes, `-f` functions, `-H` header, `-i` instruction table, `-R` r2 script, `-s` strings, `-T` types, and `-x` xrefs. Shared modifiers are `-j`, `-r`, `-q`, `-v`, `-l`, `-n`, and `-o`.
+The standalone `bin/r2flutter` parser now uses `r_getopt`, so every option is a single-character flag. Keep CLI tests and examples on these action flags: `-c` classes, `-f` functions, `-H` header, `-i` instruction table, `-R` r2 script, `-T` types, `-x` xrefs, and `-z` strings. Shared modifiers are `-j`, `-r`, `-q`, `-v`, `-l`, `-n`, and `-o`.
 
 ## r2r Coverage Needs Short Cross-Platform Windows
 
 **Finding**: The `test/db/cmd` suite is more maintainable when every dump mode is exercised on both Android and iOS using short deterministic windows instead of full dumps.
 
-The current matrix covers `-H`, `-f`, `-i`, `-s`, `-c`, and `-T` against `test/bins/android/first` and `test/bins/ios/Runner.app`, using `-l` or `sed -n` to keep expectations stable and fast.
+The current matrix covers `-H`, `-f`, `-i`, `-z`, `-c`, and `-T` against `test/bins/android/first` and `test/bins/ios/Runner.app`, using `-l` or `sed -n` to keep expectations stable and fast.
 
 This avoids brittle megabyte-scale expectations while still checking platform-specific snapshot addresses, instruction table metadata, and representative function/class/type/string prefixes.
 
@@ -312,9 +312,9 @@ Implementation details:
    - `library`: structural metadata (`package:` URIs, `.dart` paths, CamelCase type names)
    - `app`: anything containing whitespace or punctuation (typical user-facing strings)
 
-This produces clean `-s` output even when the clustered snapshot contains compressed or stripped string objects, while also giving analysts a quick way to filter out VM noise and focus on app-facing literals like `"Hello, Dart!"`.
+This produces clean `-z` output even when the clustered snapshot contains compressed or stripped string objects, while also giving analysts a quick way to filter out VM noise and focus on app-facing literals like `"Hello, Dart!"`.
 
-## `-s` Must Stay Inside Dart Snapshot Windows
+## `-z` Must Stay Inside Dart Snapshot Windows
 
 **Finding**: Letting the string dumper scan every readable section regresses badly on iOS once Mach-O `__text`, code stubs, cert blobs, and loader metadata are included in the candidate set.
 
@@ -330,7 +330,7 @@ The practical fix is:
 - keep the broad fallback limited to read-only constant sections such as Mach-O `__const` / `__cstring` and ELF `.rodata` / `.data.rel.ro`
 - keep short-string heuristics strict enough to drop opcode-shaped junk like `_X;,` while preserving real Dart identifiers like `_Set`
 
-This removes the worst false positives from `-s` without sacrificing the real Dart names stored in the const area of the shipped iOS and Android fixtures.
+This removes the worst false positives from `-z` without sacrificing the real Dart names stored in the const area of the shipped iOS and Android fixtures.
 
 ## Cross References Split Into Metadata, Data-Image, And Code Layers
 
@@ -349,7 +349,7 @@ Practical implication:
 
 Current gaps:
 
-- `DartStringInfo.references` is now populated from decoded class/library/field/method metadata, so `-s` can show reverse `string -> metadata users` links when the metadata survives
+- `DartStringInfo.references` is now populated from decoded class/library/field/method metadata, so `-z` can show reverse `string -> metadata users` links when the metadata survives
 - object-pool offsets can be collected from code, and `-x` can resolve some `PP+imm` slots into `code -> string/class/type/field/method` xrefs when `anal.gp` is set and the slot target is a readable string or an existing Dart flag
 - library URI resolution works when metadata survives, and `Field.type_ref`
   links now resolve simple `Type` objects, `TypeArguments` for generic field
@@ -647,7 +647,7 @@ Offset 0x08: [4 bytes] Length (compressed SMI)
 Offset 0x0C: [variable] String data
 ```
 
-Strings in compressed-pointer snapshots are serialized inline in the cluster stream via `StringSerializationCluster`, NOT stored in ROData. The `-s` feature currently does NOT extract strings from compressed-pointer binaries' cluster streams.
+Strings in compressed-pointer snapshots are serialized inline in the cluster stream via `StringSerializationCluster`, NOT stored in ROData. The `-z` feature currently does NOT extract strings from compressed-pointer binaries' cluster streams.
 
 ### ROData Location
 
@@ -690,7 +690,7 @@ This keeps the CLI and plugin call sites on the same mode switch (`0`, `'j'`, `'
 
 ## Obfuscation Maps
 
-Flutter obfuscation maps use the VM `--save-obfuscation-map` format: one JSON array with alternating `original, obfuscated` strings. r2flutter has to reverse that relation during analysis because the snapshot only carries the obfuscated side. Applying the rename map at identifier materialization points keeps `-s` faithful to the raw binary while still deobfuscating function, class, field, and method outputs.
+Flutter obfuscation maps use the VM `--save-obfuscation-map` format: one JSON array with alternating `original, obfuscated` strings. r2flutter has to reverse that relation during analysis because the snapshot only carries the obfuscated side. Applying the rename map at identifier materialization points keeps `-z` faithful to the raw binary while still deobfuscating function, class, field, and method outputs.
 
 ## `r_str_newf ()` In This Tree Is Treated As Infallible
 
@@ -782,7 +782,7 @@ Current r2 command export is split across the standalone `-R` script mode, the p
 - [x] `bin/r2flutter -R` emits a loadable script header, `e emu.str=true`, `f app.base`, `f app.heap_base`, one `f method.* = addr` per recovered Dart function, and a `CC` comment at each method address with the recovered name.
 - [x] `bin/r2flutter -R` also sets Dart's pool pointer view with `dr x27=\`e anal.gp\`` and `'f PP=x27`. The expensive per-function `pdj 96` PP-offset scan is skipped by default because large apps can have tens of thousands of recovered functions; use xref/analysis paths when pool-slot refs are needed.
 - [x] `bin/r2flutter -r -f` emits only method flags and method-name comments. It does not create functions with `af`, assign calling conventions, or attach classes.
-- [x] `bin/r2flutter -r -s` emits `# Dart Strings` and `iz+ addr len` entries. It registers strings in r2's string table; it does not use `Cs`, string flags, or string-content comments in this renderer.
+- [x] `bin/r2flutter -r -z` emits `# Dart Strings` and `iz+ addr len` entries. It registers strings in r2's string table; it does not use `Cs`, string flags, or string-content comments in this renderer.
 - [x] `bin/r2flutter -r -H` emits snapshot flags (`f dart.vm_data`, `f dart.vm_instr`, `f dart.iso_data`, `f dart.iso_instr`, container flags when present) and `CC` comments for snapshot hash/version/tag-style/alignment metadata.
 - [x] `bin/r2flutter -r -i` emits `f it.code_N = addr` / `f it.stub_N = addr` InstructionTable flags and `# it[N] name` comments.
 - [x] `bin/r2flutter -r -x` emits human-readable xref comments and `f xref.* = dst_addr` flags for xrefs with concrete destination addresses. It does not currently emit `ax` commands.

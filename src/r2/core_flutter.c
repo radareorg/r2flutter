@@ -37,7 +37,7 @@ static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [-ajirfqncFstxH] [args]\n"
+		"Usage: r2flutter [-ajirfqncFztxH] [args]\n"
 		"| r2flutter          analyze dart snapshot and apply flags/comments\n"
 		"| r2flutter -a       run Dart-aware code analysis and recover code refs\n"
 		"| r2flutter -c       dump classes as JSON\n"
@@ -50,9 +50,9 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -n       use heuristic name-pool fallback; names may be wrong\n"
 		"| r2flutter -q       analyze quietly (no extra output)\n"
 		"| r2flutter -r       output r2 script (like rabin2 -r)\n"
-		"| r2flutter -s       dump all strings as JSON\n"
 		"| r2flutter -t       dump strings as r2 comments\n"
-		"| r2flutter -x       dump metadata/data-image xrefs\n");
+		"| r2flutter -x       dump metadata/data-image xrefs\n"
+		"| r2flutter -z       dump all strings as JSON\n");
 }
 
 static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
@@ -168,7 +168,7 @@ static bool r2flutter_handle_option(RCore *core, DartCtx *dctx, const char *args
 		dctx->dump_fields = 1;
 		r2flutter_analyze (core, dctx, 0);
 		return true;
-	case 's':
+	case 'z':
 		out = dart_pool_dump_strings (dctx, 'j');
 		break;
 	case 't':

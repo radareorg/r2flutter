@@ -1,6 +1,6 @@
 {
   "name": "strings-hello",
-  "cmd": ["../bin/r2flutter", "-j", "-s", "bins/macos/hello/hello.aot"],
+  "cmd": ["../bin/r2flutter", "-j", "-z", "bins/macos/hello/hello.aot"],
   "expect": {
     "contains": [
       "\"value\":\"Hello, Dart!\"",

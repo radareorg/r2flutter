@@ -1,7 +1,7 @@
 NAME=compstr
 FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-r2flutter -s|head -c 200
+r2flutter -z|head -c 200
 EOF
 EXPECT=[{"ref":568,"len":186,"value":"d20a1be77c3d3c41b2a5accaee1ce549product no-code_comments no-dwarf_stack_traces_mode no-lazy_dispatchers dedup_instructions no-tsan no-asserts arm64 ios no-compressed-poi
 RUN

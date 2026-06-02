@@ -21,15 +21,15 @@ Actions:
   -H                    Print Dart AOT snapshot header info
   -i                    Print instruction table entries to stdout
   -R                    Print radare2 script for snapshot analysis
-  -s                    Print all extracted strings
   -T                    Print string-based type names
   -x                    Print metadata/data-image xrefs
+  -z                    Print all extracted strings
 Options:
   -l <N>                Limit output to N items
   -n                    Heuristic fallback for unknown functions; may assign wrong names
   -o <file>             Load Flutter obfuscation map JSON
 ===
-Usage: r2flutter [-ajirfqncFstxH] [args]
+Usage: r2flutter [-ajirfqncFztxH] [args]
 | r2flutter          analyze dart snapshot and apply flags/comments
 | r2flutter -a       run Dart-aware code analysis and recover code refs
 | r2flutter -c       dump classes as JSON
@@ -42,8 +42,8 @@ Usage: r2flutter [-ajirfqncFstxH] [args]
 | r2flutter -n       use heuristic name-pool fallback; names may be wrong
 | r2flutter -q       analyze quietly (no extra output)
 | r2flutter -r       output r2 script (like rabin2 -r)
-| r2flutter -s       dump all strings as JSON
 | r2flutter -t       dump strings as r2 comments
 | r2flutter -x       dump metadata/data-image xrefs
+| r2flutter -z       dump all strings as JSON
 EOF
 RUN

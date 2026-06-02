@@ -32,7 +32,7 @@ RUN
 NAME=strings-fields-synthetic
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -s bins/synthetic/field_snapshot.bin 2>/dev/null
+!!../bin/r2flutter -z bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
 0x00000018   74 :app "00000000000000000000000000000000product arm64 macos no-compressed-pointers"
@@ -68,7 +68,7 @@ RUN
 NAME=json-strings-fields-synthetic
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -j -s bins/synthetic/field_snapshot.bin 2>/dev/null
+!!../bin/r2flutter -j -z bins/synthetic/field_snapshot.bin 2>/dev/null
 EOF
 EXPECT=<<EOF
 [{"ref":0,"len":74,"value":"00000000000000000000000000000000product arm64 macos no-compressed-pointers","category":"app","two_byte":false,"canonical":true,"addr":24},{"ref":1,"len":9,"value":"TestClass","category":"lib","two_byte":false,"canonical":true,"addr":110,"refs":[{"obj":12,"type":"class","kind":"class.name","name":"TestClass"}]},{"ref":2,"len":12,"value":"package:test","category":"lib","two_byte":false,"canonical":true,"addr":120,"refs":[{"obj":11,"type":"library","kind":"library.name","name":"package:test"}]},{"ref":3,"len":6,"value":"fieldA","category":"lib","two_byte":false,"canonical":true,"addr":133,"refs":[{"obj":25,"type":"field","kind":"field.name","name":"TestClass.fieldA"}]},{"ref":4,"len":5,"value":"items","category":"lib","two_byte":false,"canonical":true,"addr":144,"refs":[{"obj":26,"type":"field","kind":"field.name","name":"TestClass.items"}]},{"ref":5,"len":12,"value":"genericItems","category":"lib","two_byte":false,"canonical":true,"addr":150,"refs":[{"obj":27,"type":"field","kind":"field.name","name":"TestClass.genericItems"}]},{"ref":6,"len":8,"value":"callback","category":"lib","two_byte":false,"canonical":true,"addr":163,"refs":[{"obj":28,"type":"field","kind":"field.name","name":"TestClass.callback"}]},{"ref":7,"len":7,"value":"compute","category":"lib","two_byte":false,"canonical":true,"addr":172,"refs":[{"obj":29,"type":"function","kind":"method.name","name":"TestClass.compute"}]},{"ref":8,"len":13,"value":"TestInterface","category":"lib","two_byte":false,"canonical":true,"addr":180,"refs":[{"obj":12,"type":"class","kind":"class.interface","name":"TestClass"},{"obj":13,"type":"class","kind":"class.name","name":"TestInterface"}]}]

@@ -58,9 +58,9 @@ Actions:
   -H                    Print Dart AOT snapshot header info
   -i                    Print instruction table entries to stdout
   -R                    Print radare2 script for snapshot analysis
-  -s                    Print all extracted strings
   -T                    Print string-based type names
   -x                    Print metadata/data-image xrefs
+  -z                    Print all extracted strings
 Options:
   -l <N>                Limit output to N items
   -n                    Heuristic fallback for unknown functions; may assign wrong names

@@ -36,9 +36,9 @@ static const char usage_text[] =
 	"  -H                    Print Dart AOT snapshot header info\n"
 	"  -i                    Print instruction table entries to stdout\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
-	"  -s                    Print all extracted strings\n"
 	"  -T                    Print string-based type names\n"
 	"  -x                    Print metadata/data-image xrefs\n"
+	"  -z                    Print all extracted strings\n"
 	"Options:\n"
 	"  -l <N>                Limit output to N items\n"
 	"  -n                    Heuristic fallback for unknown functions; may assign wrong names\n"
@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "cfhHijno:qrRsTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "cfhHijno:qrRzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
 		case 'R':
 			action = ACTION_DUMP_R2SCRIPT;
 			break;
-		case 's':
+		case 'z':
 			action = ACTION_DUMP_STRINGS;
 			break;
 		case 'T':

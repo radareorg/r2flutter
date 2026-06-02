@@ -1,7 +1,7 @@
 NAME=r2-strings-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r -s bins/android/mafia 2>/dev/null | head -6
+!!../bin/r2flutter -r -z bins/android/mafia 2>/dev/null | head -6
 EOF
 EXPECT=<<EOF
 # Dart Strings

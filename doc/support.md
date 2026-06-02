@@ -250,7 +250,7 @@ confidence.
 
 ### Strings
 
-`-s` dumps strings. The string scanner supports:
+`-z` dumps strings. The string scanner supports:
 
 - ASCII strings
 - UTF-16LE strings converted to UTF-8
@@ -320,9 +320,9 @@ name, then applies it to:
 | `-H` | Dump snapshot header/layout/container information. |
 | `-i` | Dump instruction-table entries. |
 | `-R` | Dump a radare2 script for applying method flags/comments and PP helpers. |
-| `-s` | Dump strings. |
 | `-T` | Dump type-oriented class output and run enum recovery. |
 | `-x` | Dump metadata/data-image xrefs. |
+| `-z` | Dump strings. |
 | `-l <N>` | Limit function or instruction-table/xref output depending on the action. |
 | `-n` | Enable heuristic name-pool fallback for otherwise unnamed functions. |
 | `-o <file>` | Load a Flutter obfuscation map JSON file. |
@@ -356,9 +356,9 @@ Plugin commands:
 | `r2flutter -c` | Dump classes as JSON. |
 | `r2flutter -C` | Apply Dart classes, fields, methods, and types to r2. |
 | `r2flutter -F` | Analyze with field extraction enabled. |
-| `r2flutter -s` | Dump strings as JSON. |
 | `r2flutter -t` | Dump strings as radare2 commands. |
 | `r2flutter -x` | Dump xrefs as text. |
+| `r2flutter -z` | Dump strings as JSON. |
 
 The Dart-aware analysis pass creates or reuses functions at recovered Dart
 entrypoints, tracks AArch64 register values, follows PP-relative loads through
