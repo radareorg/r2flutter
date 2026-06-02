@@ -15,7 +15,7 @@ static const char usage_text[] =
 	"  -j                    Output in JSON format\n"
 	"  -r                    Output r2 commands for the selected action\n"
 	"  -V                    Show version\n"
-	"  -q                    Suppress non-essential output\n"
+	"  -q                    Compact output; suppress non-essential detail\n"
 	"  -v                    Verbose (stderr debug info)\n"
 	"  -vv                   More verbose (dump headers)\n"
 	"Actions:\n"
@@ -97,8 +97,7 @@ int main(int argc, char **argv) {
 	}
 
 	const char *libapp_path_in = NULL;
-	bool opt_json = false;
-	bool opt_r2 = false;
+	int fmt = 0;
 	char action = 0;
 	DartCtx dctx = {
 		.no_stubs = true
@@ -125,7 +124,7 @@ int main(int argc, char **argv) {
 			dctx.dump_it = true;
 			break;
 		case 'j':
-			opt_json = true;
+			fmt = c;
 			break;
 		case 'l':
 			dctx.dump_fns_limit = atoi (opt.arg);
@@ -140,7 +139,7 @@ int main(int argc, char **argv) {
 			dctx.quiet = 1;
 			break;
 		case 'r':
-			opt_r2 = true;
+			fmt = c;
 			break;
 		case 'R':
 			action = c;
@@ -224,8 +223,6 @@ int main(int argc, char **argv) {
 
 	int ret = 0;
 	char *output = NULL;
-	int fmt = opt_json? 'j': opt_r2? 'r'
-					: 0;
 
 	switch (action) {
 	case 'z':
@@ -264,7 +261,7 @@ int main(int argc, char **argv) {
 		break;
 	case 0:
 	default:
-		R_LOG_ERROR ("no action specified. Use --help for available actions");
+		R_LOG_ERROR ("no action specified. Use -h for available actions");
 		ret = 1;
 		break;
 	}

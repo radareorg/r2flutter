@@ -248,6 +248,8 @@ This leaves `-t` for r2 comment/script-style string output and keeps public exam
 
 The standalone `bin/r2flutter` parser now uses `r_getopt`, so every option is a single-character flag. Keep CLI tests and examples on these action flags: `-c` classes, `-f` functions, `-H` header, `-i` instruction table, `-R` r2 script, `-T` types, `-x` xrefs, and `-z` strings. Shared modifiers are `-j`, `-r`, `-q`, `-v`, `-l`, `-n`, and `-o`.
 
+`-q` is an output modifier, not an action. It keeps the selected action intact while compacting text/r2 dumps by dropping explanatory comments and nested detail where the dump has a shorter useful form.
+
 ## r2r Coverage Needs Short Cross-Platform Windows
 
 **Finding**: The `test/db/cmd` suite is more maintainable when every dump mode is exercised on both Android and iOS using short deterministic windows instead of full dumps.

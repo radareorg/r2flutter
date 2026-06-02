@@ -625,15 +625,37 @@ static void dump_xref_node_text(RStrBuf *sb, const char *type, const char *name,
 	}
 }
 
-static void dump_xref_text(RStrBuf *sb, const DartXrefInfo *xi, int fmt) {
-	if (fmt == 'r') {
+static void dump_xref_node_compact(RStrBuf *sb, const char *type, const char *name, ut64 addr) {
+	if (addr > 0) {
+		r_strbuf_appendf (sb, "0x%" PFMT64x, (ut64)addr);
+		return;
+	}
+	if (R_STR_ISNOTEMPTY (name)) {
+		char *escaped = r_str_escape_utf8 (name, false, true);
+		r_strbuf_append (sb, escaped);
+		free (escaped);
+		return;
+	}
+	r_strbuf_append (sb, type);
+}
+
+static void dump_xref_text(RStrBuf *sb, const DartXrefInfo *xi, int fmt, bool quiet) {
+	if (fmt == 'r' && !quiet) {
 		r_strbuf_append (sb, "# ");
 	}
-	r_strbuf_appendf (sb, "%s %s ", xi->origin, xi->kind);
-	dump_xref_node_text (sb, xi->src_type, xi->src_name, xi->src_ref, xi->src_addr);
-	r_strbuf_append (sb, " -> ");
-	dump_xref_node_text (sb, xi->dst_type, xi->dst_name, xi->dst_ref, xi->dst_addr);
-	r_strbuf_append (sb, "\n");
+	if (fmt != 'r' || !quiet) {
+		r_strbuf_appendf (sb, "%s %s ", xi->origin, xi->kind);
+		if (quiet) {
+			dump_xref_node_compact (sb, xi->src_type, xi->src_name, xi->src_addr);
+			r_strbuf_append (sb, " -> ");
+			dump_xref_node_compact (sb, xi->dst_type, xi->dst_name, xi->dst_addr);
+		} else {
+			dump_xref_node_text (sb, xi->src_type, xi->src_name, xi->src_ref, xi->src_addr);
+			r_strbuf_append (sb, " -> ");
+			dump_xref_node_text (sb, xi->dst_type, xi->dst_name, xi->dst_ref, xi->dst_addr);
+		}
+		r_strbuf_append (sb, "\n");
+	}
 	if (fmt == 'r' && xi->dst_addr > 0) {
 		char safe[512];
 		const char *base_name = R_STR_ISNOTEMPTY (xi->src_name)? xi->src_name: (R_STR_ISNOTEMPTY (xi->dst_name)? xi->dst_name: xi->kind);
@@ -667,12 +689,13 @@ char *dart_pool_dump_xrefs(DartCtx *ctx, int fmt) {
 		r_list_free (xrefs);
 		return strdup ("# No xrefs found\n");
 	}
-	RStrBuf *sb = r_strbuf_new (fmt == 'r'? "# Dart xrefs\n": "");
+	const bool quiet = ctx && ctx->quiet;
+	RStrBuf *sb = r_strbuf_new (fmt == 'r' && !quiet? "# Dart xrefs\n": "");
 	RListIter *it;
 	DartXrefInfo *xi;
 	r_list_foreach (xrefs, it, xi) {
 		if (xi) {
-			dump_xref_text (sb, xi, fmt);
+			dump_xref_text (sb, xi, fmt, quiet);
 		}
 	}
 	r_list_free (xrefs);

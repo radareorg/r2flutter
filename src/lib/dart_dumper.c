@@ -98,12 +98,14 @@ static void collect_pool_offsets_from_fn(RCore *core, ut64 addr, RVecDartOffset 
 	free (s);
 }
 
-static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
+static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb, bool quiet) {
 	if (!app || !app->core || !app->functions) {
 		return;
 	}
 	if (!app->dctx.verbose) {
-		r_strbuf_append (sb, "# PP offset scan skipped by default; use xrefs/analysis for pool-slot refs\n");
+		if (!quiet) {
+			r_strbuf_append (sb, "# PP offset scan skipped by default; use xrefs/analysis for pool-slot refs\n");
+		}
 		return;
 	}
 	RVecDartOffset offsets;
@@ -118,7 +120,9 @@ static void dump_pool_offsets_flags(DartApp *app, RStrBuf *sb) {
 	ut64 *offp;
 	R_VEC_FOREACH (&offsets, offp) {
 		r_strbuf_appendf (sb, "f pp.off_0x%" PFMT64x "=PP+0x%" PFMT64x "\n", (uint64_t)*offp, (uint64_t)*offp);
-		r_strbuf_appendf (sb, "'@PP+0x%" PFMT64x "'CC pool_entry_%" PFMT64x "\n", (uint64_t)*offp, (uint64_t)*offp);
+		if (!quiet) {
+			r_strbuf_appendf (sb, "'@PP+0x%" PFMT64x "'CC pool_entry_%" PFMT64x "\n", (uint64_t)*offp, (uint64_t)*offp);
+		}
 	}
 	RVecDartOffset_fini (&offsets);
 }
@@ -135,17 +139,22 @@ static char *make_method_flagname(const char *name) {
 	return flagname;
 }
 
-static void dump_func_r2(RStrBuf *sb, const DartFunction *fn) {
+static void dump_func_r2(RStrBuf *sb, const DartFunction *fn, bool quiet) {
 	char *flagname = make_method_flagname (fn->name);
 	r_strbuf_appendf (sb, "f %s = 0x%" PFMT64x "\n", flagname, (uint64_t)fn->addr);
-	r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC %s\n", (uint64_t)fn->addr, fn->name);
+	if (!quiet) {
+		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC %s\n", (uint64_t)fn->addr, fn->name);
+	}
 	free (flagname);
 }
 
 char *dart_dumper_dump4radare2(DartApp *app) {
 	RStrBuf *sb = r_strbuf_new ("");
+	const bool quiet = app && app->dctx.quiet;
 
-	r_strbuf_append (sb, "# create flags for libraries, classes and methods\n");
+	if (!quiet) {
+		r_strbuf_append (sb, "# create flags for libraries, classes and methods\n");
+	}
 	r_strbuf_append (sb, "e emu.str=true\n");
 	r_strbuf_appendf (sb, "f app.base = 0x%" PFMT64x "\n", (uint64_t)app->base_addr);
 	r_strbuf_appendf (sb, "f app.heap_base = 0x%" PFMT64x "\n", (uint64_t)app->heap_base);
@@ -156,14 +165,14 @@ char *dart_dumper_dump4radare2(DartApp *app) {
 			if (!fn->name) {
 				continue;
 			}
-			dump_func_r2 (sb, fn);
+			dump_func_r2 (sb, fn, quiet);
 		}
 	}
 
 	r_strbuf_append (sb, "dr x27=`e anal.gp`\n");
 	r_strbuf_append (sb, "'f PP=x27\n");
 
-	dump_pool_offsets_flags (app, sb);
+	dump_pool_offsets_flags (app, sb, quiet);
 
 	return r_strbuf_drain (sb);
 }
@@ -230,7 +239,7 @@ char *dart_dumper_dump_funcs(DartApp *app, int fmt) {
 			break;
 		}
 		if (fmt == 'r') {
-			dump_func_r2 (sb, fn);
+			dump_func_r2 (sb, fn, app->dctx.quiet);
 		} else {
 			dump_func_text (sb, fn);
 		}

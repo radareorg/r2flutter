@@ -12,7 +12,7 @@ Modifiers:
   -j                    Output in JSON format
   -r                    Output r2 commands for the selected action
   -V                    Show version
-  -q                    Suppress non-essential output
+  -q                    Compact output; suppress non-essential detail
   -v                    Verbose (stderr debug info)
   -vv                   More verbose (dump headers)
 Actions:
@@ -33,7 +33,7 @@ Usage: r2flutter [-jrqnv] [-l N] [-o file] <action>
 | r2flutter          analyze dart snapshot and apply flags/comments
 | r2flutter -j <act> output JSON for dump actions
 | r2flutter -r <act> output r2 commands for dump actions
-| r2flutter -q       quiet analysis output
+| r2flutter -q <act> compact output; quiet analysis logs
 | r2flutter -n       use heuristic name-pool fallback; names may be wrong
 | r2flutter -v       increase parser verbosity
 | r2flutter -l N     limit function/instruction-table/xref output

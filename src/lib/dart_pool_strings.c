@@ -733,7 +733,7 @@ static char *make_string_flagname(const DartStringInfo *si) {
 	return flagname;
 }
 
-static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt) {
+static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt, bool quiet) {
 	if (!si || !si->value) {
 		return;
 	}
@@ -749,7 +749,7 @@ static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt) {
 		r_strbuf_appendf (sb, "0x%08" PRIx64 " %4d :%s \"%s\"\n", si->address, si->length, string_category_name (si->category), str);
 		free (str);
 	}
-	if (si->references && r_list_length (si->references) > 0) {
+	if (!quiet && si->references && r_list_length (si->references) > 0) {
 		r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
 		if (fmt != 'r') {
 			RListIter *rit;
@@ -800,13 +800,14 @@ char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
 		dart_recovery_model_fini (&model);
 		return strdup ("# No strings found\n");
 	}
-	RStrBuf *sb = r_strbuf_new (fmt == 'r'? "# Dart Strings\n": "");
+	const bool quiet = ctx && ctx->quiet;
+	RStrBuf *sb = r_strbuf_new (fmt == 'r' && !quiet? "# Dart Strings\n": "");
 	RListIter *it;
 	DartStringInfo *si;
 	r_list_foreach (strings, it, si) {
-		dump_string_text (sb, si, fmt);
+		dump_string_text (sb, si, fmt, quiet);
 	}
-	if (fmt == 'r') {
+	if (fmt == 'r' && !quiet) {
 		r_strbuf_appendf (sb, "# Total: %d strings\n", r_list_length (strings));
 	}
 	char *out = r_strbuf_drain (sb);

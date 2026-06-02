@@ -1,7 +1,7 @@
 {
   "name": "dump-fields-synthetic-xrefs",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-x", "bins/synthetic/field_snapshot.bin"],
+  "cmd": ["../bin/r2flutter", "-x", "bins/synthetic/field_snapshot.bin"],
   "timeout": 10,
   "expect": {
     "contains": [

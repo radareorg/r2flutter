@@ -49,7 +49,7 @@ Modifiers:
   -j                    Output in JSON format
   -r                    Output r2 commands for the selected action
   -V                    Show version
-  -q                    Suppress non-essential output
+  -q                    Compact output; suppress non-essential detail
   -v                    Verbose (stderr debug info)
   -vv                   More verbose (dump headers)
 Actions:
@@ -79,6 +79,7 @@ Dump actions honor the global format modifiers:
 bin/r2flutter -i test/bins/ios/Runner.app
 bin/r2flutter -j -l 16 -i test/bins/ios/Runner.app
 bin/r2flutter -r -l 16 -i test/bins/ios/Runner.app
+bin/r2flutter -qrz test/bins/ios/Runner.app
 bin/r2flutter -rz test/bins/ios/Runner.app
 ```
 

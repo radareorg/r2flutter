@@ -537,6 +537,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		}
 		return fmt == 'r'? strdup ("# Error: Dart snapshots not found\n"): strdup ("Error: Dart snapshots not found\n");
 	}
+	const bool quiet = ctx && ctx->quiet;
 	const char *version = dart_version_from_hash (ctx->snapshot_hash);
 	if (fmt == 'j') {
 		ut64 header_addr = ctx->iso_data? ctx->iso_data: ctx->vm_data;
@@ -598,7 +599,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		return pj_drain (pj);
 	}
 	if (fmt == 'r') {
-		RStrBuf *sb = r_strbuf_new ("'# Dart AOT Snapshot Info\n");
+		RStrBuf *sb = r_strbuf_new (quiet? "": "'# Dart AOT Snapshot Info\n");
 		// Create flags for snapshot addresses
 		r_strbuf_appendf (sb, "'fs dart\n");
 		r_strbuf_appendf (sb, "'f dart.vm_data = 0x%" PFMT64x "\n", (ut64)ctx->vm_data);
@@ -609,18 +610,28 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 			r_strbuf_appendf (sb, "'f dart.container_payload = 0x%" PFMT64x "\n", (ut64)ctx->container_payload_offset);
 			r_strbuf_appendf (sb, "'f dart.container_payload_size = 0x%" PFMT64x "\n", (ut64)ctx->container_payload_size);
 		}
-		// Add comments with metadata
-		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart snapshot hash: %s\n", (ut64)ctx->vm_data, ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
-		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart version: %s\n", (ut64)ctx->vm_data, version? version: "unknown");
-		if (ctx->layout) {
-			const DartVerLayout *l = ctx->layout;
-			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", (ut64)ctx->vm_data, dart_tag_style_to_string (l->tag_style));
-			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Alignment: %d, CWS: %d\n", (ut64)ctx->vm_data, l->max_alignment, ctx->compressed_word_size);
+		if (!quiet) {
+			// Add comments with metadata
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart snapshot hash: %s\n", (ut64)ctx->vm_data, ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart version: %s\n", (ut64)ctx->vm_data, version? version: "unknown");
+			if (ctx->layout) {
+				const DartVerLayout *l = ctx->layout;
+				r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", (ut64)ctx->vm_data, dart_tag_style_to_string (l->tag_style));
+				r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Alignment: %d, CWS: %d\n", (ut64)ctx->vm_data, l->max_alignment, ctx->compressed_word_size);
+			}
 		}
 		return r_strbuf_drain (sb);
 	}
 
 	RStrBuf *sb = r_strbuf_new ("");
+	if (quiet) {
+		r_strbuf_appendf (sb, "snapshot_hash=%s dart_version=%s vm_data=0x%" PFMT64x " vm_instr=0x%" PFMT64x " iso_data=0x%" PFMT64x " iso_instr=0x%" PFMT64x " cws=%d", ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)", version? version: "unknown", (ut64)ctx->vm_data, (ut64)ctx->vm_instr, (ut64)ctx->iso_data, (ut64)ctx->iso_instr, ctx->compressed_word_size);
+		if (ctx->layout) {
+			const DartVerLayout *l = ctx->layout;
+			r_strbuf_appendf (sb, " tag_style=%s alignment=%d", dart_tag_style_to_string (l->tag_style), l->max_alignment);
+		}
+		return r_strbuf_drain (sb);
+	}
 	r_strbuf_appendf (sb, "Dart AOT Snapshot Header\n");
 	r_strbuf_appendf (sb, "========================\n\n");
 	r_strbuf_appendf (sb, "snapshot_hash: %s\n", ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
@@ -771,12 +782,15 @@ char *dart_pool_dump_it(DartCtx *ctx, int fmt) {
 		dart_instruction_table_list_free (entries);
 		return pj_drain (pj);
 	}
-	RStrBuf *sb = fmt == 'r'? r_strbuf_new ("# Dart InstructionTable entries\n"): r_strbuf_new ("");
-	r_strbuf_appendf (sb, "# length=%" PRIu64 " first_entry_with_code=%" PRIu64 " canonical_stack_map_entries_offset=%" PRIu64 "\n", (uint64_t)ctx->it_length, (uint64_t)ctx->it_first_with_code, (uint64_t)ctx->it_canonical_stack_map_offset);
+	const bool quiet = ctx && ctx->quiet;
+	RStrBuf *sb = fmt == 'r' && !quiet? r_strbuf_new ("# Dart InstructionTable entries\n"): r_strbuf_new ("");
+	if (!quiet) {
+		r_strbuf_appendf (sb, "# length=%" PRIu64 " first_entry_with_code=%" PRIu64 " canonical_stack_map_entries_offset=%" PRIu64 "\n", (uint64_t)ctx->it_length, (uint64_t)ctx->it_first_with_code, (uint64_t)ctx->it_canonical_stack_map_offset);
+	}
 	DartInstructionTableEntry *entry;
 	R_VEC_FOREACH (entries, entry) {
 		if (fmt == 'r') {
-			if (entry->name && *entry->name) {
+			if (!quiet && entry->name && *entry->name) {
 				r_strbuf_appendf (sb, "# it[%" PRIu64 "] %s\n", (uint64_t)entry->index, entry->name);
 			}
 			r_strbuf_appendf (sb, "f it.%s_%" PRIu64 " = 0x%" PFMT64x "\n", entry->has_code? "code": "stub", (uint64_t)entry->index, (ut64)entry->address);

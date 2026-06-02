@@ -49,7 +49,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter          analyze dart snapshot and apply flags/comments\n"
 		"| r2flutter -j <act> output JSON for dump actions\n"
 		"| r2flutter -r <act> output r2 commands for dump actions\n"
-		"| r2flutter -q       quiet analysis output\n"
+		"| r2flutter -q <act> compact output; quiet analysis logs\n"
 		"| r2flutter -n       use heuristic name-pool fallback; names may be wrong\n"
 		"| r2flutter -v       increase parser verbosity\n"
 		"| r2flutter -l N     limit function/instruction-table/xref output\n"

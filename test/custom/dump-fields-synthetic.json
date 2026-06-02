@@ -1,7 +1,7 @@
 {
   "name": "dump-fields-synthetic",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-q", "-c", "bins/synthetic/field_snapshot.bin"],
+  "cmd": ["../bin/r2flutter", "-c", "bins/synthetic/field_snapshot.bin"],
   "timeout": 10,
   "expect": {
     "contains": [

@@ -23,6 +23,17 @@ f method.Duration.compareTo = 0x5b6aa4
 EOF
 RUN
 
+NAME=quiet-r2-funcs-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -qrf -l 2 bins/android/mafia 2>/dev/null
+EOF
+EXPECT=<<EOF
+f method.DateTime.compareTo = 0x5b69c0
+f method.Duration.compareTo = 0x5b6aa4
+EOF
+RUN
+
 NAME=json-funcs-mafia
 FILE=-
 CMDS=<<EOF

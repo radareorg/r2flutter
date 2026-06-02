@@ -313,7 +313,7 @@ name, then applies it to:
 | `-V` | Version string. |
 | `-j` | JSON output where the selected action supports it. |
 | `-r` | radare2 command/script output where the selected action supports it. |
-| `-q` | Suppress non-essential stdout/log noise. |
+| `-q` | Compact dump output and suppress non-essential stdout/log noise. |
 | `-v`, `-vv` | Increase stderr diagnostics; `-vv` also prints extra snapshot/header bytes. |
 | `-c` | Dump classes. |
 | `-f` | Dump recovered functions as `addr name`; with `-j`, emits objects with `addr`, `name`, and optional `size`. |
@@ -346,7 +346,7 @@ Plugin format modifiers:
 |----------|---------|
 | `-j` | JSON output for dump actions. |
 | `-r` | radare2 command output for dump actions. |
-| `-q` | Suppress non-essential output. |
+| `-q` | Compact dump output and quiet analysis logs. |
 | `-n` | Enable heuristic name-pool fallback for otherwise unnamed functions. |
 | `-v`, `-vv` | Increase parser diagnostics. |
 | `-l N` | Limit function, instruction-table, or xref output depending on the action. |
