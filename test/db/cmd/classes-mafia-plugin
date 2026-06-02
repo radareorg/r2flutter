@@ -1,7 +1,7 @@
 NAME=r2-plugin-C-mafia-future
 FILE=-
 CMDS=<<EOF
-!!sh -c "r2 -NN -q -escr.color=0 -e bin.relocs.apply=true -i ../src/r2/core_flutter.dylib -qc \"r2flutter -C\" -qc \"ic dart_Future\" -qc q bins/android/mafia/libapp.so 2>&1"
+!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -escr.color=0 -e bin.relocs.apply=true -i \"\$p\" -qc \"r2flutter -C\" -qc \"ic dart_Future\" -qc q bins/android/mafia/libapp.so 2>&1"
 EOF
 EXPECT=<<EOF
 INFO: Applied 8986 Dart classes, 1756 fields, 26609 methods

@@ -3,19 +3,25 @@ FILE=-
 CMDS=<<EOF
 !!../bin/r2flutter -h
 ?e ===
-!!r2 -NN -q -i ../src/r2/core_flutter.dylib -qc 'r2flutter -h' -
+!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -h\" -"
+?e ===
+!!../bin/r2flutter | sed -n '1p'
+?e ===
+!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc r2flutter -"
 EOF
 EXPECT=<<EOF
 Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
 Modifiers:
   -h                    Show help
   -j                    Output in JSON format
-  -r                    Output r2 commands for the selected action
-  -V                    Show version
   -q                    Compact output; suppress non-essential detail
+  -r                    Output r2 commands for the selected action
+  -n                    Heuristic fallback for unknown functions; may assign wrong names
   -v                    Verbose (stderr debug info)
   -vv                   More verbose (dump headers)
+  -V                    Show version
 Actions:
+  -A                    Analyze Dart snapshot and apply flags/comments
   -c                    Print extracted class information
   -f                    Print all extracted functions (addr name)
   -H                    Print Dart AOT snapshot header info
@@ -26,18 +32,44 @@ Actions:
   -z                    Print all extracted strings
 Options:
   -l <N>                Limit output to N items
-  -n                    Heuristic fallback for unknown functions; may assign wrong names
   -o <file>             Load Flutter obfuscation map JSON
 ===
-Usage: r2flutter [-jrqnv] [-l N] [-o file] <action>
-| r2flutter          analyze dart snapshot and apply flags/comments
+Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>
+| r2flutter          show this help
 | r2flutter -j <act> output JSON for dump actions
-| r2flutter -r <act> output r2 commands for dump actions
 | r2flutter -q <act> compact output; quiet analysis logs
+| r2flutter -r <act> output r2 commands for dump actions
 | r2flutter -n       use heuristic name-pool fallback; names may be wrong
 | r2flutter -v       increase parser verbosity
 | r2flutter -l N     limit function/instruction-table/xref output
 | r2flutter -o file  load Flutter obfuscation map JSON
+| r2flutter -A       analyze dart snapshot and apply flags/comments
+| r2flutter -a       run Dart-aware code analysis and recover code refs
+| r2flutter -c       dump classes
+| r2flutter -C       apply Dart classes, fields, methods and types
+| r2flutter -F       analyze with field extraction enabled
+| r2flutter -f       dump recovered functions
+| r2flutter -H       dump Dart AOT snapshot header info
+| r2flutter -h       show this help
+| r2flutter -i       dump instruction table entries
+| r2flutter -R       dump full radare2 script (like standalone -R)
+| r2flutter -T       dump string-based type names
+| r2flutter -V       show version
+| r2flutter -x       dump metadata/data-image xrefs
+| r2flutter -z       dump all strings
+===
+Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
+===
+Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>
+| r2flutter          show this help
+| r2flutter -j <act> output JSON for dump actions
+| r2flutter -q <act> compact output; quiet analysis logs
+| r2flutter -r <act> output r2 commands for dump actions
+| r2flutter -n       use heuristic name-pool fallback; names may be wrong
+| r2flutter -v       increase parser verbosity
+| r2flutter -l N     limit function/instruction-table/xref output
+| r2flutter -o file  load Flutter obfuscation map JSON
+| r2flutter -A       analyze dart snapshot and apply flags/comments
 | r2flutter -a       run Dart-aware code analysis and recover code refs
 | r2flutter -c       dump classes
 | r2flutter -C       apply Dart classes, fields, methods and types

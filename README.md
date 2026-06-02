@@ -47,12 +47,14 @@ Usage: bin/r2flutter [options] <libapp_path_or_dir>
 Modifiers:
   -h                    Show help
   -j                    Output in JSON format
-  -r                    Output r2 commands for the selected action
-  -V                    Show version
   -q                    Compact output; suppress non-essential detail
+  -r                    Output r2 commands for the selected action
+  -n                    Heuristic fallback for unknown functions; may assign wrong names
   -v                    Verbose (stderr debug info)
   -vv                   More verbose (dump headers)
+  -V                    Show version
 Actions:
+  -A                    Analyze Dart snapshot and apply flags/comments
   -c                    Print extracted class information
   -f                    Print all extracted functions (addr name)
   -H                    Print Dart AOT snapshot header info
@@ -63,11 +65,10 @@ Actions:
   -z                    Print all extracted strings
 Options:
   -l <N>                Limit output to N items
-  -n                    Heuristic fallback for unknown functions; may assign wrong names
   -o <file>             Load Flutter obfuscation map JSON
 ```
 
-`-f` and the default analysis flow skip loader-provided ELF/Mach-O stub symbols; radare2 already gets those from `RBin`, so `r2flutter` stays focused on Dart-derived metadata.
+`-f` and the `-A` analysis flow skip loader-provided ELF/Mach-O stub symbols; radare2 already gets those from `RBin`, so `r2flutter` stays focused on Dart-derived metadata.
 
 `-o` consumes the JSON array emitted by Flutter/Dart `--save-obfuscation-map`. r2flutter inverts that mapping and applies it to recovered functions, instruction-table names, classes, fields, and method owners.
 

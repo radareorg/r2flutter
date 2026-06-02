@@ -246,7 +246,9 @@ This leaves `-t` for r2 comment/script-style string output and keeps public exam
 
 ## Standalone CLI Uses Short Flags Only
 
-The standalone `bin/r2flutter` parser now uses `r_getopt`, so every option is a single-character flag. Keep CLI tests and examples on these action flags: `-c` classes, `-f` functions, `-H` header, `-i` instruction table, `-R` r2 script, `-T` types, `-x` xrefs, and `-z` strings. Shared modifiers are `-j`, `-r`, `-q`, `-v`, `-l`, `-n`, and `-o`.
+The standalone `bin/r2flutter` parser now uses `r_getopt`, so every option is a single-character flag. Keep CLI tests and examples on these action flags: `-A` analyze/apply, `-c` classes, `-f` functions, `-H` header, `-i` instruction table, `-R` r2 script, `-T` types, `-x` xrefs, and `-z` strings. Shared modifiers are `-j`, `-q`, `-r`, `-n`, and `-v`; argument options are `-l` and `-o`.
+
+Bare `r2flutter` must be help-only in both the standalone CLI and core plugin. The analyze/apply flow is explicit under `-A`, while lowercase `-a` remains the Dart-aware code analysis pass.
 
 `-q` is an output modifier, not an action. It keeps the selected action intact while compacting text/r2 dumps by dropping explanatory comments and nested detail where the dump has a shorter useful form.
 

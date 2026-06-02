@@ -312,9 +312,11 @@ name, then applies it to:
 | `-h` | Help. |
 | `-V` | Version string. |
 | `-j` | JSON output where the selected action supports it. |
-| `-r` | radare2 command/script output where the selected action supports it. |
 | `-q` | Compact dump output and suppress non-essential stdout/log noise. |
+| `-r` | radare2 command/script output where the selected action supports it. |
+| `-n` | Enable heuristic name-pool fallback for otherwise unnamed functions. |
 | `-v`, `-vv` | Increase stderr diagnostics; `-vv` also prints extra snapshot/header bytes. |
+| `-A` | Analyze the snapshot and apply recovered flags/comments without dumping. |
 | `-c` | Dump classes. |
 | `-f` | Dump recovered functions as `addr name`; with `-j`, emits objects with `addr`, `name`, and optional `size`. |
 | `-H` | Dump snapshot header/layout/container information. |
@@ -324,7 +326,6 @@ name, then applies it to:
 | `-x` | Dump metadata/data-image xrefs. |
 | `-z` | Dump strings. |
 | `-l <N>` | Limit function or instruction-table/xref output depending on the action. |
-| `-n` | Enable heuristic name-pool fallback for otherwise unnamed functions. |
 | `-o <file>` | Load a Flutter obfuscation map JSON file. |
 
 Directory inputs are resolved as Android first (`libapp.so`), then iOS
@@ -332,21 +333,21 @@ Directory inputs are resolved as Android first (`libapp.so`), then iOS
 
 ## radare2 Plugin Support
 
-The core plugin command is `r2flutter`. Running it with no flags analyzes the
-current file and applies flags/comments.
+The core plugin command is `r2flutter`. Running it with no flags shows help.
+Use `r2flutter -A` to analyze the current file and apply flags/comments.
 
 Config keys:
 
 - `r2flutter.mapfile`: Flutter obfuscation map JSON path
 - `r2flutter.namepool`: enable heuristic name-pool fallback
 
-Plugin format modifiers:
+Plugin modifiers:
 
 | Modifier | Support |
 |----------|---------|
 | `-j` | JSON output for dump actions. |
-| `-r` | radare2 command output for dump actions. |
 | `-q` | Compact dump output and quiet analysis logs. |
+| `-r` | radare2 command output for dump actions. |
 | `-n` | Enable heuristic name-pool fallback for otherwise unnamed functions. |
 | `-v`, `-vv` | Increase parser diagnostics. |
 | `-l N` | Limit function, instruction-table, or xref output depending on the action. |
@@ -356,7 +357,8 @@ Plugin actions:
 
 | Command | Support |
 |---------|---------|
-| `r2flutter` | Analyze Dart snapshot, apply method flags/comments, and set `e emu.str=true`. |
+| `r2flutter` | Show help. |
+| `r2flutter -A` | Analyze Dart snapshot, apply method flags/comments, and set `e emu.str=true`. |
 | `r2flutter -a` | Run Dart-aware code analysis and recover refs/comments. |
 | `r2flutter -H` | Print snapshot header info. |
 | `r2flutter -i` | Print instruction-table entries. |

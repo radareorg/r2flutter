@@ -13,12 +13,14 @@ static const char usage_text[] =
 	"Modifiers:\n"
 	"  -h                    Show help\n"
 	"  -j                    Output in JSON format\n"
-	"  -r                    Output r2 commands for the selected action\n"
-	"  -V                    Show version\n"
 	"  -q                    Compact output; suppress non-essential detail\n"
+	"  -r                    Output r2 commands for the selected action\n"
+	"  -n                    Heuristic fallback for unknown functions; may assign wrong names\n"
 	"  -v                    Verbose (stderr debug info)\n"
 	"  -vv                   More verbose (dump headers)\n"
+	"  -V                    Show version\n"
 	"Actions:\n"
+	"  -A                    Analyze Dart snapshot and apply flags/comments\n"
 	"  -c                    Print extracted class information\n"
 	"  -f                    Print all extracted functions (addr name)\n"
 	"  -H                    Print Dart AOT snapshot header info\n"
@@ -29,7 +31,6 @@ static const char usage_text[] =
 	"  -z                    Print all extracted strings\n"
 	"Options:\n"
 	"  -l <N>                Limit output to N items\n"
-	"  -n                    Heuristic fallback for unknown functions; may assign wrong names\n"
 	"  -o <file>             Load Flutter obfuscation map JSON\n";
 
 static void print_usage(const char *argv0) {
@@ -93,7 +94,7 @@ static char *resolve_input_path(const char *s, DartCtx *dctx, bool *extracted_in
 int main(int argc, char **argv) {
 	if (argc < 2) {
 		print_usage (argv[0]);
-		return 1;
+		return 0;
 	}
 
 	const char *libapp_path_in = NULL;
@@ -103,10 +104,13 @@ int main(int argc, char **argv) {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "cfhHijno:qrRzTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijno:qrRzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
+		case 'A':
+			action = c;
+			break;
 		case 'c':
 			action = c;
 			break;
@@ -176,7 +180,11 @@ int main(int argc, char **argv) {
 	}
 	if (!libapp_path_in) {
 		print_usage (argv[0]);
-		return 1;
+		return action? 1: 0;
+	}
+	if (!action) {
+		print_usage (argv[0]);
+		return 0;
 	}
 	bool extracted_inner = false;
 	char *libapp_path = resolve_input_path (libapp_path_in, &dctx, &extracted_inner);
@@ -225,6 +233,16 @@ int main(int argc, char **argv) {
 	char *output = NULL;
 
 	switch (action) {
+	case 'A':
+		dart_app_load_info (app);
+		if (!dctx.quiet && app->functions) {
+			size_t count = RVecDartFunction_length (app->functions);
+			if (count > 0) {
+				R_LOG_INFO ("Loaded %zu functions from Dart snapshot", count);
+			}
+		}
+		dart_dumper_apply_to_core (app);
+		break;
 	case 'z':
 		output = dart_pool_dump_strings (&dctx, fmt);
 		break;
@@ -261,8 +279,7 @@ int main(int argc, char **argv) {
 		break;
 	case 0:
 	default:
-		R_LOG_ERROR ("no action specified. Use -h for available actions");
-		ret = 1;
+		print_usage (argv[0]);
 		break;
 	}
 

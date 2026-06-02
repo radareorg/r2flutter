@@ -45,15 +45,16 @@ static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [-jrqnv] [-l N] [-o file] <action>\n"
-		"| r2flutter          analyze dart snapshot and apply flags/comments\n"
+		"Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>\n"
+		"| r2flutter          show this help\n"
 		"| r2flutter -j <act> output JSON for dump actions\n"
-		"| r2flutter -r <act> output r2 commands for dump actions\n"
 		"| r2flutter -q <act> compact output; quiet analysis logs\n"
+		"| r2flutter -r <act> output r2 commands for dump actions\n"
 		"| r2flutter -n       use heuristic name-pool fallback; names may be wrong\n"
 		"| r2flutter -v       increase parser verbosity\n"
 		"| r2flutter -l N     limit function/instruction-table/xref output\n"
 		"| r2flutter -o file  load Flutter obfuscation map JSON\n"
+		"| r2flutter -A       analyze dart snapshot and apply flags/comments\n"
 		"| r2flutter -a       run Dart-aware code analysis and recover code refs\n"
 		"| r2flutter -c       dump classes\n"
 		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
@@ -166,6 +167,9 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 			const char flag = flags[j];
 			const char *tail = flags + j + 1;
 			switch (flag) {
+			case 'A':
+				cmd->action = flag;
+				break;
 			case 'a':
 				cmd->action = flag;
 				break;
@@ -274,10 +278,9 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 
 	switch (cmd->action) {
 	case 0:
-		if (cmd->fmt) {
-			r2flutter_help (core);
-			return true;
-		}
+		r2flutter_help (core);
+		return true;
+	case 'A':
 		r2flutter_analyze (core, dctx, dctx->quiet);
 		return true;
 	case 'a':
@@ -348,7 +351,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 
 	const char ch0 = *args;
 	if (!ch0) {
-		r2flutter_analyze (core, &dctx, 0);
+		r2flutter_help (core);
 		return true;
 	}
 
@@ -368,7 +371,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		free (cmd.obf_map_path);
 		return ret;
 	}
-	r2flutter_analyze (core, &dctx, 0);
+	r2flutter_help (core);
 	return true;
 }
 
