@@ -41,7 +41,7 @@ $(MAIN_OBJ): $(MAIN_SRC)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -g -c $< -o $@
 
-r2:
+r2 plugin:
 	$(MAKE) $(STATIC_LIB)
 	$(MAKE) -C src/r2
 	$(MAKE) -C src/r2 user-install
@@ -67,6 +67,6 @@ test: $(BIN_FILE)
 	@echo "Running custom testsuite"
 	@python3 scripts/run_tests.py
 
-.PHONY: all clean test test-r2r r2 user-install user-uninstall fmt indent format
+.PHONY: all clean test test-r2r r2 plugin user-install user-uninstall fmt indent format
 
 -include $(DEP_FILES)

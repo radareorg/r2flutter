@@ -107,15 +107,20 @@ RUN
 NAME=r2-fields-synthetic-class-metadata
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -r -c bins/synthetic/field_snapshot.bin 2>/dev/null | grep -E '^(# Dart class symbols|ic\+dart_TestClass @ 0|ac dart_TestClass$|acb dart_TestClass dart_TestInterface 0|# field dart_TestClass.callback|# method dart_TestClass.compute)'
+!!../bin/r2flutter -r -c bins/synthetic/field_snapshot.bin 2>/dev/null | grep -E '^(# Dart class symbols|ic\+dart_TestClass @ 0|ic\+dart_TestInterface @ 0|ic\+dart_TestClass:dart_TestInterface|ac dart_TestClass$|acb dart_TestClass dart_TestInterface 0|ic\+dart_TestClass\.\.callback void \* @ 0x28|ic\+dart_TestClass.compute @ 0x0|# field dart_TestClass.callback|# method dart_TestClass.compute)'
 EOF
 EXPECT=<<EOF
 # Dart class symbols and analysis metadata
 ic+dart_TestClass @ 0
 ac dart_TestClass
+ic+dart_TestInterface @ 0
+ic+dart_TestClass:dart_TestInterface
 acb dart_TestClass dart_TestInterface 0
 # field dart_TestClass.callback +0x28 type=(int) => String instance
+ic+dart_TestClass..callback void * @ 0x28
+ic+dart_TestClass.compute @ 0x0
 # method dart_TestClass.compute kind=RegularFunction mode=instance cc=dyncc:x0+8,^:x0!T0 signature=(int) => String
+ic+dart_TestInterface @ 0
 EOF
 RUN
 
@@ -133,10 +138,11 @@ RUN
 NAME=r2-plugin-C-fields-synthetic
 FILE=-
 CMDS=<<EOF
-!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -C\" -qc ic -qc \"t dart_TestClass\" bins/synthetic/field_snapshot.bin 2>/dev/null" | awk '/class .* dart_TestClass$/ { cls = 1 } /method.* compute$/ { method = 1 } /field.* fieldA$/ { field = 1 } /^pf \[16\]\.qppp fieldA items genericItems callback$/ { type = 1 } END { print "class=" cls + 0; print "method=" method + 0; print "field=" field + 0; print "type=" type + 0 }'
+!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -C\" -qc ic -qc \"t dart_TestClass\" bins/synthetic/field_snapshot.bin 2>/dev/null" | awk '/class .* dart_TestClass( :: dart_TestInterface)?$/ { cls = 1 } /class .* dart_TestClass :: dart_TestInterface$/ { super = 1 } /method.* compute$/ { method = 1 } /field.* fieldA$/ { field = 1 } /^pf \[16\]\.qppp fieldA items genericItems callback$/ { type = 1 } END { print "class=" cls + 0; print "super=" super + 0; print "method=" method + 0; print "field=" field + 0; print "type=" type + 0 }'
 EOF
 EXPECT=<<EOF
 class=1
+super=1
 method=1
 field=1
 type=1

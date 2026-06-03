@@ -1834,7 +1834,7 @@ static char *class_export_name(const char *name) {
 	char *safe = r_str_newf ("dart_%s", R_STR_ISNOTEMPTY (name)? name: "unknown");
 	r_name_filter (safe, 0);
 	for (char *p = safe; *p; p++) {
-		if (*p == '.') {
+		if (*p == '.' || *p == ':') {
 			*p = '_';
 		}
 	}
@@ -1849,7 +1849,7 @@ static char *member_export_name(const char *name, const char *fallback) {
 	char *safe = strdup (R_STR_ISNOTEMPTY (name)? name: fallback);
 	r_name_filter (safe, 0);
 	for (char *p = safe; *p; p++) {
-		if (*p == '.') {
+		if (*p == '.' || *p == ':') {
 			*p = '_';
 		}
 	}
@@ -1982,6 +1982,30 @@ static void append_comment_cmd(RStrBuf *sb, ut64 addr, const char *msg) {
 	free (b64);
 }
 
+static void append_ic_inheritance_cmd(RStrBuf *sb, const char *class_name, const char *base_name) {
+	if (!sb || R_STR_ISEMPTY (class_name) || R_STR_ISEMPTY (base_name)) {
+		return;
+	}
+	r_strbuf_appendf (sb, "ic+%s @ 0\n", base_name);
+	r_strbuf_appendf (sb, "ic+%s:%s\n", class_name, base_name);
+}
+
+static void append_ic_field_cmd(RStrBuf *sb, const char *class_name, const DartFieldInfo *fi) {
+	if (!sb || R_STR_ISEMPTY (class_name) || !fi || R_STR_ISEMPTY (fi->name)) {
+		return;
+	}
+	char *field_name = member_export_name (fi->name, "field");
+	r_strbuf_appendf (sb, "ic+%s..%s %s @ 0x%x\n", class_name, field_name, field_c_type (fi), fi->offset);
+	free (field_name);
+}
+
+static void append_ic_method_cmd(RStrBuf *sb, const char *class_name, const char *method_name, ut64 addr) {
+	if (!sb || R_STR_ISEMPTY (class_name) || R_STR_ISEMPTY (method_name)) {
+		return;
+	}
+	r_strbuf_appendf (sb, "ic+%s.%s @ 0x%" PFMT64x "\n", class_name, method_name, addr);
+}
+
 static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool quiet) {
 	if (!sb || !ci || R_STR_ISEMPTY (ci->name)) {
 		return;
@@ -1999,6 +2023,7 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 #endif
 	if (R_STR_ISNOTEMPTY (ci->super_class_name)) {
 		char *super_name = class_export_name (ci->super_class_name);
+		append_ic_inheritance_cmd (sb, class_name, super_name);
 		r_strbuf_appendf (sb, "ac %s\n", super_name);
 		r_strbuf_appendf (sb, "acb %s %s 0\n", class_name, super_name);
 		free (super_name);
@@ -2014,19 +2039,23 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 			if (!quiet) {
 				r_strbuf_appendf (sb, "# interface %s implements %s\n", class_name, ii->name);
 			}
+			append_ic_inheritance_cmd (sb, class_name, iface_name);
 			r_strbuf_appendf (sb, "ac %s\n", iface_name);
 			r_strbuf_appendf (sb, "acb %s %s 0\n", class_name, iface_name);
 			free (iface_name);
 		}
 	}
-	if (!quiet && ci->fields) {
+	if (ci->fields) {
 		RListIter *fit;
 		DartFieldInfo *fi;
 		r_list_foreach (ci->fields, fit, fi) {
 			if (!fi || R_STR_ISEMPTY (fi->name)) {
 				continue;
 			}
-			r_strbuf_appendf (sb, "# field %s.%s +0x%x type=%s %s%s%s%s\n", class_name, fi->name, fi->offset, R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic", (fi->flags & DART_FIELD_STATIC)? "static": "instance", (fi->flags & DART_FIELD_FINAL)? " final": "", (fi->flags & DART_FIELD_CONST)? " const": "", (fi->flags & DART_FIELD_LATE)? " late": "");
+			if (!quiet) {
+				r_strbuf_appendf (sb, "# field %s.%s +0x%x type=%s %s%s%s%s\n", class_name, fi->name, fi->offset, R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic", (fi->flags & DART_FIELD_STATIC)? "static": "instance", (fi->flags & DART_FIELD_FINAL)? " final": "", (fi->flags & DART_FIELD_CONST)? " const": "", (fi->flags & DART_FIELD_LATE)? " late": "");
+			}
+			append_ic_field_cmd (sb, class_name, fi);
 		}
 	}
 	if (ci->methods) {
@@ -2039,6 +2068,7 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 			char *method_name = member_export_name (mi->name, "method");
 			char *cc = method_dyncc (ci, mi);
 			ut64 addr = method_export_addr (mi);
+			append_ic_method_cmd (sb, class_name, method_name, addr);
 			if (!quiet) {
 				r_strbuf_appendf (sb, "# method %s.%s kind=%s mode=%s cc=%s", class_name, method_name, method_kind_name (mi->kind_tag), method_mode_name (mi), cc);
 				if (R_STR_ISNOTEMPTY (mi->signature)) {
@@ -2047,7 +2077,6 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 				r_strbuf_append (sb, "\n");
 			}
 			if (addr) {
-				r_strbuf_appendf (sb, "ic+%s.%s @ 0x%" PFMT64x "\n", class_name, method_name, addr);
 				r_strbuf_appendf (sb, "acm %s %s 0x%" PFMT64x "\n", class_name, method_name, addr);
 				if (!quiet) {
 					char *msg = r_str_newf ("dart: method %s.%s kind=%s mode=%s cc=%s%s%s",
@@ -2506,6 +2535,80 @@ static void core_apply_method_comments(RCore *core, const DartClassInfo *ci, con
 	}
 }
 
+static void core_apply_ic_command(RCore *core, char *cmd) {
+	if (!core || R_STR_ISEMPTY (cmd)) {
+		free (cmd);
+		return;
+	}
+	r_core_cmd0 (core, cmd);
+	free (cmd);
+}
+
+static void core_apply_ic_inheritance(RCore *core, const char *class_name, const char *base_name) {
+	if (!core || R_STR_ISEMPTY (class_name) || R_STR_ISEMPTY (base_name)) {
+		return;
+	}
+	core_apply_ic_command (core, r_str_newf ("ic+%s @ 0", base_name));
+	core_apply_ic_command (core, r_str_newf ("ic+%s:%s", class_name, base_name));
+}
+
+static void core_apply_ic_field(RCore *core, const char *class_name, const DartFieldInfo *fi) {
+	if (!core || R_STR_ISEMPTY (class_name) || !fi || R_STR_ISEMPTY (fi->name)) {
+		return;
+	}
+	char *field_name = member_export_name (fi->name, "field");
+	core_apply_ic_command (core, r_str_newf ("ic+%s..%s %s @ 0x%x", class_name, field_name, field_c_type (fi), fi->offset));
+	free (field_name);
+}
+
+static void core_apply_ic_method(RCore *core, const char *class_name, const DartMethodInfo *mi) {
+	if (!core || R_STR_ISEMPTY (class_name) || !mi || R_STR_ISEMPTY (mi->name)) {
+		return;
+	}
+	char *method_name = member_export_name (mi->name, "method");
+	ut64 addr = method_export_addr (mi);
+	core_apply_ic_command (core, r_str_newf ("ic+%s.%s @ 0x%" PFMT64x, class_name, method_name, addr));
+	free (method_name);
+}
+
+static void core_apply_ic_class(RCore *core, const DartClassInfo *ci, const char *class_name) {
+	if (!core || !ci || R_STR_ISEMPTY (class_name)) {
+		return;
+	}
+	core_apply_ic_command (core, r_str_newf ("ic+%s @ 0", class_name));
+	if (R_STR_ISNOTEMPTY (ci->super_class_name)) {
+		char *super_name = class_export_name (ci->super_class_name);
+		core_apply_ic_inheritance (core, class_name, super_name);
+		free (super_name);
+	}
+	if (ci->interfaces) {
+		RListIter *iit;
+		DartInterfaceInfo *ii;
+		r_list_foreach (ci->interfaces, iit, ii) {
+			if (!ii || R_STR_ISEMPTY (ii->name)) {
+				continue;
+			}
+			char *iface_name = class_export_name (ii->name);
+			core_apply_ic_inheritance (core, class_name, iface_name);
+			free (iface_name);
+		}
+	}
+	if (ci->fields) {
+		RListIter *fit;
+		DartFieldInfo *fi;
+		r_list_foreach (ci->fields, fit, fi) {
+			core_apply_ic_field (core, class_name, fi);
+		}
+	}
+	if (ci->methods) {
+		RListIter *mit;
+		DartMethodInfo *mi;
+		r_list_foreach (ci->methods, mit, mi) {
+			core_apply_ic_method (core, class_name, mi);
+		}
+	}
+}
+
 int dart_pool_apply_classes_to_core(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
 		return 0;
@@ -2544,6 +2647,7 @@ int dart_pool_apply_classes_to_core(DartCtx *ctx) {
 		core_apply_anal_class (ctx->core, ci, class_name, &anal_method_count);
 		core_apply_type (ctx->core, ci, class_name, &type_field_count);
 		core_apply_method_comments (ctx->core, ci, ci->name);
+		core_apply_ic_class (ctx->core, ci, class_name);
 		class_count++;
 		free (class_name);
 	}
