@@ -107,12 +107,13 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 	dart_obf_apply_buf (ctx, out, outsz);
 }
 
-static void emit_it_entry_record(const DartInstructionTableEntry *entry, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
-	if (on_it) {
-		on_it (entry, it_user);
+static void emit_it_entry_record(const DartInstructionTableEntry *entry, const DartItEmitRequest *req) {
+	const DartItEmitCallbacks *cb = &req->cb;
+	if (cb->on_it) {
+		cb->on_it (entry, cb->it_user);
 	}
-	if (entry->has_code && on_fn) {
-		on_fn (entry->name? entry->name: "method.unknown", entry->address, 0, fn_user);
+	if (entry->has_code && cb->on_fn) {
+		cb->on_fn (entry->name? entry->name: "method.unknown", entry->address, 0, cb->fn_user);
 	}
 }
 
@@ -333,11 +334,14 @@ static bool locate_it_data_header(DartCtx *ctx, ut64 table_addr, ut64 data_image
 	return false;
 }
 
-int dart_it_emit_linear(DartCtx *ctx, ut64 itlen, ut64 max_entries, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
+int dart_it_emit_linear(const DartItEmitRequest *req) {
+	DartCtx *ctx = req? req->ctx: NULL;
 	if (!ctx || !ctx->iso_instr) {
 		return -1;
 	}
-	ut64 limit = max_entries && max_entries < itlen? max_entries: itlen;
+	const ut64 itlen = req->itlen;
+	const ut64 max_entries = req->max_entries;
+	const ut64 limit = max_entries && max_entries < itlen? max_entries: itlen;
 	ctx->it_length = itlen;
 	ctx->it_first_with_code = 0;
 	ctx->it_canonical_stack_map_offset = 0;
@@ -354,30 +358,31 @@ int dart_it_emit_linear(DartCtx *ctx, ut64 itlen, ut64 max_entries, DartPoolFunc
 };
 		snprintf (name, sizeof (name), "method.fn_%" PRIu64, (uint64_t)i);
 		dart_obf_apply_buf (ctx, name, sizeof (name));
-		emit_it_entry_record (&entry, on_fn, fn_user, on_it, it_user);
+		emit_it_entry_record (&entry, req);
 	}
 	return 0;
 }
 
-int dart_it_emit_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64 itlen, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
+int dart_it_emit_fixed(const DartItEmitRequest *req) {
+	DartCtx *ctx = req? req->ctx: NULL;
 	if (!ctx || !ctx->core) {
 		return -1;
 	}
 	DartInstructionTableHeader hdr = { 0 };
-	ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: data_image_base + (1ULL << 22);
-	if (data_image_end < data_image_base) {
-		data_image_end = data_image_base + (1ULL << 22);
+	ut64 data_image_end = req->data_image_end? req->data_image_end: ctx->iso_instr;
+	if (!data_image_end || data_image_end < req->data_image_base) {
+		data_image_end = req->data_image_base + (1ULL << 22);
 	}
-	if (!locate_it_data_header (ctx, table_addr, data_image_base, data_image_end, itlen, &hdr)) {
+	if (!locate_it_data_header (ctx, req->table_addr, req->data_image_base, data_image_end, req->itlen, &hdr)) {
 		return -1;
 	}
 	ctx->it_length = hdr.length;
 	ctx->it_first_with_code = hdr.first_entry_with_code;
 	ctx->it_canonical_stack_map_offset = hdr.canonical_stack_map_entries_offset;
 	ut64 entries_addr = hdr.header_addr + 16;
-	ut64 effective_max = max_entries;
-	if (!include_stubs && itlen && (!effective_max || effective_max > itlen)) {
-		effective_max = itlen;
+	ut64 effective_max = req->max_entries;
+	if (!req->include_stubs && req->itlen && (!effective_max || effective_max > req->itlen)) {
+		effective_max = req->itlen;
 	}
 	ut64 emitted = 0;
 	for (ut64 idx = 0; idx < hdr.length; idx++) {
@@ -390,7 +395,7 @@ int dart_it_emit_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64
 			break;
 		}
 		bool has_code = idx >= hdr.first_entry_with_code;
-		if (!include_stubs && !has_code) {
+		if (!req->include_stubs && !has_code) {
 			continue;
 		}
 		char name[128];
@@ -403,18 +408,19 @@ int dart_it_emit_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64
 			.has_code = has_code,
 			.name = name,
 };
-		resolve_it_entry_name (ctx, sym_by_addr, data_image_base, &entry, name, sizeof (name));
-		emit_it_entry_record (&entry, on_fn, fn_user, on_it, it_user);
+		resolve_it_entry_name (ctx, req->sym_by_addr, req->data_image_base, &entry, name, sizeof (name));
+		emit_it_entry_record (&entry, req);
 		emitted++;
 	}
 	return 0;
 }
 
-int dart_it_emit_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user) {
+int dart_it_emit_varint(const DartItEmitRequest *req) {
+	DartCtx *ctx = req? req->ctx: NULL;
 	if (!ctx || !ctx->core) {
 		return -1;
 	}
-	ut64 p = addr;
+	ut64 p = req->table_addr;
 	ut64 header_len = 0;
 	ut64 first_with_code = 0;
 	if (!dart_read_unsigned_at (ctx, p, &header_len, &p)) {
@@ -447,10 +453,10 @@ int dart_it_emit_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 max_
 		pc_acc += dpc;
 		sm_acc += dsm;
 		bool has_code = idx >= first_with_code;
-		if (!include_stubs && !has_code) {
+		if (!req->include_stubs && !has_code) {
 			continue;
 		}
-		if (max_entries && emitted >= max_entries) {
+		if (req->max_entries && emitted >= req->max_entries) {
 			break;
 		}
 		char name[128];
@@ -463,8 +469,8 @@ int dart_it_emit_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 max_
 			.has_code = has_code,
 			.name = name,
 };
-		resolve_it_entry_name (ctx, sym_by_addr, data_image_base, &entry, name, sizeof (name));
-		emit_it_entry_record (&entry, on_fn, fn_user, on_it, it_user);
+		resolve_it_entry_name (ctx, req->sym_by_addr, req->data_image_base, &entry, name, sizeof (name));
+		emit_it_entry_record (&entry, req);
 		emitted++;
 	}
 	return 0;

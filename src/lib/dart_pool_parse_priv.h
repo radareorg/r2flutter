@@ -152,6 +152,38 @@ typedef struct {
 
 typedef void(*DartInstructionTableEntryCallback)(const DartInstructionTableEntry *entry, void *user);
 
+typedef struct {
+	DartPoolFunctionCallback on_fn;
+	void *fn_user;
+	DartInstructionTableEntryCallback on_it;
+	void *it_user;
+} DartItEmitCallbacks;
+
+typedef struct {
+	DartCtx *ctx;
+	ut64 table_addr;
+	ut64 data_image_base;
+	ut64 data_image_end;
+	ut64 itlen;
+	ut64 max_entries;
+	bool include_stubs;
+	HtUP *sym_by_addr;
+	DartItEmitCallbacks cb;
+} DartItEmitRequest;
+
+typedef struct {
+	DartCtx *ctx;
+	ut64 cluster_start;
+	ut64 cluster_end;
+	ut64 num_clusters;
+	ut64 num_base_objects;
+	int limit;
+	int detail;
+	const char *r2_scope;
+	RStrBuf *sb;
+	PJ *pj;
+} DartModernClusterSummaryRequest;
+
 bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len);
 bool read_u32_at(DartCtx *ctx, ut64 addr, ut32 *out);
 bool read_u64_at(DartCtx *ctx, ut64 addr, ut64 *out);
@@ -195,7 +227,7 @@ void resolve_names(DartCtx *ctx);
 
 bool modern_skip_n_bytes(ClusterStream *s, ut64 len);
 bool dart_modern_is_supported_snapshot(DartCtx *ctx);
-bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, int limit, int detail, const char *r2_scope, RStrBuf *sb, PJ *pj);
+bool dart_modern_emit_cluster_summary(const DartModernClusterSummaryRequest *req);
 bool dart_modern_build_synthetic_pp(DartCtx *ctx, ut64 snapshot_base, const char *snapshot_label, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, ut64 data_image_base, DartPpInfo *out);
 bool dart_modern_extract_object_pool_strings_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, RList *strings, HtUP *seen_refs, ut64 *ref_counter);
 bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen);
@@ -209,8 +241,8 @@ void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_star
 void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end);
 const char *method_kind_name(uint32_t kind_tag);
 
-int dart_it_emit_linear(DartCtx *ctx, ut64 itlen, ut64 max_entries, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user);
-int dart_it_emit_fixed(DartCtx *ctx, ut64 table_addr, ut64 data_image_base, ut64 itlen, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user);
-int dart_it_emit_varint(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 max_entries, bool include_stubs, HtUP *sym_by_addr, DartPoolFunctionCallback on_fn, void *fn_user, DartInstructionTableEntryCallback on_it, void *it_user);
+int dart_it_emit_linear(const DartItEmitRequest *req);
+int dart_it_emit_fixed(const DartItEmitRequest *req);
+int dart_it_emit_varint(const DartItEmitRequest *req);
 
 #endif
