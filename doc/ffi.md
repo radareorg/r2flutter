@@ -233,6 +233,13 @@ A practical static pipeline for r2flutter should be:
 9. Merge in loader import/export information from RBin.
 10. Emit candidates with confidence, not as unconditional facts.
 
+`-HHH` now covers the exploratory form of steps 2-4 for supported ObjectHeader
+snapshots: it decodes ObjectPool entries and annotates tagged-object slots with
+`resolved_kind`, `resolved_cid`, `resolved_name`, and function code indexes when
+those can be recovered from the cluster streams. The remaining work is to turn
+that per-command decoder into a reusable slot table for xrefs, FFI reporting,
+and plugin-side queries.
+
 Confidence should be explicit. For example:
 
 - `high`: constant `DynamicLibrary.open` path and constant `lookupFunction`

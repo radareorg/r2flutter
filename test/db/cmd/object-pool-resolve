@@ -1,0 +1,9 @@
+NAME=object-pool-resolve-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -j -HHH -l 1100 bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); iso = next (s for s in j["snapshots"] if s["label"] == "Isolate"); pool = next (p for c in iso["clusters"] for p in c.get ("object_pools", [])); e11 = pool["entries"][11]; e12 = pool["entries"][12]; print ("pool=%d len=%d e11=%s:%d:%s e12=%s:%d:%d:%s" % (pool["ref"], pool["length"], e11["resolved_kind"], e11["resolved_cid"], e11["resolved_name"], e12["resolved_kind"], e12["resolved_cid"], e12["resolved_code_index"], e12["resolved_name"]))'
+EOF
+EXPECT=<<EOF
+pool=195985 len=46569 e11=string:93:getCallbackHandle e12=function:7:37188:method._anonymous_closure_
+EOF
+RUN

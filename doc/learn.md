@@ -873,10 +873,14 @@ clusters. JSON mode mirrors this as `snapshots[].clusters[]`.
 `-HHH` enables selected payload diagnostics on top of that same walk. The first
 target is `ObjectPool`: when the fill range is parsed, it decodes entry bits,
 entry type, patchability, snapshot behavior, raw immediates or target refs, and
-both `pool_off`/`pp_off` annotations. If an `ObjectPool` allocation is visible
-but a prior incomplete fill rule prevents reaching its payload, the row reports
-`object_pool_decode: fill_not_parsed` instead of pretending entries are known.
-This keeps the PP/ObjectPool work inspectable and feeds the focused `-p` path.
+both `pool_off`/`pp_off` annotations. Tagged-object entries are now resolved
+back through the cluster table when possible, so text/JSON/r2 output can include
+`resolved_kind`, `resolved_cid`, `resolved_name`, and function `code_index`
+fields for strings, functions, classes/libraries, and other known cluster
+kinds. If an `ObjectPool` allocation is visible but a prior incomplete fill rule
+prevents reaching its payload, the row reports `object_pool_decode:
+fill_not_parsed` instead of pretending entries are known. This keeps the
+PP/ObjectPool work inspectable and feeds the focused `-p` path.
 
 `-p` now builds a synthetic static ObjectPool image from the decoded fill stream
 when the parser can reach a concrete ObjectPool payload. Plain quiet output is

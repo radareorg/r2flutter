@@ -89,6 +89,29 @@ typedef struct {
 } ModernClusterMeta;
 
 typedef struct {
+	DartCtx *ctx;
+	const ModernClusterMeta *meta;
+	ut64 num_clusters;
+	ut64 refs_count;
+	ut64 num_base_objects;
+	const ModernClusterMeta **cluster_by_ref;
+	char **strings_by_ref;
+	ut64 *class_name_ref;
+	ut64 *library_name_ref;
+	ut64 *patch_wrapped_ref;
+	ut64 *function_name_ref;
+	ut64 *function_owner_ref;
+	ut64 *function_code_index;
+} ModernRefResolver;
+
+typedef struct {
+	const char *kind;
+	char *name;
+	int cid;
+	ut64 code_index;
+} ModernResolvedRef;
+
+typedef struct {
 	const char *op;
 	const char *name;
 } ModernOpNameMap;
@@ -1050,27 +1073,6 @@ static ut64 modern_pool_entry_pp_offset(DartCtx *ctx, ut64 index) {
 	return modern_pool_entry_pool_offset (ctx, index) + 1;
 }
 
-static bool modern_read_raw_word(ClusterStream *s, DartCtx *ctx, ut64 *out) {
-	ut8 buf[8] = { 0 };
-	int word_size = modern_target_word_size (ctx);
-	if (word_size == 4) {
-		if (!cs_read_bytes (s, buf, 4)) {
-			return false;
-		}
-		if (out) {
-			*out = r_read_le32 (buf);
-		}
-		return true;
-	}
-	if (!cs_read_bytes (s, buf, 8)) {
-		return false;
-	}
-	if (out) {
-		*out = r_read_le64 (buf);
-	}
-	return true;
-}
-
 static bool modern_skip_fill_instance(ClusterStream *s, const ModernClusterMeta *meta) {
 	ut64 bitmap = 0;
 	if (!cs_read_unsigned (s, &bitmap)) {
@@ -1262,13 +1264,44 @@ static const char *modern_pool_entry_behavior_name(ut8 behavior) {
 	}
 }
 
+static const char *modern_resolve_ref_name(char **strings_by_ref, ut64 *class_name_ref, ut64 *library_name_ref, ut64 *patch_wrapped_ref, ut64 *function_name_ref, ut64 refs_count, ut64 ref, int depth);
+static char *modern_build_full_name(DartCtx *ctx, const char *owner_name, const char *method_name);
+static bool modern_read_cluster_string(ClusterStream *s, char **out);
+static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut64 refs_count);
+
+static void modern_resolved_ref_fini(ModernResolvedRef *resolved) {
+	if (!resolved) {
+		return;
+	}
+	free (resolved->name);
+	memset (resolved, 0, sizeof (*resolved));
+	resolved->cid = -1;
+	resolved->code_index = UT64_MAX;
+}
+
 static bool modern_decode_pool_entry(ClusterStream *s, DartCtx *ctx, ut8 type, ut8 behavior, ut64 *out_ref, ut64 *out_raw) {
+	if (out_ref) {
+		*out_ref = 0;
+	}
+	if (out_raw) {
+		*out_raw = 0;
+	}
 	if (behavior != 0) {
 		return true;
 	}
 	switch (type) {
 	case 0:
-		return modern_read_raw_word (s, ctx, out_raw);
+		{
+			(void)ctx;
+			int64_t imm = 0;
+			if (!cs_read_tagged64 (s, &imm)) {
+				return false;
+			}
+			if (out_raw) {
+				*out_raw = (ut64)imm;
+			}
+			return true;
+		}
 	case 1:
 		return cs_read_ref_id (s, out_ref);
 	case 2:
@@ -1278,7 +1311,395 @@ static bool modern_decode_pool_entry(ClusterStream *s, DartCtx *ctx, ut8 type, u
 	}
 }
 
-static void modern_emit_pool_entry_json(PJ *pj, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw) {
+static ut64 modern_resolver_ref_count(const ModernClusterMeta *meta, ut64 num_clusters, ut64 num_base_objects) {
+	ut64 refs_count = num_base_objects + 1;
+	for (ut64 i = 0; i < num_clusters; i++) {
+		ut64 end = meta[i].start_ref + meta[i].count;
+		if (end > refs_count) {
+			refs_count = end;
+		}
+	}
+	return refs_count + 16;
+}
+
+static const ModernClusterMeta *modern_resolver_cluster_for_ref(const ModernRefResolver *resolver, ut64 ref) {
+	if (!resolver || !resolver->meta || !ref) {
+		return NULL;
+	}
+	if (ref < resolver->refs_count && resolver->cluster_by_ref) {
+		return resolver->cluster_by_ref[ref];
+	}
+	for (ut64 i = 0; i < resolver->num_clusters; i++) {
+		const ModernClusterMeta *meta = &resolver->meta[i];
+		if (ref >= meta->start_ref && ref < meta->start_ref + meta->count) {
+			return meta;
+		}
+	}
+	return NULL;
+}
+
+static void modern_resolver_free_strings(char **strings_by_ref, ut64 refs_count) {
+	if (!strings_by_ref) {
+		return;
+	}
+	for (ut64 i = 0; i < refs_count; i++) {
+		free (strings_by_ref[i]);
+	}
+	free (strings_by_ref);
+}
+
+static void modern_ref_resolver_fini(ModernRefResolver *resolver) {
+	if (!resolver) {
+		return;
+	}
+	free (resolver->cluster_by_ref);
+	modern_resolver_free_strings (resolver->strings_by_ref, resolver->refs_count);
+	free (resolver->class_name_ref);
+	free (resolver->library_name_ref);
+	free (resolver->patch_wrapped_ref);
+	free (resolver->function_name_ref);
+	free (resolver->function_owner_ref);
+	free (resolver->function_code_index);
+	memset (resolver, 0, sizeof (*resolver));
+}
+
+static bool modern_resolver_read_class_fill(ClusterStream *s, const ModernClusterMeta *meta, ModernRefResolver *resolver) {
+	ModernFillSpec spec = modern_get_fill_spec (resolver->ctx, meta->cid);
+	ut64 ref = meta->start_ref;
+	for (ut64 j = 0; j < meta->count; j++, ref++) {
+		ut64 name_ref = 0;
+		ut32 class_id = 0;
+		ut32 tmp32 = 0;
+		for (int k = 0; k < spec.num_refs; k++) {
+			ut64 rv = 0;
+			if (!cs_read_ref_id (s, &rv)) {
+				return false;
+			}
+			if (k == 0) {
+				name_ref = rv;
+			}
+		}
+		if (!cs_read_tagged32 (s, &class_id) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32)) {
+			return false;
+		}
+		bool is_predefined = j < meta->main_count;
+		bool is_top_level = class_id >= (1U << 20);
+		if (is_predefined || !is_top_level) {
+			ut64 bitmap = 0;
+			if (!cs_read_unsigned (s, &bitmap)) {
+				return false;
+			}
+		}
+		if (ref < resolver->refs_count) {
+			resolver->class_name_ref[ref] = name_ref;
+		}
+	}
+	return true;
+}
+
+static bool modern_resolver_read_function_fill(ClusterStream *s, const ModernClusterMeta *meta, ModernRefResolver *resolver) {
+	ut64 ref = meta->start_ref;
+	for (ut64 j = 0; j < meta->count; j++, ref++) {
+		ut64 name_ref = 0;
+		ut64 owner_ref = 0;
+		ut64 sig_ref = 0;
+		ut64 data_ref = 0;
+		ut64 code_index = 0;
+		ut32 kind_tag = 0;
+		if (!cs_read_ref_id (s, &name_ref) || !cs_read_ref_id (s, &owner_ref) || !cs_read_ref_id (s, &sig_ref) || !cs_read_ref_id (s, &data_ref) || !cs_read_unsigned (s, &code_index) || !cs_read_tagged32 (s, &kind_tag)) {
+			return false;
+		}
+		(void)sig_ref;
+		(void)data_ref;
+		(void)kind_tag;
+		if (ref < resolver->refs_count) {
+			resolver->function_name_ref[ref] = name_ref;
+			resolver->function_owner_ref[ref] = owner_ref;
+			resolver->function_code_index[ref] = code_index? code_index - 1: UT64_MAX;
+		}
+	}
+	return true;
+}
+
+static bool modern_resolver_read_library_fill(ClusterStream *s, const ModernClusterMeta *meta, ModernRefResolver *resolver) {
+	ModernFillSpec spec = modern_get_fill_spec (resolver->ctx, meta->cid);
+	ut64 ref = meta->start_ref;
+	for (ut64 j = 0; j < meta->count; j++, ref++) {
+		ut64 name_ref = 0;
+		for (int k = 0; k < spec.num_refs; k++) {
+			ut64 rv = 0;
+			if (!cs_read_ref_id (s, &rv)) {
+				return false;
+			}
+			if (k == 0) {
+				name_ref = rv;
+			}
+		}
+		for (int k = 0; k < spec.scalar_count; k++) {
+			if (!modern_skip_scalar (s, spec.scalars[k])) {
+				return false;
+			}
+		}
+		if (ref < resolver->refs_count) {
+			resolver->library_name_ref[ref] = name_ref;
+		}
+	}
+	return true;
+}
+
+static bool modern_resolver_read_patch_class_fill(ClusterStream *s, const ModernClusterMeta *meta, ModernRefResolver *resolver) {
+	ut64 ref = meta->start_ref;
+	for (ut64 j = 0; j < meta->count; j++, ref++) {
+		ut64 wrapped_ref = 0;
+		ut64 script_ref = 0;
+		if (!cs_read_ref_id (s, &wrapped_ref) || !cs_read_ref_id (s, &script_ref)) {
+			return false;
+		}
+		(void)script_ref;
+		if (ref < resolver->refs_count) {
+			resolver->patch_wrapped_ref[ref] = wrapped_ref;
+		}
+	}
+	return true;
+}
+
+static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, const ModernClusterMeta *meta, ut64 num_clusters, ut64 num_base_objects) {
+	if (!resolver || !ctx || !meta || !num_clusters) {
+		return false;
+	}
+	memset (resolver, 0, sizeof (*resolver));
+	resolver->ctx = ctx;
+	resolver->meta = meta;
+	resolver->num_clusters = num_clusters;
+	resolver->num_base_objects = num_base_objects;
+	resolver->refs_count = modern_resolver_ref_count (meta, num_clusters, num_base_objects);
+	resolver->cluster_by_ref = (const ModernClusterMeta **)calloc ((size_t)resolver->refs_count, sizeof (ModernClusterMeta *));
+	resolver->strings_by_ref = (char **)calloc ((size_t)resolver->refs_count, sizeof (char *));
+	resolver->class_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	resolver->library_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	resolver->patch_wrapped_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	resolver->function_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	resolver->function_owner_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	resolver->function_code_index = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	if (!resolver->cluster_by_ref || !resolver->strings_by_ref || !resolver->class_name_ref || !resolver->library_name_ref || !resolver->patch_wrapped_ref || !resolver->function_name_ref || !resolver->function_owner_ref || !resolver->function_code_index) {
+		modern_ref_resolver_fini (resolver);
+		return false;
+	}
+	for (ut64 i = 0; i < resolver->refs_count; i++) {
+		resolver->function_code_index[i] = UT64_MAX;
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		const ModernClusterMeta *m = &meta[i];
+		ut64 end = m->start_ref + m->count;
+		if (end > resolver->refs_count) {
+			end = resolver->refs_count;
+		}
+		for (ut64 ref = m->start_ref; ref < end; ref++) {
+			resolver->cluster_by_ref[ref] = m;
+		}
+	}
+	modern_load_vm_base_strings (ctx, resolver->strings_by_ref, resolver->refs_count);
+	for (ut64 i = 0; i < num_clusters; i++) {
+		const ModernClusterMeta *m = &meta[i];
+		if (!m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
+			continue;
+		}
+		ClusterStream s = {
+			.ctx = ctx,
+			.cursor = m->fill_offset,
+			.end = m->fill_end,
+};
+		ut64 ref = m->start_ref;
+		if (modern_is_string_cid (ctx, m->cid)) {
+			for (ut64 j = 0; j < m->count; j++, ref++) {
+				char *value = NULL;
+				if (!modern_read_cluster_string (&s, &value)) {
+					break;
+				}
+				if (ref < resolver->refs_count) {
+					free (resolver->strings_by_ref[ref]);
+					resolver->strings_by_ref[ref] = value;
+				} else {
+					free (value);
+				}
+			}
+			continue;
+		}
+		if (m->fill_kind == MODERN_FILL_CLASS) {
+			(void)modern_resolver_read_class_fill (&s, m, resolver);
+			continue;
+		}
+		if (m->cid == modern_cid_function (ctx)) {
+			(void)modern_resolver_read_function_fill (&s, m, resolver);
+			continue;
+		}
+		if (m->cid == 13) {
+			(void)modern_resolver_read_library_fill (&s, m, resolver);
+			continue;
+		}
+		if (m->cid == 6) {
+			(void)modern_resolver_read_patch_class_fill (&s, m, resolver);
+			continue;
+		}
+	}
+	return true;
+}
+
+static const char *modern_ref_kind_for_meta(DartCtx *ctx, const ModernClusterMeta *meta) {
+	if (!meta) {
+		return "base_object";
+	}
+	if (modern_is_string_cid (ctx, meta->cid)) {
+		return "string";
+	}
+	if (meta->cid == modern_cid_class (ctx)) {
+		return "class";
+	}
+	if (meta->cid == modern_cid_function (ctx)) {
+		return "function";
+	}
+	if (meta->cid == 13) {
+		return "library";
+	}
+	if (meta->cid == modern_cid_code (ctx)) {
+		return "code";
+	}
+	if (meta->cid == modern_cid_object_pool (ctx)) {
+		return "object_pool";
+	}
+	return modern_alloc_kind_name (meta->alloc_kind);
+}
+
+static void modern_ref_resolver_resolve(ModernRefResolver *resolver, ut64 ref, ModernResolvedRef *resolved) {
+	if (!resolved) {
+		return;
+	}
+	memset (resolved, 0, sizeof (*resolved));
+	resolved->cid = -1;
+	resolved->code_index = UT64_MAX;
+	if (!resolver || !ref) {
+		resolved->kind = "null";
+		return;
+	}
+	if (ref >= resolver->refs_count) {
+		resolved->kind = "out_of_range";
+		return;
+	}
+	const ModernClusterMeta *meta = modern_resolver_cluster_for_ref (resolver, ref);
+	if (!meta) {
+		resolved->kind = ref <= resolver->num_base_objects? "base_object": "unknown_ref";
+		return;
+	}
+	resolved->kind = modern_ref_kind_for_meta (resolver->ctx, meta);
+	resolved->cid = meta->cid;
+	if (!strcmp (resolved->kind, "string")) {
+		if (R_STR_ISNOTEMPTY (resolver->strings_by_ref[ref])) {
+			resolved->name = strdup (resolver->strings_by_ref[ref]);
+		}
+		return;
+	}
+	if (!strcmp (resolved->kind, "class")) {
+		ut64 name_ref = resolver->class_name_ref[ref];
+		if (name_ref < resolver->refs_count && R_STR_ISNOTEMPTY (resolver->strings_by_ref[name_ref])) {
+			resolved->name = strdup (resolver->strings_by_ref[name_ref]);
+		}
+		return;
+	}
+	if (!strcmp (resolved->kind, "function")) {
+		ut64 name_ref = resolver->function_name_ref[ref];
+		const char *method_name = name_ref < resolver->refs_count? resolver->strings_by_ref[name_ref]: NULL;
+		const char *owner_name = modern_resolve_ref_name (resolver->strings_by_ref, resolver->class_name_ref, resolver->library_name_ref, resolver->patch_wrapped_ref, resolver->function_name_ref, resolver->refs_count, resolver->function_owner_ref[ref], 0);
+		resolved->name = modern_build_full_name (resolver->ctx, owner_name, method_name);
+		resolved->code_index = resolver->function_code_index[ref];
+		return;
+	}
+	if (!strcmp (resolved->kind, "library")) {
+		ut64 name_ref = resolver->library_name_ref[ref];
+		if (name_ref < resolver->refs_count && R_STR_ISNOTEMPTY (resolver->strings_by_ref[name_ref])) {
+			resolved->name = strdup (resolver->strings_by_ref[name_ref]);
+		}
+	}
+}
+
+static void modern_resolve_pool_entry(ModernRefResolver *resolver, ut8 type, ut8 behavior, ut64 ref, ModernResolvedRef *resolved) {
+	if (!resolved) {
+		return;
+	}
+	memset (resolved, 0, sizeof (*resolved));
+	resolved->cid = -1;
+	resolved->code_index = UT64_MAX;
+	if (behavior != 0) {
+		resolved->kind = modern_pool_entry_behavior_name (behavior);
+		return;
+	}
+	if (type == 0) {
+		resolved->kind = "immediate";
+		return;
+	}
+	if (type == 2) {
+		resolved->kind = "native_function";
+		return;
+	}
+	if (type == 1) {
+		modern_ref_resolver_resolve (resolver, ref, resolved);
+		return;
+	}
+	resolved->kind = modern_pool_entry_type_name (type);
+}
+
+static void modern_emit_resolved_json(PJ *pj, const ModernResolvedRef *resolved) {
+	if (!pj || !resolved || R_STR_ISEMPTY (resolved->kind)) {
+		return;
+	}
+	pj_ks (pj, "resolved_kind", resolved->kind);
+	if (R_STR_ISNOTEMPTY (resolved->name)) {
+		pj_ks (pj, "resolved_name", resolved->name);
+	}
+	if (resolved->cid >= 0) {
+		pj_ki (pj, "resolved_cid", resolved->cid);
+	}
+	if (resolved->code_index != UT64_MAX) {
+		pj_kn (pj, "resolved_code_index", resolved->code_index);
+	}
+}
+
+static void modern_emit_resolved_text(RStrBuf *sb, const ModernResolvedRef *resolved) {
+	if (!sb || !resolved || R_STR_ISEMPTY (resolved->kind)) {
+		return;
+	}
+	r_strbuf_appendf (sb, " resolved_kind=%s", resolved->kind);
+	if (resolved->cid >= 0) {
+		r_strbuf_appendf (sb, " resolved_cid=%d", resolved->cid);
+	}
+	if (resolved->code_index != UT64_MAX) {
+		r_strbuf_appendf (sb, " code_index=%" PRIu64, (uint64_t)resolved->code_index);
+	}
+	if (R_STR_ISNOTEMPTY (resolved->name)) {
+		char *escaped = r_str_escape_utf8 (resolved->name, false, true);
+		r_strbuf_appendf (sb, " resolved_name=\"%s\"", escaped);
+		free (escaped);
+	}
+}
+
+static void modern_emit_resolved_r2(RStrBuf *sb, const ModernResolvedRef *resolved) {
+	if (!sb || !resolved || R_STR_ISEMPTY (resolved->kind)) {
+		return;
+	}
+	r_strbuf_appendf (sb, " resolved_kind=%s", resolved->kind);
+	if (resolved->cid >= 0) {
+		r_strbuf_appendf (sb, " resolved_cid=%d", resolved->cid);
+	}
+	if (resolved->code_index != UT64_MAX) {
+		r_strbuf_appendf (sb, " code_index=%" PRIu64, (uint64_t)resolved->code_index);
+	}
+	if (R_STR_ISNOTEMPTY (resolved->name)) {
+		char *escaped = r_str_escape_utf8 (resolved->name, false, true);
+		r_strbuf_appendf (sb, " resolved_name=\"%s\"", escaped);
+		free (escaped);
+	}
+}
+
+static void modern_emit_pool_entry_json(PJ *pj, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw, const ModernResolvedRef *resolved) {
 	pj_o (pj);
 	pj_kn (pj, "index", index);
 	pj_kn (pj, "pool_offset", modern_pool_entry_pool_offset (ctx, index));
@@ -1294,10 +1715,11 @@ static void modern_emit_pool_entry_json(PJ *pj, DartCtx *ctx, ut64 index, ut64 s
 	} else if (behavior == 0 && type == 0) {
 		pj_kn (pj, "raw", raw);
 	}
+	modern_emit_resolved_json (pj, resolved);
 	pj_end (pj);
 }
 
-static void modern_emit_pool_entry_text(RStrBuf *sb, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw) {
+static void modern_emit_pool_entry_text(RStrBuf *sb, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw, const ModernResolvedRef *resolved) {
 	r_strbuf_appendf (sb,
 		"      [%" PRIu64 "] pool_off=0x%" PFMT64x " pp_off=0x%" PFMT64x " bits=0x%02x type=%s patch=%s behavior=%s stream=0x%" PFMT64x,
 		(uint64_t)index,
@@ -1313,11 +1735,14 @@ static void modern_emit_pool_entry_text(RStrBuf *sb, DartCtx *ctx, ut64 index, u
 	} else if (behavior == 0 && type == 0) {
 		r_strbuf_appendf (sb, " value=0x%" PFMT64x " raw=0x%" PFMT64x, (ut64)value_offset, (ut64)raw);
 	}
+	modern_emit_resolved_text (sb, resolved);
 	r_strbuf_append (sb, "\n");
 }
 
-static void modern_emit_pool_entry_r2(RStrBuf *sb, const char *scope, ut64 cluster_index, ut64 pool_index, ut64 pool_ref, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw) {
+static void modern_emit_pool_entry_r2(RStrBuf *sb, const char *scope, ut64 cluster_index, ut64 pool_index, ut64 pool_ref, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw, const ModernResolvedRef *resolved) {
 	r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".entry.%" PRIu64 ".bits = 0x%02x\n", scope, (uint64_t)cluster_index, (uint64_t)pool_index, (uint64_t)index, (unsigned int)bits);
+	r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".entry.%" PRIu64 ".pp_off = 0x%" PFMT64x "\n", scope, (uint64_t)cluster_index, (uint64_t)pool_index, (uint64_t)index, (ut64)modern_pool_entry_pp_offset (ctx, index));
+	r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".entry.%" PRIu64 ".stream = 0x%" PFMT64x "\n", scope, (uint64_t)cluster_index, (uint64_t)pool_index, (uint64_t)index, (ut64)stream_offset);
 	r_strbuf_appendf (sb,
 		"'@0x%" PFMT64x "'CC Dart %s ObjectPool ref=%" PRIu64 " entry=%" PRIu64 " pool_off=0x%" PFMT64x " pp_off=0x%" PFMT64x " type=%s patch=%s behavior=%s",
 		(ut64)stream_offset,
@@ -1334,13 +1759,16 @@ static void modern_emit_pool_entry_r2(RStrBuf *sb, const char *scope, ut64 clust
 	} else if (behavior == 0 && type == 0) {
 		r_strbuf_appendf (sb, " value=0x%" PFMT64x " raw=0x%" PFMT64x, (ut64)value_offset, (ut64)raw);
 	}
+	modern_emit_resolved_r2 (sb, resolved);
 	r_strbuf_append (sb, "\n");
 }
 
-static bool modern_emit_object_pool_details(DartCtx *ctx, const ModernClusterMeta *meta, ut64 cluster_index, int limit, const char *r2_scope, RStrBuf *sb, PJ *pj) {
+static bool modern_emit_object_pool_details(DartCtx *ctx, const ModernClusterMeta *all_meta, ut64 num_clusters, ut64 num_base_objects, const ModernClusterMeta *meta, ut64 cluster_index, int limit, const char *r2_scope, RStrBuf *sb, PJ *pj) {
 	if (!ctx || !meta || meta->fill_kind != MODERN_FILL_OBJECT_POOL || !meta->fill_parsed || !meta->fill_ok || meta->fill_offset >= meta->fill_end) {
 		return false;
 	}
+	ModernRefResolver resolver = { 0 };
+	bool have_resolver = modern_ref_resolver_init (&resolver, ctx, all_meta, num_clusters, num_base_objects);
 	ClusterStream s = {
 		.ctx = ctx,
 		.cursor = meta->fill_offset,
@@ -1395,13 +1823,16 @@ static bool modern_emit_object_pool_details(DartCtx *ctx, const ModernClusterMet
 			if (j >= emit_count) {
 				continue;
 			}
+			ModernResolvedRef resolved;
+			modern_resolve_pool_entry (have_resolver? &resolver: NULL, type, behavior, ref, &resolved);
 			if (pj) {
-				modern_emit_pool_entry_json (pj, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw);
+				modern_emit_pool_entry_json (pj, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw, &resolved);
 			} else if (sb && r2_scope) {
-				modern_emit_pool_entry_r2 (sb, r2_scope, cluster_index, i, pool_ref, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw);
+				modern_emit_pool_entry_r2 (sb, r2_scope, cluster_index, i, pool_ref, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw, &resolved);
 			} else if (sb) {
-				modern_emit_pool_entry_text (sb, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw);
+				modern_emit_pool_entry_text (sb, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw, &resolved);
 			}
+			modern_resolved_ref_fini (&resolved);
 		}
 		if (pj) {
 			pj_end (pj);
@@ -1419,6 +1850,7 @@ static bool modern_emit_object_pool_details(DartCtx *ctx, const ModernClusterMet
 	if (pj) {
 		pj_end (pj);
 	}
+	modern_ref_resolver_fini (&resolver);
 	if (!ok && sb) {
 		if (r2_scope) {
 			r_strbuf_appendf (sb, "'# Dart %s ObjectPool decode failed near 0x%" PFMT64x "\n", r2_scope, (ut64)s.cursor);
@@ -1462,7 +1894,7 @@ static void modern_emit_object_pool_r2_status(RStrBuf *sb, const char *scope, ut
 	}
 }
 
-static void modern_emit_cluster_json(DartCtx *ctx, PJ *pj, ut64 index, const ModernClusterMeta *meta, int limit, int detail) {
+static void modern_emit_cluster_json(DartCtx *ctx, PJ *pj, ut64 index, const ModernClusterMeta *all_meta, ut64 num_clusters, ut64 num_base_objects, const ModernClusterMeta *meta, int limit, int detail) {
 	pj_o (pj);
 	pj_kn (pj, "index", index);
 	pj_kn (pj, "cid", meta->cid);
@@ -1504,13 +1936,13 @@ static void modern_emit_cluster_json(DartCtx *ctx, PJ *pj, ut64 index, const Mod
 			pj_ks (pj, "object_pool_decode", status);
 		}
 		if (status && !strcmp (status, "decoded")) {
-			(void)modern_emit_object_pool_details (ctx, meta, index, limit, NULL, NULL, pj);
+			(void)modern_emit_object_pool_details (ctx, all_meta, num_clusters, num_base_objects, meta, index, limit, NULL, NULL, pj);
 		}
 	}
 	pj_end (pj);
 }
 
-static void modern_emit_cluster_text(DartCtx *ctx, RStrBuf *sb, ut64 index, const ModernClusterMeta *meta, int limit, int detail) {
+static void modern_emit_cluster_text(DartCtx *ctx, RStrBuf *sb, ut64 index, const ModernClusterMeta *all_meta, ut64 num_clusters, ut64 num_base_objects, const ModernClusterMeta *meta, int limit, int detail) {
 	r_strbuf_appendf (sb,
 		"  %" PRIu64 " cid=%d alloc=%s fill=%s count=%" PRIu64 " refs=%" PRIu64 "..%" PRIu64 " flags=%s%s alloc=0x%" PFMT64x "..0x%" PFMT64x " fill=0x%" PFMT64x "..0x%" PFMT64x,
 		(uint64_t)index,
@@ -1549,14 +1981,14 @@ static void modern_emit_cluster_text(DartCtx *ctx, RStrBuf *sb, ut64 index, cons
 	if (detail >= 3) {
 		const char *status = modern_object_pool_decode_status (meta);
 		if (status && !strcmp (status, "decoded")) {
-			(void)modern_emit_object_pool_details (ctx, meta, index, limit, NULL, sb, NULL);
+			(void)modern_emit_object_pool_details (ctx, all_meta, num_clusters, num_base_objects, meta, index, limit, NULL, sb, NULL);
 		} else {
 			modern_emit_object_pool_text_status (sb, meta);
 		}
 	}
 }
 
-static void modern_emit_cluster_r2(DartCtx *ctx, RStrBuf *sb, const char *scope, ut64 index, const ModernClusterMeta *meta, int limit, int detail) {
+static void modern_emit_cluster_r2(DartCtx *ctx, RStrBuf *sb, const char *scope, ut64 index, const ModernClusterMeta *all_meta, ut64 num_clusters, ut64 num_base_objects, const ModernClusterMeta *meta, int limit, int detail) {
 	const char *status = meta->fill_parsed? (meta->fill_ok? "ok": "failed"): "not_parsed";
 	ut64 alloc_size = meta->alloc_end > meta->alloc_offset? meta->alloc_end - meta->alloc_offset: 0;
 	ut64 fill_size = meta->fill_end > meta->fill_offset? meta->fill_end - meta->fill_offset: 0;
@@ -1582,7 +2014,7 @@ static void modern_emit_cluster_r2(DartCtx *ctx, RStrBuf *sb, const char *scope,
 	if (detail >= 3) {
 		const char *pool_status = modern_object_pool_decode_status (meta);
 		if (pool_status && !strcmp (pool_status, "decoded")) {
-			(void)modern_emit_object_pool_details (ctx, meta, index, limit, scope, sb, NULL);
+			(void)modern_emit_object_pool_details (ctx, all_meta, num_clusters, num_base_objects, meta, index, limit, scope, sb, NULL);
 		} else {
 			modern_emit_object_pool_r2_status (sb, scope, index, meta);
 		}
@@ -1822,11 +2254,11 @@ bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 clu
 	}
 	for (ut64 i = 0; i < emit_count; i++) {
 		if (pj) {
-			modern_emit_cluster_json (ctx, pj, i, &meta[i], limit, detail);
+			modern_emit_cluster_json (ctx, pj, i, meta, num_clusters, num_base_objects, &meta[i], limit, detail);
 		} else if (sb && r2_scope) {
-			modern_emit_cluster_r2 (ctx, sb, r2_scope, i, &meta[i], limit, detail);
+			modern_emit_cluster_r2 (ctx, sb, r2_scope, i, meta, num_clusters, num_base_objects, &meta[i], limit, detail);
 		} else if (sb) {
-			modern_emit_cluster_text (ctx, sb, i, &meta[i], limit, detail);
+			modern_emit_cluster_text (ctx, sb, i, meta, num_clusters, num_base_objects, &meta[i], limit, detail);
 		}
 	}
 	if (sb && emit_count < num_clusters) {
