@@ -1,0 +1,13 @@
+NAME=header-markdown
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -H bins/android/first 2>/dev/null | grep -E '^(#{1,2} |={3,}|-{3,})'
+EOF
+EXPECT=<<EOF
+# Dart AOT Snapshot Header
+## Snapshot Addresses
+## VM Snapshot (0x200)
+## Isolate Snapshot (0x8ec0)
+## Class IDs (CID Table)
+EOF
+RUN

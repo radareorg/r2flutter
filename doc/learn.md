@@ -2,6 +2,10 @@
 
 This document summarizes key technical findings discovered during the implementation of class extraction features in r2flutter.
 
+## `-H` Text Output Is Markdown-Friendly
+
+**Finding**: Human-readable `-H` output is intended to be pasted into markdown notes, so section titles should use ATX headings: `#` for the top-level title and `##` for subsections. Avoid setext underline separators such as `===` and `---`; they are less consistent with the rest of the CLI output and harder to regression-test cleanly.
+
 ## macOS `dart compile exe` Uses An `LC_NOTE` Inner Mach-O
 
 **Finding**: Standalone macOS binaries produced by `dart compile exe` are a two-level container: the outer executable is the statically linked Dart VM, and the actual AOT app is an ARM64 Mach-O dylib stored as opaque bytes in an `LC_NOTE` named `__dart_app_snap`.

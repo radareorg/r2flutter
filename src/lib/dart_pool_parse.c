@@ -632,8 +632,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		}
 		return r_strbuf_drain (sb);
 	}
-	r_strbuf_appendf (sb, "Dart AOT Snapshot Header\n");
-	r_strbuf_appendf (sb, "========================\n\n");
+	r_strbuf_appendf (sb, "# Dart AOT Snapshot Header\n\n");
 	r_strbuf_appendf (sb, "snapshot_hash: %s\n", ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
 	r_strbuf_appendf (sb, "dart_version:  %s\n", version? version: "unknown");
 	if (ctx->layout) {
@@ -645,15 +644,13 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		r_strbuf_appendf (sb, "it_capacity:   %" PRIu64 "\n", (uint64_t)l->it_cap);
 	}
 
-	r_strbuf_appendf (sb, "\nSnapshot Addresses\n");
-	r_strbuf_appendf (sb, "------------------\n");
+	r_strbuf_appendf (sb, "\n## Snapshot Addresses\n");
 	r_strbuf_appendf (sb, "vm_data:       0x%" PFMT64x "\n", (ut64)ctx->vm_data);
 	r_strbuf_appendf (sb, "vm_instr:      0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
 	r_strbuf_appendf (sb, "iso_data:      0x%" PFMT64x "\n", (ut64)ctx->iso_data);
 	r_strbuf_appendf (sb, "iso_instr:     0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
 	if (ctx->container_kind[0]) {
-		r_strbuf_appendf (sb, "\nContainer\n");
-		r_strbuf_appendf (sb, "---------\n");
+		r_strbuf_appendf (sb, "\n## Container\n");
 		r_strbuf_appendf (sb, "kind:          %s\n", ctx->container_kind);
 		r_strbuf_appendf (sb, "note_owner:    %s\n", ctx->container_note_owner[0]? ctx->container_note_owner: "(unknown)");
 		r_strbuf_appendf (sb, "payload_off:   0x%" PFMT64x "\n", (ut64)ctx->container_payload_offset);
@@ -669,11 +666,11 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		}
 		DartSnapshotHeader sh = { 0 };
 		dart_snapshot_header_read (ctx, addrs[si], &sh);
+		r_strbuf_appendf (sb, "\n## %s Snapshot (0x%" PFMT64x ")\n", labels[si], (ut64)addrs[si]);
 		if (!sh.ok) {
-			r_strbuf_appendf (sb, "\n%s Snapshot: failed to read header at 0x%" PFMT64x "\n", labels[si], (ut64)addrs[si]);
+			r_strbuf_appendf (sb, "  failed_to_read_header: true\n");
 			continue;
 		}
-		r_strbuf_appendf (sb, "\n%s Snapshot (0x%" PFMT64x ")\n", labels[si], (ut64)addrs[si]);
 		r_strbuf_appendf (sb, "  magic:       0x%08x\n", sh.magic);
 		r_strbuf_appendf (sb, "  total_len:   %" PRIu64 " bytes\n", sh.total_len);
 		r_strbuf_appendf (sb, "  kind:        %" PRIu64 "\n", sh.kind);
@@ -688,8 +685,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 
 	if (ctx->layout) {
 		const DartVerLayout *l = ctx->layout;
-		r_strbuf_appendf (sb, "\nClass IDs (CID Table)\n");
-		r_strbuf_appendf (sb, "---------------------\n");
+		r_strbuf_appendf (sb, "\n## Class IDs (CID Table)\n");
 		r_strbuf_appendf (sb, "  cid_class:          %d\n", l->cid_class);
 		r_strbuf_appendf (sb, "  cid_function:       %d\n", l->cid_function);
 		r_strbuf_appendf (sb, "  cid_code:           %d\n", l->cid_code);
