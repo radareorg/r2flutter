@@ -107,7 +107,7 @@ incorrectly.
 
 Carving means recovering text from bytes without object metadata.
 
-The current `-z` scanner does this as a fallback and as a broad triage layer:
+`-zz` does this as a broad triage layer:
 
 - scan printable one-byte runs
 - scan UTF-16LE-looking runs and convert them to UTF-8 for display
@@ -129,8 +129,10 @@ Important consequences:
 - Its `address` is usually a payload/run address, not necessarily an object
   address.
 
-Use carving output for triage. Use decoded string records or resolved string
-objects for exact lengths.
+Use carving output for triage. Plain `-z` is the stricter mode: it focuses on
+strings reached from decoded ObjectPool entries and reports their pool-entry
+references when available. Use decoded string records or resolved string objects
+for exact lengths.
 
 ## Object Pools and Indexes
 
@@ -255,8 +257,8 @@ A future `DartStringInfo` extension could keep separate fields for:
 - display byte length
 - storage encoding (`one-byte` / `two-byte`)
 
-That would make `-z` distinguish exact object-aware strings from carved text
-without losing the practical triage value of broad scans.
+That would make future string output distinguish exact object-aware strings from
+carved text without losing the practical triage value of broad scans.
 
 ## Implementation Rule of Thumb
 

@@ -250,7 +250,10 @@ confidence.
 
 ### Strings
 
-`-z` dumps strings. The string scanner supports:
+`-z` dumps reliable strings reached from decoded ObjectPool entries. These
+records carry ObjectPool references in text/JSON output when available.
+
+`-zz` dumps broad fuzzy/carved strings. The fuzzy scanner supports:
 
 - ASCII strings
 - UTF-16LE strings converted to UTF-8
@@ -266,8 +269,8 @@ Strings are classified as:
 - `app` for human text with spaces or punctuation
 - `unknown` otherwise
 
-String scans are bounded: 64 MB per snapshot region, 8 MB per data-image window,
-32 MB per section, and 50,000 total strings.
+Fuzzy string scans are bounded: 64 MB per snapshot region, 8 MB per data-image
+window, 32 MB per section, and 50,000 total strings.
 
 ### Xrefs
 
@@ -329,7 +332,8 @@ name, then applies it to:
 | `-R` | Dump a radare2 script for applying method flags/comments and PP helpers. |
 | `-T` | Dump type-oriented class output and run enum recovery. |
 | `-x` | Dump metadata/data-image xrefs. |
-| `-z` | Dump strings. |
+| `-z` | Dump reliable ObjectPool-referenced strings. |
+| `-zz` | Dump all fuzzy/carved strings. |
 | `-l <N>` | Limit function or instruction-table/xref output depending on the action. |
 | `-m <file>` | Load a Flutter obfuscation map JSON file. |
 
@@ -377,14 +381,16 @@ Plugin actions:
 | `r2flutter -c` | Dump classes. |
 | `r2flutter -C` | Apply Dart classes, fields, methods, and types to r2. |
 | `r2flutter -x` | Dump xrefs as text. |
-| `r2flutter -z` | Dump strings. |
+| `r2flutter -z` | Dump reliable ObjectPool-referenced strings. |
+| `r2flutter -zz` | Dump all fuzzy/carved strings. |
 
 Examples:
 
 ```bash
 r2flutter -c       # classes as text
 r2flutter -jc      # classes as JSON
-r2flutter -rz      # string registration commands (`iz+`, `f str.*`, `Cs*`)
+r2flutter -rz      # reliable ObjectPool string registration commands
+r2flutter -rzz     # fuzzy/carved string registration commands
 r2flutter -jH      # snapshot header as JSON
 r2flutter -HH -l 8 # snapshot header plus first 8 clusters per snapshot
 r2flutter -HHH -l 36 # cluster walk plus ObjectPool entry diagnostics/status/ref resolution

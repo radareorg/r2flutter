@@ -25,7 +25,7 @@ void dart_string_list_free(RList *list) {
 }
 
 #define DART_STRING_SCAN_LIMIT 50000
-static DartStringCategory classify_string_value(const char *s) {
+DartStringCategory dart_string_classify_value(const char *s) {
 	if (R_STR_ISEMPTY (s)) {
 		return DART_STRING_CAT_UNKNOWN;
 	}
@@ -188,7 +188,7 @@ static void scan_ascii_strings(const ut8 *buf, ut64 base, ut64 size, RList *list
 				memcpy (tmp, buf + start, length);
 				tmp[length] = '\0';
 				if (looks_like_text (tmp)) {
-					append_string_info (list, seen_addrs, tmp, (ut32)length, 0, base + start, classify_string_value (tmp), ref_counter);
+					append_string_info (list, seen_addrs, tmp, (ut32)length, 0, base + start, dart_string_classify_value (tmp), ref_counter);
 				}
 				free (tmp);
 			}
@@ -384,7 +384,7 @@ static void scan_packed_string_runs(const ut8 *buf, ut64 base, ut64 size, RList 
 		if (n_records >= DART_PACKED_STRING_MIN_RUN) {
 			for (int i = 0; i < n_records && r_list_length (list) < DART_STRING_SCAN_LIMIT; i++) {
 				PackedStringRecord *rec = &records[i];
-				append_string_info (list, seen_addrs, rec->value, rec->length, rec->flags, base + rec->payload_off, classify_string_value (rec->value), ref_counter);
+				append_string_info (list, seen_addrs, rec->value, rec->length, rec->flags, base + rec->payload_off, dart_string_classify_value (rec->value), ref_counter);
 			}
 			pos = run_end;
 		} else {
@@ -546,7 +546,7 @@ static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, RList *list
 		if (utf8 && units >= 4 && utf16le_has_ascii_profile (buf, start, start + (units * 2))) {
 			ut32 ulen = (ut32)strlen (utf8);
 			if (ulen >= 4 && ulen <= 512 && looks_like_text (utf8)) {
-				append_string_info (list, seen_addrs, utf8, ulen, DART_STRING_TWO_BYTE, base + start, classify_string_value (utf8), ref_counter);
+				append_string_info (list, seen_addrs, utf8, ulen, DART_STRING_TWO_BYTE, base + start, dart_string_classify_value (utf8), ref_counter);
 			}
 		}
 		r_strbuf_fini (&sb);
@@ -668,6 +668,40 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 	return string_list;
 }
 
+RList *dart_pool_extract_object_pool_strings(DartCtx *ctx) {
+	if (!ctx || !ctx->core || !ctx->core->bin) {
+		return NULL;
+	}
+	RList *string_list = r_list_newf ((RListFree)dart_string_info_free);
+	ut64 ref_counter = 0;
+	if (find_snapshots (ctx) == 0 && ctx->vm_data) {
+		DartVerLayout layout_tmp;
+		DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
+		if (dart_modern_is_supported_snapshot (ctx)) {
+			const ut64 snapshots[] = {
+				ctx->vm_data,
+				ctx->iso_data
+			};
+			for (size_t i = 0; i < R_ARRAY_SIZE (snapshots); i++) {
+				ut64 base = snapshots[i];
+				DartSnapshotHeader sh = { 0 };
+				if (!base || !dart_snapshot_header_read (ctx, base, &sh) || !sh.ok) {
+					continue;
+				}
+				HtUP *seen_refs = ht_up_new0 ();
+				if (!seen_refs) {
+					continue;
+				}
+				(void)dart_modern_extract_object_pool_strings_from_clusters (ctx, sh.cluster_start, base + sh.total_len, sh.nc, sh.nb, string_list, seen_refs, &ref_counter);
+				ht_up_free (seen_refs);
+			}
+		}
+		dart_ctx_fini_layout (ctx, layout_owned);
+	}
+	r_list_sort (string_list, (RListComparator)string_info_addr_cmp);
+	return string_list;
+}
+
 static const char *string_ref_type_name(ut32 object_type) {
 	switch (object_type) {
 	case DART_REF_FUNCTION: return "function";
@@ -769,13 +803,9 @@ static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt, boo
 	}
 }
 
-char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
-	DartRecoveryModel model = { 0 };
-	dart_recovery_model_load (ctx, &model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_STRING_REFS);
-	RList *strings = model.strings;
+static char *dump_strings_list(DartCtx *ctx, RList *strings, int fmt) {
 	if (fmt == 'j') {
 		if (!strings || r_list_length (strings) == 0) {
-			dart_recovery_model_fini (&model);
 			return strdup ("[]");
 		}
 		PJ *pj = pj_new ();
@@ -788,12 +818,9 @@ char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
 			}
 		}
 		pj_end (pj);
-		char *out = pj_drain (pj);
-		dart_recovery_model_fini (&model);
-		return out;
+		return pj_drain (pj);
 	}
 	if (!strings) {
-		dart_recovery_model_fini (&model);
 		return strdup ("# No strings found\n");
 	}
 	const bool quiet = ctx && ctx->quiet;
@@ -806,7 +833,20 @@ char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
 	if (fmt == 'r' && !quiet) {
 		r_strbuf_appendf (sb, "# Total: %d strings\n", r_list_length (strings));
 	}
-	char *out = r_strbuf_drain (sb);
+	return r_strbuf_drain (sb);
+}
+
+char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
+	RList *strings = dart_pool_extract_object_pool_strings (ctx);
+	char *out = dump_strings_list (ctx, strings, fmt);
+	dart_string_list_free (strings);
+	return out;
+}
+
+char *dart_pool_dump_strings_fuzzy(DartCtx *ctx, int fmt) {
+	DartRecoveryModel model = { 0 };
+	dart_recovery_model_load (ctx, &model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_STRING_REFS);
+	char *out = dump_strings_list (ctx, model.strings, fmt);
 	dart_recovery_model_fini (&model);
 	return out;
 }

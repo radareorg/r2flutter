@@ -1,7 +1,7 @@
 NAME=text-strings-android-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -z bins/android/mafia 2>/dev/null | sed -n '1,14p'
+!!../bin/r2flutter -zz bins/android/mafia 2>/dev/null | sed -n '1,14p'
 EOF
 EXPECT=<<EOF
 0x00000354  167 :app "97ff04a728735e6b6b098bdf983faabaproduct no-code_comments no-dwarf_stack_traces_mode dedup_instructions no-tsan no-msan no-shared_data arm64 android compressed-pointers"
@@ -18,5 +18,15 @@ EXPECT=<<EOF
 #   referenced by 1 objects
 #     class.name class Uint64List [ref=173173]
 0x000008da   11 :lib "UnwindError"
+EOF
+RUN
+
+NAME=json-strings-objectpool-android-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -j -z bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; a = json.load (sys.stdin); e = next (s for s in a if s["value"] == "useShouldInterceptRequest"); r = e["refs"][0]; print ("count=%d value=%s addr=0x%x kind=%s ref=%d name=%s" % (len (a), e["value"], e["addr"], r["kind"], r["obj"], r["name"]))'
+EOF
+EXPECT=<<EOF
+count=10630 value=useShouldInterceptRequest addr=0x49d81 kind=object_pool.entry ref=195985 name=pool=195985 index=0 entry=44440 pp_off=0x56cd0
 EOF
 RUN

@@ -34,7 +34,8 @@ static const char usage_text[] =
 	"  -R                    Print radare2 script for snapshot analysis\n"
 	"  -T                    Print string-based type names\n"
 	"  -x                    Print metadata/data-image xrefs\n"
-	"  -z                    Print all extracted strings\n"
+	"  -z                    Print reliable ObjectPool-referenced strings\n"
+	"  -zz                   Print all fuzzy/carved extracted strings\n"
 	"Options:\n"
 	"  -l <N>                Limit output to N items\n"
 	"  -m <file>             Load Flutter obfuscation map JSON\n";
@@ -108,6 +109,7 @@ int main(int argc, char **argv) {
 	char action = 0;
 	int analysis_depth = 0;
 	int header_depth = 0;
+	int string_depth = 0;
 	DartCtx dctx = {
 		.no_stubs = true
 	};
@@ -163,6 +165,7 @@ int main(int argc, char **argv) {
 			break;
 		case 'z':
 			action = c;
+			string_depth++;
 			break;
 		case 'T':
 			action = c;
@@ -270,7 +273,7 @@ int main(int argc, char **argv) {
 		dart_dumper_apply_to_core (app);
 		break;
 	case 'z':
-		output = dart_pool_dump_strings (&dctx, fmt);
+		output = string_depth >= 2? dart_pool_dump_strings_fuzzy (&dctx, fmt): dart_pool_dump_strings (&dctx, fmt);
 		break;
 	case 'c':
 		dctx.dump_classes = 1;

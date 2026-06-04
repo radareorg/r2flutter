@@ -38,6 +38,7 @@ typedef struct DartStringInfo {
 #define DART_STRING_TWO_BYTE (1 << 0)
 #define DART_STRING_CANONICAL (1 << 1)
 #define DART_STRING_EXTERNAL (1 << 2)
+#define DART_STRING_OBJECT_POOL (1 << 3)
 
 typedef struct DartStringRef {
 	ut64 object_ref;
@@ -186,7 +187,9 @@ void dart_string_ref_free(DartStringRef *sr);
 // ============================================================================
 
 RList *dart_pool_extract_strings(DartCtx *ctx);
+RList *dart_pool_extract_object_pool_strings(DartCtx *ctx);
 char *dart_pool_dump_strings(DartCtx *ctx, int fmt);
+char *dart_pool_dump_strings_fuzzy(DartCtx *ctx, int fmt);
 void dart_string_list_free(RList *list);
 char *dart_pool_dump_xrefs(DartCtx *ctx, int fmt);
 

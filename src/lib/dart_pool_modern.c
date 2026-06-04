@@ -96,6 +96,8 @@ typedef struct {
 	ut64 num_base_objects;
 	const ModernClusterMeta **cluster_by_ref;
 	char **strings_by_ref;
+	ut64 *string_addr_by_ref;
+	ut32 *string_flags_by_ref;
 	ut64 *class_name_ref;
 	ut64 *library_name_ref;
 	ut64 *patch_wrapped_ref;
@@ -1266,6 +1268,7 @@ static const char *modern_pool_entry_behavior_name(ut8 behavior) {
 
 static const char *modern_resolve_ref_name(char **strings_by_ref, ut64 *class_name_ref, ut64 *library_name_ref, ut64 *patch_wrapped_ref, ut64 *function_name_ref, ut64 refs_count, ut64 ref, int depth);
 static char *modern_build_full_name(DartCtx *ctx, const char *owner_name, const char *method_name);
+static bool modern_read_cluster_string_full(ClusterStream *s, char **out, ut32 *out_len, ut32 *out_flags, ut64 *out_payload_addr);
 static bool modern_read_cluster_string(ClusterStream *s, char **out);
 static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut64 refs_count);
 
@@ -1354,6 +1357,8 @@ static void modern_ref_resolver_fini(ModernRefResolver *resolver) {
 	}
 	free (resolver->cluster_by_ref);
 	modern_resolver_free_strings (resolver->strings_by_ref, resolver->refs_count);
+	free (resolver->string_addr_by_ref);
+	free (resolver->string_flags_by_ref);
 	free (resolver->class_name_ref);
 	free (resolver->library_name_ref);
 	free (resolver->patch_wrapped_ref);
@@ -1475,13 +1480,15 @@ static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, 
 	resolver->refs_count = modern_resolver_ref_count (meta, num_clusters, num_base_objects);
 	resolver->cluster_by_ref = (const ModernClusterMeta **)calloc ((size_t)resolver->refs_count, sizeof (ModernClusterMeta *));
 	resolver->strings_by_ref = (char **)calloc ((size_t)resolver->refs_count, sizeof (char *));
+	resolver->string_addr_by_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	resolver->string_flags_by_ref = (ut32 *)calloc ((size_t)resolver->refs_count, sizeof (ut32));
 	resolver->class_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->library_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->patch_wrapped_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->function_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->function_owner_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->function_code_index = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
-	if (!resolver->cluster_by_ref || !resolver->strings_by_ref || !resolver->class_name_ref || !resolver->library_name_ref || !resolver->patch_wrapped_ref || !resolver->function_name_ref || !resolver->function_owner_ref || !resolver->function_code_index) {
+	if (!resolver->cluster_by_ref || !resolver->strings_by_ref || !resolver->string_addr_by_ref || !resolver->string_flags_by_ref || !resolver->class_name_ref || !resolver->library_name_ref || !resolver->patch_wrapped_ref || !resolver->function_name_ref || !resolver->function_owner_ref || !resolver->function_code_index) {
 		modern_ref_resolver_fini (resolver);
 		return false;
 	}
@@ -1513,12 +1520,17 @@ static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, 
 		if (modern_is_string_cid (ctx, m->cid)) {
 			for (ut64 j = 0; j < m->count; j++, ref++) {
 				char *value = NULL;
-				if (!modern_read_cluster_string (&s, &value)) {
+				ut32 length = 0;
+				ut32 flags = 0;
+				ut64 payload_addr = 0;
+				if (!modern_read_cluster_string_full (&s, &value, &length, &flags, &payload_addr)) {
 					break;
 				}
 				if (ref < resolver->refs_count) {
 					free (resolver->strings_by_ref[ref]);
 					resolver->strings_by_ref[ref] = value;
+					resolver->string_addr_by_ref[ref] = payload_addr;
+					resolver->string_flags_by_ref[ref] = flags;
 				} else {
 					free (value);
 				}
@@ -2243,6 +2255,120 @@ fail:
 	return NULL;
 }
 
+static bool modern_object_pool_string_ref_exists(RList *refs, ut64 pool_ref, ut64 entry_index) {
+	if (!refs) {
+		return false;
+	}
+	RListIter *it;
+	DartStringRef *sr;
+	r_list_foreach (refs, it, sr) {
+		if (sr && sr->object_ref == pool_ref && sr->field_offset == (ut32)entry_index && R_STR_ISNOTEMPTY (sr->kind) && !strcmp (sr->kind, "object_pool.entry")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void modern_add_object_pool_string_ref(DartStringInfo *si, ut64 pool_ref, ut64 pool_index, ut64 entry_index, ut64 pp_off) {
+	if (!si || !si->references || modern_object_pool_string_ref_exists (si->references, pool_ref, entry_index)) {
+		return;
+	}
+	DartStringRef *sr = R_NEW0 (DartStringRef);
+	sr->object_ref = pool_ref;
+	sr->object_type = DART_REF_OTHER;
+	sr->field_offset = (ut32)entry_index;
+	sr->kind = strdup ("object_pool.entry");
+	sr->object_name = r_str_newf ("pool=%" PRIu64 " index=%" PRIu64 " entry=%" PRIu64 " pp_off=0x%" PFMT64x, (uint64_t)pool_ref, (uint64_t)pool_index, (uint64_t)entry_index, (ut64)pp_off);
+	r_list_append (si->references, sr);
+}
+
+static void modern_append_object_pool_string(RList *strings, HtUP *seen_refs, ut64 *ref_counter, const ModernRefResolver *resolver, ut64 string_ref, ut64 pool_ref, ut64 pool_index, ut64 entry_index) {
+	if (!strings || !seen_refs || !resolver || string_ref >= resolver->refs_count || R_STR_ISEMPTY (resolver->strings_by_ref[string_ref])) {
+		return;
+	}
+	DartStringInfo *si = ht_up_find (seen_refs, string_ref, NULL);
+	if (!si) {
+		si = R_NEW0 (DartStringInfo);
+		si->ref_id = ref_counter? (*ref_counter)++: 0;
+		si->value = strdup (resolver->strings_by_ref[string_ref]);
+		si->length = (ut32)strlen (si->value);
+		si->flags = resolver->string_flags_by_ref[string_ref] | DART_STRING_CANONICAL | DART_STRING_OBJECT_POOL;
+		si->address = resolver->string_addr_by_ref[string_ref];
+		si->category = dart_string_classify_value (si->value);
+		si->references = r_list_newf ((RListFree)dart_string_ref_free);
+		r_list_append (strings, si);
+		ht_up_insert (seen_refs, string_ref, si);
+	}
+	modern_add_object_pool_string_ref (si, pool_ref, pool_index, entry_index, modern_pool_entry_pp_offset (resolver->ctx, entry_index));
+}
+
+bool dart_modern_extract_object_pool_strings_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, RList *strings, HtUP *seen_refs, ut64 *ref_counter) {
+	if (!ctx || !strings || !seen_refs || !dart_modern_is_supported_snapshot (ctx)) {
+		return false;
+	}
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, cluster_start, cluster_end, num_clusters, num_base_objects);
+	if (!meta) {
+		return false;
+	}
+	ModernRefResolver resolver = { 0 };
+	bool ok = modern_ref_resolver_init (&resolver, ctx, meta, num_clusters, num_base_objects);
+	if (!ok) {
+		modern_cluster_meta_free (meta, num_clusters);
+		return false;
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		ModernClusterMeta *m = &meta[i];
+		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
+			continue;
+		}
+		ClusterStream s = {
+			.ctx = ctx,
+			.cursor = m->fill_offset,
+			.end = m->fill_end,
+};
+		for (ut64 pool_index = 0; pool_index < m->count; pool_index++) {
+			ut64 pool_ref = m->start_ref + pool_index;
+			ut64 length = 0;
+			if (!cs_read_unsigned (&s, &length)) {
+				ok = false;
+				break;
+			}
+			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
+				ut8 bits = 0;
+				if (!cs_read_u8 (&s, &bits)) {
+					ok = false;
+					break;
+				}
+				ut8 type = bits & 0x0f;
+				ut8 behavior = bits >> 5;
+				ut64 ref = 0;
+				ut64 raw = 0;
+				if (!modern_decode_pool_entry (&s, ctx, type, behavior, &ref, &raw)) {
+					ok = false;
+					break;
+				}
+				(void)raw;
+				if (behavior != 0 || type != 1 || ref >= resolver.refs_count) {
+					continue;
+				}
+				const ModernClusterMeta *target = modern_resolver_cluster_for_ref (&resolver, ref);
+				if (target && modern_is_string_cid (ctx, target->cid)) {
+					modern_append_object_pool_string (strings, seen_refs, ref_counter, &resolver, ref, pool_ref, pool_index, entry_index);
+				}
+			}
+			if (!ok) {
+				break;
+			}
+		}
+		if (!ok) {
+			break;
+		}
+	}
+	modern_ref_resolver_fini (&resolver);
+	modern_cluster_meta_free (meta, num_clusters);
+	return ok;
+}
+
 bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, int limit, int detail, const char *r2_scope, RStrBuf *sb, PJ *pj) {
 	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, cluster_start, cluster_end, num_clusters, num_base_objects);
 	if (!meta) {
@@ -2403,15 +2529,25 @@ static char *modern_build_full_name(DartCtx *ctx, const char *owner_name, const 
 	return full;
 }
 
-static bool modern_read_cluster_string(ClusterStream *s, char **out) {
+static bool modern_read_cluster_string_full(ClusterStream *s, char **out, ut32 *out_len, ut32 *out_flags, ut64 *out_payload_addr) {
 	ut64 encoded = 0;
 	if (!cs_read_unsigned (s, &encoded)) {
 		return false;
 	}
 	ut64 length = encoded >> 1;
 	bool is_two_byte = (encoded & 1) != 0;
+	ut64 payload_addr = s->cursor;
+	if (out_payload_addr) {
+		*out_payload_addr = payload_addr;
+	}
+	if (out_flags) {
+		*out_flags = is_two_byte? DART_STRING_TWO_BYTE: 0;
+	}
 	if (length == 0) {
 		*out = strdup ("");
+		if (out_len) {
+			*out_len = 0;
+		}
 		return true;
 	}
 	if (is_two_byte) {
@@ -2426,6 +2562,9 @@ static bool modern_read_cluster_string(ClusterStream *s, char **out) {
 		}
 		*out = dart_utf16le_to_utf8 (raw, nbytes);
 		free (raw);
+		if (out_len) {
+			*out_len = *out? (ut32)strlen (*out): 0;
+		}
 		return true;
 	}
 	if (length > INT32_MAX) {
@@ -2437,7 +2576,14 @@ static bool modern_read_cluster_string(ClusterStream *s, char **out) {
 		return false;
 	}
 	*out = value;
+	if (out_len) {
+		*out_len = (ut32)length;
+	}
 	return true;
+}
+
+static bool modern_read_cluster_string(ClusterStream *s, char **out) {
+	return modern_read_cluster_string_full (s, out, NULL, NULL, NULL);
 }
 
 static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut64 refs_count) {
