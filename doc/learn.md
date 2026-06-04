@@ -862,6 +862,27 @@ sample) still need a separate ROData string/ref path. Until that exists, the
 class extractor skips the legacy alloc-phase decoder and reports string-based
 fallback classes explicitly instead of logging bogus huge CIDs.
 
+## Extended Header Cluster Walk
+
+`-HH` is the deep form of `-H`: it prints the normal AOT header and then walks
+the VM and isolate cluster allocation streams. Each cluster row records the CID,
+allocation kind, fill kind, object count, ref range, allocation/fill byte ranges,
+canonical/immutable flags, and small length aggregates for variable-sized
+clusters. JSON mode mirrors this as `snapshots[].clusters[]`.
+
+ObjectHeader cluster tags are still Dart signed-VLE `ReadTagged32 ()` values;
+`no-compressed-pointers` changes object payload layout, not the cluster tag
+encoding. For full-width AOT snapshots, string clusters are ROData-backed:
+allocation contains offset deltas into the data image and fill consumes no
+inline string bytes. Treating those deltas as inline string lengths shifts the
+fill cursor immediately.
+
+The extended header view is diagnostic, so it should keep the allocation walk
+visible even when a later fill rule is incomplete for an unknown hash. Mark the
+first failed cluster with `fill_status=failed` and leave later clusters as
+`fill_status=not_parsed` instead of collapsing the whole section to
+`unsupported`.
+
 ## RVec Conversion Boundaries
 
 Use `RVec` for hot arrays of plain records or records with simple per-element finalizers. `DartApp.functions`, instruction-table entries, and local address/offset collector arrays fit this model because iteration is linear and callers do not require stable heap object addresses.

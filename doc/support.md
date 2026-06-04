@@ -322,6 +322,7 @@ name, then applies it to:
 | `-c` | Dump classes. |
 | `-f` | Dump recovered functions as `addr name`; with `-j`, emits objects with `addr`, `name`, and optional `size`. |
 | `-H` | Dump snapshot header/layout/container information. |
+| `-HH` | Dump the snapshot header plus VM/isolate cluster allocation/fill layout. |
 | `-i` | Dump instruction-table entries. |
 | `-R` | Dump a radare2 script for applying method flags/comments and PP helpers. |
 | `-T` | Dump type-oriented class output and run enum recovery. |
@@ -365,6 +366,7 @@ Plugin actions:
 | `r2flutter -AA` | Analyze with field extraction enabled. |
 | `r2flutter -AAA` | Run Dart-aware code analysis and recover refs/comments. |
 | `r2flutter -H` | Print snapshot header info. |
+| `r2flutter -HH` | Print snapshot header info plus VM/isolate cluster allocation/fill layout. |
 | `r2flutter -i` | Print instruction-table entries. |
 | `r2flutter -R` | Print full radare2 script output. |
 | `r2flutter -f` | Dump recovered functions. |
@@ -380,6 +382,7 @@ r2flutter -c       # classes as text
 r2flutter -jc      # classes as JSON
 r2flutter -rz      # string registration commands (`iz+`, `f str.*`, `Cs*`)
 r2flutter -jH      # snapshot header as JSON
+r2flutter -HH -l 8 # snapshot header plus first 8 clusters per snapshot
 ```
 
 The Dart-aware analysis pass creates or reuses functions at recovered Dart

@@ -162,10 +162,6 @@ static void append_string_info(RList *list, HtUP *seen_addrs, const char *value,
 	si->category = cat;
 	si->references = r_list_newf ((RListFree)dart_string_ref_free);
 	si->value = strdup (value);
-	if (!si->value) {
-		dart_string_info_free (si);
-		return;
-	}
 	r_list_append (list, si);
 	if (seen_addrs && addr) {
 		ht_up_insert (seen_addrs, addr, si);

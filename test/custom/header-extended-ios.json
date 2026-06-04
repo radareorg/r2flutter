@@ -1,0 +1,17 @@
+{
+  "name": "header-extended-ios",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-HH", "-l", "1", "bins/ios/Runner.app"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "snapshot_hash=d20a1be77c3d3c41b2a5accaee1ce549 dart_version=3.4.3",
+      "## VM Clusters",
+      "0 cid=92 alloc=rodata fill=none count=884",
+      "... 5 clusters omitted by -l",
+      "## Isolate Clusters",
+      "0 cid=92 alloc=rodata fill=none count=8589",
+      "... 334 clusters omitted by -l"
+    ]
+  }
+}

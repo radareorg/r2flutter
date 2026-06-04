@@ -176,6 +176,7 @@ void resolve_names(DartCtx *ctx);
 
 bool modern_skip_n_bytes(ClusterStream *s, ut64 len);
 bool dart_modern_is_supported_snapshot(DartCtx *ctx);
+bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, int limit, const char *r2_scope, RStrBuf *sb, PJ *pj);
 bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen);
 bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, RList *class_list);
 

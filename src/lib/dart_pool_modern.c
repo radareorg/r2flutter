@@ -69,6 +69,21 @@ typedef struct {
 	ut64 count;
 	ut64 start_ref;
 	ut64 main_count;
+	ModernAllocKind alloc_kind;
+	ModernFillKind fill_kind;
+	ut64 tag_offset;
+	ut64 alloc_offset;
+	ut64 alloc_end;
+	ut64 fill_offset;
+	ut64 fill_end;
+	ut64 alloc_items_total;
+	ut64 alloc_items_first;
+	ut64 alloc_items_min;
+	ut64 alloc_items_max;
+	ut64 alloc_items_count;
+	ut64 discarded_count;
+	bool fill_parsed;
+	bool fill_ok;
 	int next_field_offset_words;
 	ut8 *discarded_codes;
 } ModernClusterMeta;
@@ -109,6 +124,101 @@ bool dart_modern_is_supported_snapshot(DartCtx *ctx) {
 	return ctx && ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER && ctx->compressed_word_size == 4;
 }
 
+static const char *modern_alloc_kind_name(ModernAllocKind kind) {
+	switch (kind) {
+	case MODERN_ALLOC_SIMPLE:
+		return "simple";
+	case MODERN_ALLOC_CANONICAL_SET:
+		return "canonical_set";
+	case MODERN_ALLOC_STRING:
+		return "string";
+	case MODERN_ALLOC_MINT:
+		return "mint";
+	case MODERN_ALLOC_ARRAY:
+		return "array";
+	case MODERN_ALLOC_WEAK_ARRAY:
+		return "weak_array";
+	case MODERN_ALLOC_TYPE_ARGUMENTS:
+		return "type_arguments";
+	case MODERN_ALLOC_CLASS:
+		return "class";
+	case MODERN_ALLOC_CODE:
+		return "code";
+	case MODERN_ALLOC_OBJECT_POOL:
+		return "object_pool";
+	case MODERN_ALLOC_RODATA:
+		return "rodata";
+	case MODERN_ALLOC_EXCEPTION_HANDLERS:
+		return "exception_handlers";
+	case MODERN_ALLOC_CONTEXT:
+		return "context";
+	case MODERN_ALLOC_CONTEXT_SCOPE:
+		return "context_scope";
+	case MODERN_ALLOC_RECORD:
+		return "record";
+	case MODERN_ALLOC_TYPED_DATA:
+		return "typed_data";
+	case MODERN_ALLOC_INSTANCE:
+		return "instance";
+	case MODERN_ALLOC_EMPTY:
+		return "empty";
+	case MODERN_ALLOC_UNKNOWN:
+	default:
+		return "unknown";
+	}
+}
+
+static const char *modern_fill_kind_name(ModernFillKind kind) {
+	switch (kind) {
+	case MODERN_FILL_NONE:
+		return "none";
+	case MODERN_FILL_REFS:
+		return "refs";
+	case MODERN_FILL_CLASS:
+		return "class";
+	case MODERN_FILL_ARRAY:
+		return "array";
+	case MODERN_FILL_WEAK_ARRAY:
+		return "weak_array";
+	case MODERN_FILL_TYPE_ARGUMENTS:
+		return "type_arguments";
+	case MODERN_FILL_EXCEPTION_HANDLERS:
+		return "exception_handlers";
+	case MODERN_FILL_CONTEXT:
+		return "context";
+	case MODERN_FILL_CONTEXT_SCOPE:
+		return "context_scope";
+	case MODERN_FILL_CODE:
+		return "code";
+	case MODERN_FILL_OBJECT_POOL:
+		return "object_pool";
+	case MODERN_FILL_INLINE_BYTES:
+		return "inline_bytes";
+	case MODERN_FILL_TYPED_DATA:
+		return "typed_data";
+	case MODERN_FILL_RECORD:
+		return "record";
+	case MODERN_FILL_INSTANCE:
+		return "instance";
+	case MODERN_FILL_UNKNOWN:
+	default:
+		return "unknown";
+	}
+}
+
+static void modern_cluster_record_item(ModernClusterMeta *meta, ut64 item) {
+	if (!meta->alloc_items_count) {
+		meta->alloc_items_first = item;
+		meta->alloc_items_min = item;
+		meta->alloc_items_max = item;
+	} else {
+		meta->alloc_items_min = R_MIN (meta->alloc_items_min, item);
+		meta->alloc_items_max = R_MAX (meta->alloc_items_max, item);
+	}
+	meta->alloc_items_total += item;
+	meta->alloc_items_count++;
+}
+
 static inline int modern_cid_class(DartCtx *ctx) {
 	return ctx->layout->cid_class;
 }
@@ -133,6 +243,10 @@ static inline int modern_cid_mint(DartCtx *ctx) {
 	return ctx->layout->cid_mint;
 }
 
+static inline int modern_cid_double(DartCtx *ctx) {
+	return modern_cid_mint (ctx) + 1;
+}
+
 static inline int modern_cid_one_byte_string(DartCtx *ctx) {
 	return ctx->layout->cid_one_byte_string;
 }
@@ -151,6 +265,42 @@ static inline int modern_cid_immutable_array(DartCtx *ctx) {
 
 static inline int modern_cid_growable_array(DartCtx *ctx) {
 	return modern_cid_array (ctx) + 2;
+}
+
+static inline int modern_cid_type_arguments(DartCtx *ctx) {
+	return modern_cid_array (ctx) - 43;
+}
+
+static inline int modern_cid_type(DartCtx *ctx) {
+	return modern_cid_type_arguments (ctx) + 2;
+}
+
+static inline int modern_cid_function_type(DartCtx *ctx) {
+	return modern_cid_type_arguments (ctx) + 3;
+}
+
+static inline int modern_cid_record_type(DartCtx *ctx) {
+	return modern_cid_type_arguments (ctx) + 4;
+}
+
+static inline int modern_cid_type_parameter(DartCtx *ctx) {
+	return modern_cid_type_arguments (ctx) + 5;
+}
+
+static inline int modern_cid_exception_handlers(DartCtx *ctx) {
+	return modern_cid_object_pool (ctx) + 5;
+}
+
+static inline int modern_cid_context(DartCtx *ctx) {
+	return modern_cid_object_pool (ctx) + 6;
+}
+
+static inline int modern_cid_context_scope(DartCtx *ctx) {
+	return modern_cid_object_pool (ctx) + 7;
+}
+
+static inline int modern_cid_record(DartCtx *ctx) {
+	return modern_cid_mint (ctx) + 6;
 }
 
 static inline int modern_cid_typed_data(DartCtx *ctx) {
@@ -201,6 +351,11 @@ static bool modern_is_typed_data_alloc_cid(DartCtx *ctx, int cid) {
 	}
 	int rem;
 	return modern_typed_data_internal_kind (ctx, cid, &rem) && !rem;
+}
+
+static bool modern_is_rodata_cid(DartCtx *ctx, int cid) {
+	int pc_descriptors = modern_cid_object_pool (ctx) + 1;
+	return cid >= pc_descriptors && cid <= pc_descriptors + 2;
 }
 
 static int modern_typed_data_element_size(DartCtx *ctx, int cid) {
@@ -281,10 +436,13 @@ static bool modern_skip_canonical_set(ClusterStream *s, ut64 count) {
 
 static ModernAllocKind modern_alloc_kind(DartCtx *ctx, int cid) {
 	if (modern_is_string_cid (ctx, cid)) {
-		return MODERN_ALLOC_STRING;
+		return ctx->compressed_word_size == 8? MODERN_ALLOC_RODATA: MODERN_ALLOC_STRING;
 	}
 	if (cid == modern_cid_mint (ctx)) {
 		return MODERN_ALLOC_MINT;
+	}
+	if (cid == modern_cid_double (ctx)) {
+		return MODERN_ALLOC_SIMPLE;
 	}
 	if (modern_is_simple_alloc_cid (cid)) {
 		return MODERN_ALLOC_SIMPLE;
@@ -295,7 +453,7 @@ static ModernAllocKind modern_alloc_kind(DartCtx *ctx, int cid) {
 	if (cid == 17) {
 		return MODERN_ALLOC_WEAK_ARRAY;
 	}
-	if (cid == 47) {
+	if (cid == modern_cid_type_arguments (ctx)) {
 		return MODERN_ALLOC_TYPE_ARGUMENTS;
 	}
 	if (cid == modern_cid_class (ctx)) {
@@ -307,25 +465,25 @@ static ModernAllocKind modern_alloc_kind(DartCtx *ctx, int cid) {
 	if (cid == modern_cid_object_pool (ctx)) {
 		return MODERN_ALLOC_OBJECT_POOL;
 	}
-	if (cid == 24 || cid == 25 || cid == 26) {
+	if (modern_is_rodata_cid (ctx, cid)) {
 		return MODERN_ALLOC_RODATA;
 	}
-	if (cid == 28) {
+	if (cid == modern_cid_exception_handlers (ctx)) {
 		return MODERN_ALLOC_EXCEPTION_HANDLERS;
 	}
-	if (cid == 29) {
+	if (cid == modern_cid_context (ctx)) {
 		return MODERN_ALLOC_CONTEXT;
 	}
-	if (cid == 30) {
+	if (cid == modern_cid_context_scope (ctx)) {
 		return MODERN_ALLOC_CONTEXT_SCOPE;
 	}
-	if (cid == 67) {
+	if (cid == modern_cid_record (ctx)) {
 		return MODERN_ALLOC_RECORD;
 	}
 	if (modern_is_typed_data_alloc_cid (ctx, cid)) {
 		return MODERN_ALLOC_TYPED_DATA;
 	}
-	if (cid == 49 || cid == 50 || cid == 51 || cid == 52) {
+	if (cid == modern_cid_type (ctx) || cid == modern_cid_function_type (ctx) || cid == modern_cid_record_type (ctx) || cid == modern_cid_type_parameter (ctx)) {
 		return MODERN_ALLOC_CANONICAL_SET;
 	}
 	if (cid == 16) {
@@ -340,6 +498,7 @@ static ModernAllocKind modern_alloc_kind(DartCtx *ctx, int cid) {
 static bool modern_skip_alloc(ClusterStream *s, DartCtx *ctx, ModernClusterMeta *meta) {
 	ut64 count = 0;
 	ModernAllocKind kind = modern_alloc_kind (ctx, meta->cid);
+	meta->alloc_kind = kind;
 	switch (kind) {
 	case MODERN_ALLOC_EMPTY:
 		meta->count = 0;
@@ -369,6 +528,7 @@ static bool modern_skip_alloc(ClusterStream *s, DartCtx *ctx, ModernClusterMeta 
 			if (!cs_read_unsigned (s, &encoded)) {
 				return false;
 			}
+			modern_cluster_record_item (meta, encoded >> 1);
 		}
 		if (meta->is_canonical) {
 			return modern_skip_canonical_set (s, count);
@@ -405,6 +565,7 @@ static bool modern_skip_alloc(ClusterStream *s, DartCtx *ctx, ModernClusterMeta 
 			if (!cs_read_unsigned (s, &item)) {
 				return false;
 			}
+			modern_cluster_record_item (meta, item);
 		}
 		if ((kind == MODERN_ALLOC_STRING || kind == MODERN_ALLOC_TYPE_ARGUMENTS || kind == MODERN_ALLOC_RODATA) && meta->is_canonical) {
 			return modern_skip_canonical_set (s, count);
@@ -450,6 +611,7 @@ static bool modern_skip_alloc(ClusterStream *s, DartCtx *ctx, ModernClusterMeta 
 				}
 				if (meta->discarded_codes && ((state_bits >> 3) & 1)) {
 					meta->discarded_codes[i] = 1;
+					meta->discarded_count++;
 				}
 			}
 			ut64 deferred = 0;
@@ -549,11 +711,17 @@ static ModernFillSpec modern_get_fill_spec(DartCtx *ctx, int cid) {
 	if (cid == modern_cid_mint (ctx)) {
 		return modern_fill_spec_kind (MODERN_FILL_NONE);
 	}
+	if (cid == modern_cid_double (ctx)) {
+		return modern_fill_spec_refs (0, -1, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
+	}
 	if (cid == modern_cid_code (ctx)) {
 		return modern_fill_spec_kind (MODERN_FILL_CODE);
 	}
 	if (cid == modern_cid_object_pool (ctx)) {
 		return modern_fill_spec_kind (MODERN_FILL_OBJECT_POOL);
+	}
+	if (modern_is_rodata_cid (ctx, cid)) {
+		return modern_fill_spec_kind (MODERN_FILL_INLINE_BYTES);
 	}
 	if (modern_is_array_cid (ctx, cid)) {
 		return modern_fill_spec_kind (MODERN_FILL_ARRAY);
@@ -579,6 +747,21 @@ static ModernFillSpec modern_get_fill_spec(DartCtx *ctx, int cid) {
 	}
 	if (cid == modern_cid_growable_array (ctx)) {
 		return modern_fill_spec_refs (3, -1, -1, 0, 0, 0, 0, 0);
+	}
+	if (cid == modern_cid_type_arguments (ctx)) {
+		return modern_fill_spec_kind (MODERN_FILL_TYPE_ARGUMENTS);
+	}
+	if (cid == modern_cid_exception_handlers (ctx)) {
+		return modern_fill_spec_kind (MODERN_FILL_EXCEPTION_HANDLERS);
+	}
+	if (cid == modern_cid_context (ctx)) {
+		return modern_fill_spec_kind (MODERN_FILL_CONTEXT);
+	}
+	if (cid == modern_cid_context_scope (ctx)) {
+		return modern_fill_spec_kind (MODERN_FILL_CONTEXT_SCOPE);
+	}
+	if (cid == modern_cid_record (ctx)) {
+		return modern_fill_spec_kind (MODERN_FILL_RECORD);
 	}
 	static const ModernFillSpecRule rules[] = {
 		{ 6, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
@@ -837,6 +1020,22 @@ static bool modern_skip_fill_record(ClusterStream *s, const ModernClusterMeta *m
 	return true;
 }
 
+static bool modern_skip_fill_string(ClusterStream *s, const ModernClusterMeta *meta) {
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 encoded = 0;
+		if (!cs_read_unsigned (s, &encoded)) {
+			return false;
+		}
+		ut64 length = encoded >> 1;
+		bool is_two_byte = (encoded & 1) != 0;
+		ut64 nbytes = is_two_byte? length * 2: length;
+		if (!modern_skip_n_bytes (s, nbytes)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static bool modern_skip_fill_instance(ClusterStream *s, const ModernClusterMeta *meta) {
 	ut64 bitmap = 0;
 	if (!cs_read_unsigned (s, &bitmap)) {
@@ -985,6 +1184,202 @@ static bool modern_skip_fill_by_kind(ClusterStream *s, DartCtx *ctx, const Moder
 	default:
 		return false;
 	}
+}
+
+static bool modern_read_cluster_tags(ClusterStream *s, DartCtx *ctx, ut32 *out) {
+	(void)ctx;
+	return cs_read_tagged32 (s, out);
+}
+
+static void modern_emit_cluster_json(PJ *pj, ut64 index, const ModernClusterMeta *meta) {
+	pj_o (pj);
+	pj_kn (pj, "index", index);
+	pj_kn (pj, "cid", meta->cid);
+	pj_ks (pj, "alloc", modern_alloc_kind_name (meta->alloc_kind));
+	pj_ks (pj, "fill", modern_fill_kind_name (meta->fill_kind));
+	pj_kb (pj, "canonical", meta->is_canonical);
+	pj_kb (pj, "immutable", meta->is_immutable);
+	pj_kn (pj, "count", meta->count);
+	pj_kn (pj, "ref_start", meta->start_ref);
+	pj_kn (pj, "ref_end", meta->start_ref + meta->count);
+	pj_kn (pj, "tag_offset", meta->tag_offset);
+	pj_kn (pj, "alloc_offset", meta->alloc_offset);
+	pj_kn (pj, "alloc_end", meta->alloc_end);
+	pj_kn (pj, "fill_offset", meta->fill_offset);
+	pj_kn (pj, "fill_end", meta->fill_end);
+	pj_ks (pj, "fill_status", meta->fill_parsed? (meta->fill_ok? "ok": "failed"): "not_parsed");
+	if (meta->main_count) {
+		pj_kn (pj, "main_count", meta->main_count);
+	}
+	if (meta->discarded_count) {
+		pj_kn (pj, "discarded_count", meta->discarded_count);
+	}
+	if (meta->next_field_offset_words) {
+		pj_ki (pj, "next_field_offset_words", meta->next_field_offset_words);
+	}
+	if (meta->alloc_items_count) {
+		pj_k (pj, "items");
+		pj_o (pj);
+		pj_kn (pj, "count", meta->alloc_items_count);
+		pj_kn (pj, "first", meta->alloc_items_first);
+		pj_kn (pj, "min", meta->alloc_items_min);
+		pj_kn (pj, "max", meta->alloc_items_max);
+		pj_kn (pj, "total", meta->alloc_items_total);
+		pj_end (pj);
+	}
+	pj_end (pj);
+}
+
+static void modern_emit_cluster_text(RStrBuf *sb, ut64 index, const ModernClusterMeta *meta) {
+	r_strbuf_appendf (sb,
+		"  %" PRIu64 " cid=%d alloc=%s fill=%s count=%" PRIu64 " refs=%" PRIu64 "..%" PRIu64 " flags=%s%s alloc=0x%" PFMT64x "..0x%" PFMT64x " fill=0x%" PFMT64x "..0x%" PFMT64x,
+		(uint64_t)index,
+		meta->cid,
+		modern_alloc_kind_name (meta->alloc_kind),
+		modern_fill_kind_name (meta->fill_kind),
+		(uint64_t)meta->count,
+		(uint64_t)meta->start_ref,
+		(uint64_t) (meta->start_ref + meta->count),
+		meta->is_canonical? "canonical": "-",
+		meta->is_immutable? ",immutable": "",
+		(ut64)meta->alloc_offset,
+		(ut64)meta->alloc_end,
+		(ut64)meta->fill_offset,
+		(ut64)meta->fill_end);
+	r_strbuf_appendf (sb, " fill_status=%s", meta->fill_parsed? (meta->fill_ok? "ok": "failed"): "not_parsed");
+	if (meta->main_count) {
+		r_strbuf_appendf (sb, " main=%" PRIu64, (uint64_t)meta->main_count);
+	}
+	if (meta->discarded_count) {
+		r_strbuf_appendf (sb, " discarded=%" PRIu64, (uint64_t)meta->discarded_count);
+	}
+	if (meta->next_field_offset_words) {
+		r_strbuf_appendf (sb, " next_field_words=%d", meta->next_field_offset_words);
+	}
+	if (meta->alloc_items_count) {
+		r_strbuf_appendf (sb,
+			" items=count:%" PRIu64 ",first:%" PRIu64 ",min:%" PRIu64 ",max:%" PRIu64 ",total:%" PRIu64,
+			(uint64_t)meta->alloc_items_count,
+			(uint64_t)meta->alloc_items_first,
+			(uint64_t)meta->alloc_items_min,
+			(uint64_t)meta->alloc_items_max,
+			(uint64_t)meta->alloc_items_total);
+	}
+	r_strbuf_append (sb, "\n");
+}
+
+static void modern_emit_cluster_r2(RStrBuf *sb, const char *scope, ut64 index, const ModernClusterMeta *meta) {
+	const char *status = meta->fill_parsed? (meta->fill_ok? "ok": "failed"): "not_parsed";
+	ut64 alloc_size = meta->alloc_end > meta->alloc_offset? meta->alloc_end - meta->alloc_offset: 0;
+	ut64 fill_size = meta->fill_end > meta->fill_offset? meta->fill_end - meta->fill_offset: 0;
+	r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".tag = 0x%" PFMT64x "\n", scope, (uint64_t)index, (ut64)meta->tag_offset);
+	if (alloc_size > 0) {
+		r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".alloc 0x%" PFMT64x " @ 0x%" PFMT64x "\n", scope, (uint64_t)index, (ut64)alloc_size, (ut64)meta->alloc_offset);
+	}
+	if (fill_size > 0) {
+		r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".fill 0x%" PFMT64x " @ 0x%" PFMT64x "\n", scope, (uint64_t)index, (ut64)fill_size, (ut64)meta->fill_offset);
+	}
+	r_strbuf_appendf (sb,
+		"'@0x%" PFMT64x "'CC Dart %s cluster %" PRIu64 " cid=%d alloc=%s fill=%s count=%" PRIu64 " refs=%" PRIu64 "..%" PRIu64 " fill_status=%s\n",
+		(ut64)meta->tag_offset,
+		scope,
+		(uint64_t)index,
+		meta->cid,
+		modern_alloc_kind_name (meta->alloc_kind),
+		modern_fill_kind_name (meta->fill_kind),
+		(uint64_t)meta->count,
+		(uint64_t)meta->start_ref,
+		(uint64_t) (meta->start_ref + meta->count),
+		status);
+}
+
+bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, int limit, const char *r2_scope, RStrBuf *sb, PJ *pj) {
+	if (!ctx || !ctx->layout || ctx->layout->tag_style != DART_TAG_STYLE_OBJECT_HEADER || cluster_start >= cluster_end || num_clusters == 0 || num_clusters > 100000) {
+		return false;
+	}
+	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)num_clusters, sizeof (ModernClusterMeta));
+	if (!meta) {
+		return false;
+	}
+	ClusterStream s = {
+		.ctx = ctx,
+		.cursor = cluster_start,
+		.end = cluster_end,
+};
+	ut64 next_ref = num_base_objects + 1;
+	for (ut64 i = 0; i < num_clusters; i++) {
+		ut32 tags = 0;
+		meta[i].tag_offset = s.cursor;
+		if (!modern_read_cluster_tags (&s, ctx, &tags)) {
+			goto fail;
+		}
+		meta[i].cid = (int) ((tags >> 12) & 0xFFFFF);
+		meta[i].is_canonical = ((tags >> 1) & 1) != 0;
+		meta[i].is_immutable = (tags & (1 << 6)) != 0;
+		meta[i].start_ref = next_ref;
+		meta[i].alloc_offset = s.cursor;
+		if (!modern_skip_alloc (&s, ctx, &meta[i])) {
+			if (ctx->verbose > 0) {
+				fprintf (stderr, "[r2flutter] cluster summary alloc failed cid=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, (uint64_t)i, s.cursor);
+			}
+			goto fail;
+		}
+		meta[i].alloc_end = s.cursor;
+		next_ref += meta[i].count;
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		ModernFillSpec spec = modern_get_fill_spec (ctx, meta[i].cid);
+		meta[i].fill_kind = spec.kind;
+		meta[i].fill_offset = s.cursor;
+		bool ok = true;
+		if (spec.kind == MODERN_FILL_UNKNOWN && meta[i].count == 0) {
+			meta[i].fill_kind = MODERN_FILL_NONE;
+		} else {
+			ok = modern_is_string_cid (ctx, meta[i].cid) && ctx->compressed_word_size != 8
+				? modern_skip_fill_string (&s, &meta[i])
+				: modern_skip_fill_by_kind (&s, ctx, &meta[i], &spec);
+		}
+		meta[i].fill_parsed = true;
+		meta[i].fill_ok = ok;
+		meta[i].fill_end = s.cursor;
+		if (!ok) {
+			if (ctx->verbose > 0) {
+				fprintf (stderr, "[r2flutter] cluster summary fill failed cid=%d kind=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, spec.kind, (uint64_t)i, s.cursor);
+			}
+			break;
+		}
+	}
+	ut64 emit_count = num_clusters;
+	if (limit > 0 && (ut64)limit < emit_count) {
+		emit_count = (ut64)limit;
+	}
+	for (ut64 i = 0; i < emit_count; i++) {
+		if (pj) {
+			modern_emit_cluster_json (pj, i, &meta[i]);
+		} else if (sb && r2_scope) {
+			modern_emit_cluster_r2 (sb, r2_scope, i, &meta[i]);
+		} else if (sb) {
+			modern_emit_cluster_text (sb, i, &meta[i]);
+		}
+	}
+	if (sb && emit_count < num_clusters) {
+		if (r2_scope) {
+			r_strbuf_appendf (sb, "'# dart.%s.clusters.omitted=%" PRIu64 " by -l\n", r2_scope, (uint64_t) (num_clusters - emit_count));
+		} else {
+			r_strbuf_appendf (sb, "  ... %" PRIu64 " clusters omitted by -l\n", (uint64_t) (num_clusters - emit_count));
+		}
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		free (meta[i].discarded_codes);
+	}
+	free (meta);
+	return true;
+fail:
+	for (ut64 i = 0; i < num_clusters; i++) {
+		free (meta[i].discarded_codes);
+	}
+	free (meta);
+	return false;
 }
 
 static int modern_name_quality(const char *name) {

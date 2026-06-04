@@ -701,6 +701,181 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	return r_strbuf_drain (sb);
 }
 
+static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, ut64 addr) {
+	pj_o (pj);
+	pj_ks (pj, "label", label);
+	pj_kn (pj, "base", addr);
+	DartSnapshotHeader sh = { 0 };
+	if (!addr || !dart_snapshot_header_read (ctx, addr, &sh) || !sh.ok) {
+		pj_kb (pj, "ok", false);
+		pj_end (pj);
+		return;
+	}
+	pj_kb (pj, "ok", true);
+	pj_kn (pj, "magic", sh.magic);
+	pj_kn (pj, "total_len", sh.total_len);
+	pj_kn (pj, "kind", sh.kind);
+	pj_ks (pj, "hash", sh.hash[0]? sh.hash: "");
+	pj_ks (pj, "flags", sh.flags[0]? sh.flags: "");
+	pj_kn (pj, "base_objects", sh.nb);
+	pj_kn (pj, "objects", sh.no);
+	pj_kn (pj, "clusters_count", sh.nc);
+	pj_kn (pj, "it_length", sh.itlen);
+	pj_kn (pj, "it_data_off", sh.itdata);
+	pj_kn (pj, "cluster_start", sh.cluster_start);
+	ut64 cluster_end = addr + sh.total_len;
+	pj_kn (pj, "cluster_end", cluster_end);
+	if (ctx->layout) {
+		ut64 align = ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
+		ut64 data_image_base = addr + ((sh.total_len + (align - 1)) & ~ (align - 1));
+		pj_kn (pj, "data_image_base", data_image_base);
+		pj_kn (pj, "instruction_table_addr", data_image_base + sh.itdata);
+	}
+	pj_ka (pj, "clusters");
+	bool parsed = dart_modern_emit_cluster_summary (ctx, sh.cluster_start, cluster_end, sh.nc, sh.nb, ctx->dump_fns_limit, NULL, NULL, pj);
+	pj_end (pj);
+	pj_kb (pj, "clusters_parsed", parsed);
+	if (!parsed) {
+		pj_ks (pj, "clusters_error", "unsupported or failed cluster stream");
+	}
+	if (ctx->dump_fns_limit > 0 && sh.nc > (ut64)ctx->dump_fns_limit) {
+		pj_kn (pj, "clusters_omitted", sh.nc - (ut64)ctx->dump_fns_limit);
+	}
+	pj_end (pj);
+}
+
+static char *dump_header_ext_json(DartCtx *ctx) {
+	const char *version = dart_version_from_hash (ctx->snapshot_hash);
+	DartSnapshotHeader iso = { 0 };
+	if (ctx->iso_data) {
+		dart_snapshot_header_read (ctx, ctx->iso_data, &iso);
+	}
+	PJ *pj = pj_new ();
+	if (!pj) {
+		return strdup ("{\"error\":\"Failed to create JSON\"}");
+	}
+	pj_o (pj);
+	pj_kn (pj, "kind", iso.kind);
+	pj_ks (pj, "hash", r_str_get (ctx->snapshot_hash));
+	pj_kn (pj, "vm_data", ctx->vm_data);
+	pj_kn (pj, "vm_instr", ctx->vm_instr);
+	pj_kn (pj, "iso_data", ctx->iso_data);
+	pj_kn (pj, "iso_instr", ctx->iso_instr);
+	pj_ki (pj, "cws", ctx->compressed_word_size);
+	pj_ks (pj, "dart_version", version? version: "unknown");
+	if (ctx->container_kind[0]) {
+		pj_k (pj, "container");
+		pj_o (pj);
+		pj_ks (pj, "kind", ctx->container_kind);
+		pj_ks (pj, "note_owner", ctx->container_note_owner);
+		pj_kn (pj, "payload_offset", ctx->container_payload_offset);
+		pj_kn (pj, "payload_size", ctx->container_payload_size);
+		pj_kn (pj, "macho_offset", ctx->container_macho_offset);
+		pj_end (pj);
+	}
+	if (ctx->layout) {
+		const DartVerLayout *l = ctx->layout;
+		pj_ks (pj, "tag_style", dart_tag_style_to_string (l->tag_style));
+		pj_ki (pj, "alignment", l->max_alignment);
+		pj_ki (pj, "header_fields", l->header_fields);
+		pj_kn (pj, "it_capacity", l->it_cap);
+		pj_k (pj, "cid_table");
+		pj_o (pj);
+		pj_ki (pj, "cid_class", l->cid_class);
+		pj_ki (pj, "cid_function", l->cid_function);
+		pj_ki (pj, "cid_code", l->cid_code);
+		pj_ki (pj, "cid_string", l->cid_string);
+		pj_ki (pj, "cid_one_byte_string", l->cid_one_byte_string);
+		pj_ki (pj, "cid_two_byte_string", l->cid_two_byte_string);
+		pj_ki (pj, "cid_array", l->cid_array);
+		pj_ki (pj, "cid_mint", l->cid_mint);
+		pj_ki (pj, "cid_object_pool", l->cid_object_pool);
+		pj_ki (pj, "num_predefined", l->num_predefined_cids);
+		pj_end (pj);
+	}
+	pj_ka (pj, "snapshots");
+	dump_header_snapshot_json (ctx, pj, "VM", ctx->vm_data);
+	dump_header_snapshot_json (ctx, pj, "Isolate", ctx->iso_data);
+	pj_end (pj);
+	pj_end (pj);
+	return pj_drain (pj);
+}
+
+static void dump_header_ext_snapshot_text(DartCtx *ctx, RStrBuf *sb, const char *label, ut64 addr) {
+	if (!addr) {
+		return;
+	}
+	DartSnapshotHeader sh = { 0 };
+	dart_snapshot_header_read (ctx, addr, &sh);
+	r_strbuf_appendf (sb, "\n## %s Clusters\n", label);
+	if (!sh.ok) {
+		r_strbuf_appendf (sb, "  failed_to_read_header: true\n");
+		return;
+	}
+	ut64 cluster_end = addr + sh.total_len;
+	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
+	ut64 data_image_base = addr + ((sh.total_len + (align - 1)) & ~ (align - 1));
+	r_strbuf_appendf (sb, "  cluster_start: 0x%" PFMT64x "\n", (ut64)sh.cluster_start);
+	r_strbuf_appendf (sb, "  cluster_end:   0x%" PFMT64x "\n", (ut64)cluster_end);
+	r_strbuf_appendf (sb, "  data_image:    0x%" PFMT64x "\n", (ut64)data_image_base);
+	r_strbuf_appendf (sb, "  it_data:       0x%" PFMT64x "\n", (ut64) (data_image_base + sh.itdata));
+	r_strbuf_appendf (sb, "  columns: idx cid alloc fill count refs flags alloc_range fill_range extras\n");
+	bool parsed = dart_modern_emit_cluster_summary (ctx, sh.cluster_start, cluster_end, sh.nc, sh.nb, ctx->dump_fns_limit, NULL, sb, NULL);
+	if (!parsed) {
+		r_strbuf_appendf (sb, "  parser: unsupported or failed cluster stream\n");
+	}
+}
+
+static void dump_header_ext_snapshot_r2(DartCtx *ctx, RStrBuf *sb, const char *label, const char *scope, ut64 addr) {
+	if (!addr) {
+		return;
+	}
+	DartSnapshotHeader sh = { 0 };
+	dart_snapshot_header_read (ctx, addr, &sh);
+	r_strbuf_appendf (sb, "'# Dart %s clusters\n", label);
+	if (!sh.ok) {
+		r_strbuf_appendf (sb, "'# Dart %s clusters: failed to read snapshot header\n", label);
+		return;
+	}
+	ut64 cluster_end = addr + sh.total_len;
+	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
+	ut64 data_image_base = addr + ((sh.total_len + (align - 1)) & ~ (align - 1));
+	r_strbuf_appendf (sb, "'f dart.%s.cluster_start = 0x%" PFMT64x "\n", scope, (ut64)sh.cluster_start);
+	r_strbuf_appendf (sb, "'f dart.%s.cluster_end = 0x%" PFMT64x "\n", scope, (ut64)cluster_end);
+	r_strbuf_appendf (sb, "'f dart.%s.data_image = 0x%" PFMT64x "\n", scope, (ut64)data_image_base);
+	r_strbuf_appendf (sb, "'f dart.%s.it_data = 0x%" PFMT64x "\n", scope, (ut64) (data_image_base + sh.itdata));
+	bool parsed = dart_modern_emit_cluster_summary (ctx, sh.cluster_start, cluster_end, sh.nc, sh.nb, ctx->dump_fns_limit, scope, sb, NULL);
+	if (!parsed) {
+		r_strbuf_appendf (sb, "'# Dart %s cluster parser: unsupported or failed cluster stream\n", label);
+	}
+}
+
+char *dart_pool_dump_header_ext(DartCtx *ctx, int fmt) {
+	if (prepare_header_data (ctx) != 0) {
+		if (fmt == 'j') {
+			return strdup ("{\"error\":\"Dart snapshots not found\"}");
+		}
+		return fmt == 'r'? strdup ("# Error: Dart snapshots not found\n"): strdup ("Error: Dart snapshots not found\n");
+	}
+	if (fmt == 'j') {
+		return dump_header_ext_json (ctx);
+	}
+	if (fmt == 'r') {
+		char *header = dart_pool_dump_header (ctx, fmt);
+		RStrBuf *sb = r_strbuf_new (header? header: "");
+		free (header);
+		dump_header_ext_snapshot_r2 (ctx, sb, "VM", "vm", ctx->vm_data);
+		dump_header_ext_snapshot_r2 (ctx, sb, "Isolate", "isolate", ctx->iso_data);
+		return r_strbuf_drain (sb);
+	}
+	char *header = dart_pool_dump_header (ctx, fmt);
+	RStrBuf *sb = r_strbuf_new (header? header: "");
+	free (header);
+	dump_header_ext_snapshot_text (ctx, sb, "VM", ctx->vm_data);
+	dump_header_ext_snapshot_text (ctx, sb, "Isolate", ctx->iso_data);
+	return r_strbuf_drain (sb);
+}
+
 static void collect_it_entry_cb(const DartInstructionTableEntry *entry, void *user) {
 	RVecDartInstructionTableEntry *list = (RVecDartInstructionTableEntry *)user;
 	if (!entry || !list) {

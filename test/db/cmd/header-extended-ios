@@ -1,0 +1,16 @@
+NAME=header-extended-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -HH -l 1 bins/ios/Runner.app 2>/dev/null | grep -Eo '^(## (VM|Isolate) Clusters|  columns:.*|  0 cid=92 alloc=rodata fill=none count=[0-9]+|  \.\.\. [0-9]+ clusters omitted by -l)'
+EOF
+EXPECT=<<EOF
+## VM Clusters
+  columns: idx cid alloc fill count refs flags alloc_range fill_range extras
+  0 cid=92 alloc=rodata fill=none count=884
+  ... 5 clusters omitted by -l
+## Isolate Clusters
+  columns: idx cid alloc fill count refs flags alloc_range fill_range extras
+  0 cid=92 alloc=rodata fill=none count=8589
+  ... 334 clusters omitted by -l
+EOF
+RUN

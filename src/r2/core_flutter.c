@@ -15,6 +15,7 @@ typedef struct {
 	char action;
 	int fmt;
 	int analysis_depth;
+	int header_depth;
 	bool help;
 	char *obf_map_path;
 } R2FlutterCmd;
@@ -62,6 +63,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
 		"| r2flutter -f       dump recovered functions\n"
 		"| r2flutter -H       dump Dart AOT snapshot header info\n"
+		"| r2flutter -HH      dump Dart AOT snapshot header and cluster layout\n"
 		"| r2flutter -h       show this help\n"
 		"| r2flutter -i       dump instruction table entries\n"
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
@@ -148,6 +150,7 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 	cmd->action = 0;
 	cmd->fmt = 0;
 	cmd->analysis_depth = 0;
+	cmd->header_depth = 0;
 	cmd->help = false;
 	cmd->obf_map_path = NULL;
 	char *dup = strdup (args);
@@ -191,6 +194,7 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				break;
 			case 'H':
 				cmd->action = flag;
+				cmd->header_depth++;
 				break;
 			case 'h':
 				cmd->help = true;
@@ -301,7 +305,7 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		out = r2flutter_dump_functions (core, dctx, cmd->fmt);
 		break;
 	case 'H':
-		out = dart_pool_dump_header (dctx, cmd->fmt);
+		out = cmd->header_depth >= 2? dart_pool_dump_header_ext (dctx, cmd->fmt): dart_pool_dump_header (dctx, cmd->fmt);
 		break;
 	case 'i':
 		out = dart_pool_dump_it (dctx, cmd->fmt);

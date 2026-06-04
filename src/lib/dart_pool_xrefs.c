@@ -658,7 +658,7 @@ static void dump_xref_text(RStrBuf *sb, const DartXrefInfo *xi, int fmt, bool qu
 	}
 	if (fmt == 'r' && xi->dst_addr > 0) {
 		const char *arg = xi->dst_name? xi->dst_name: xi->kind;
-		char *name = r_base64_encode_dyn ((const ut8*)arg, -1);
+		char *name = r_base64_encode_dyn ((const ut8 *)arg, -1);
 		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CCu base64:%s\n", (ut64)xi->dst_addr, name);
 		free (name);
 		if (xi->src_addr > 0) {
