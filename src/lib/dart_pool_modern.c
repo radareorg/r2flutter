@@ -2294,6 +2294,7 @@ static void modern_add_object_pool_string_ref(DartStringInfo *si, ut64 pool_ref,
 	}
 	DartStringRef *sr = R_NEW0 (DartStringRef);
 	sr->object_ref = pool_ref;
+	sr->source_addr = DART_SYNTHETIC_PP_BASE + pp_off;
 	sr->object_type = DART_REF_OTHER;
 	sr->field_offset = (ut32)entry_index;
 	sr->kind = strdup ("object_pool.entry");

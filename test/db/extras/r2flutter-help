@@ -33,9 +33,9 @@ Actions:
   -p                    Print reconstructed ObjectPool PP value
   -R                    Print radare2 script for snapshot analysis
   -T                    Print string-based type names
-  -x                    Print metadata/data-image xrefs; combine with -z to show string refs
+  -x                    Print metadata/data-image xrefs; with -z, include string refs/ax in -r
   -z                    Print reliable ObjectPool-referenced strings (-q prints values only)
-  -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs)
+  -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs/ax in -r)
 Options:
   -l <N>                Limit output to N items
   -m <file>             Load Flutter obfuscation map JSON
@@ -64,9 +64,9 @@ Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter -R       dump full radare2 script (like standalone -R)
 | r2flutter -T       dump string-based type names
 | r2flutter -V       show version
-| r2flutter -x       dump metadata/data-image xrefs; combine with -z to show string refs
+| r2flutter -x       dump metadata/data-image xrefs; with -z, include string refs/ax in -r
 | r2flutter -z       dump reliable ObjectPool-referenced strings (-q prints values only)
-| r2flutter -zz      dump all fuzzy/carved strings (-xzz includes refs)
+| r2flutter -zz      dump all fuzzy/carved strings (-xzz includes refs/ax in -r)
 ===
 Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
 ===
@@ -94,8 +94,8 @@ Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter -R       dump full radare2 script (like standalone -R)
 | r2flutter -T       dump string-based type names
 | r2flutter -V       show version
-| r2flutter -x       dump metadata/data-image xrefs; combine with -z to show string refs
+| r2flutter -x       dump metadata/data-image xrefs; with -z, include string refs/ax in -r
 | r2flutter -z       dump reliable ObjectPool-referenced strings (-q prints values only)
-| r2flutter -zz      dump all fuzzy/carved strings (-xzz includes refs)
+| r2flutter -zz      dump all fuzzy/carved strings (-xzz includes refs/ax in -r)
 EOF
 RUN

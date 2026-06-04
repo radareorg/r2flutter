@@ -33,9 +33,9 @@ static const char usage_text[] =
 	"  -p                    Print reconstructed ObjectPool PP value\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
 	"  -T                    Print string-based type names\n"
-	"  -x                    Print metadata/data-image xrefs; combine with -z to show string refs\n"
+	"  -x                    Print metadata/data-image xrefs; with -z, include string refs/ax in -r\n"
 	"  -z                    Print reliable ObjectPool-referenced strings (-q prints values only)\n"
-	"  -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs)\n"
+	"  -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs/ax in -r)\n"
 	"Options:\n"
 	"  -l <N>                Limit output to N items\n"
 	"  -m <file>             Load Flutter obfuscation map JSON\n";

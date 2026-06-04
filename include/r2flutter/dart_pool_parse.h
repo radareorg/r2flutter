@@ -42,6 +42,7 @@ typedef struct DartStringInfo {
 
 typedef struct DartStringRef {
 	ut64 object_ref;
+	ut64 source_addr;
 	ut32 object_type;
 	ut32 field_offset;
 	char *kind;

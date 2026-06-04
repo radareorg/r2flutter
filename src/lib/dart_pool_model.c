@@ -20,7 +20,7 @@ static bool string_ref_exists(RList *refs, const char *kind, ut64 object_ref) {
 	return false;
 }
 
-static void add_string_ref_by_value(DartRecoveryModel *model, const char *value, const char *kind, ut32 object_type, ut64 object_ref, const char *object_name) {
+static void add_string_ref_by_value(DartRecoveryModel *model, const char *value, const char *kind, ut32 object_type, ut64 object_ref, const char *object_name, ut64 source_addr) {
 	if (!model || R_STR_ISEMPTY (value) || R_STR_ISEMPTY (kind)) {
 		return;
 	}
@@ -30,6 +30,7 @@ static void add_string_ref_by_value(DartRecoveryModel *model, const char *value,
 	}
 	DartStringRef *sr = R_NEW0 (DartStringRef);
 	sr->object_ref = object_ref;
+	sr->source_addr = source_addr;
 	sr->object_type = object_type;
 	sr->kind = strdup (kind);
 	sr->object_name = R_STR_ISNOTEMPTY (object_name)? strdup (object_name): NULL;
@@ -101,15 +102,15 @@ static void populate_string_metadata_references(DartRecoveryModel *model) {
 		if (!ci || (ci->ref_id == 0 && ci->name_ref == 0)) {
 			continue;
 		}
-		add_string_ref_by_value (model, ci->name, "class.name", DART_REF_CLASS, ci->ref_id, ci->name);
-		add_string_ref_by_value (model, ci->library_name, "library.name", DART_REF_LIBRARY, ci->library_ref, ci->library_name);
-		add_string_ref_by_value (model, ci->super_class_name, "class.super", DART_REF_CLASS, ci->super_class_ref, ci->name);
+		add_string_ref_by_value (model, ci->name, "class.name", DART_REF_CLASS, ci->ref_id, ci->name, 0);
+		add_string_ref_by_value (model, ci->library_name, "library.name", DART_REF_LIBRARY, ci->library_ref, ci->library_name, 0);
+		add_string_ref_by_value (model, ci->super_class_name, "class.super", DART_REF_CLASS, ci->super_class_ref, ci->name, 0);
 		if (ci->interfaces) {
 			RListIter *iit;
 			DartInterfaceInfo *ii;
 			r_list_foreach (ci->interfaces, iit, ii) {
 				if (ii) {
-					add_string_ref_by_value (model, ii->name, "class.interface", DART_REF_CLASS, ci->ref_id, ci->name);
+					add_string_ref_by_value (model, ii->name, "class.interface", DART_REF_CLASS, ci->ref_id, ci->name, 0);
 				}
 			}
 		}
@@ -121,8 +122,8 @@ static void populate_string_metadata_references(DartRecoveryModel *model) {
 					continue;
 				}
 				char *field_name = R_STR_ISNOTEMPTY (ci->name)? r_str_newf ("%s.%s", ci->name, r_str_get (fi->name)): strdup (r_str_get (fi->name));
-				add_string_ref_by_value (model, fi->name, "field.name", DART_REF_FIELD, fi->ref_id, field_name);
-				add_string_ref_by_value (model, fi->type_name, "field.type", DART_REF_FIELD, fi->ref_id, field_name);
+				add_string_ref_by_value (model, fi->name, "field.name", DART_REF_FIELD, fi->ref_id, field_name, 0);
+				add_string_ref_by_value (model, fi->type_name, "field.type", DART_REF_FIELD, fi->ref_id, field_name, 0);
 				free (field_name);
 			}
 		}
@@ -134,8 +135,9 @@ static void populate_string_metadata_references(DartRecoveryModel *model) {
 					continue;
 				}
 				char *method_name = R_STR_ISNOTEMPTY (ci->name)? r_str_newf ("%s.%s", ci->name, r_str_get (mi->name)): strdup (r_str_get (mi->name));
-				add_string_ref_by_value (model, mi->name, "method.name", DART_REF_FUNCTION, mi->ref_id, method_name);
-				add_string_ref_by_value (model, mi->signature, "method.signature", DART_REF_FUNCTION, mi->ref_id, method_name);
+				const ut64 entry_point = model_normalize_code_addr (mi->entry_point);
+				add_string_ref_by_value (model, mi->name, "method.name", DART_REF_FUNCTION, mi->ref_id, method_name, entry_point);
+				add_string_ref_by_value (model, mi->signature, "method.signature", DART_REF_FUNCTION, mi->ref_id, method_name, entry_point);
 				free (method_name);
 			}
 		}

@@ -66,6 +66,19 @@ exercise
 EOF
 RUN
 
+NAME=r2-string-xrefs-objectpool-android-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -r -x -z bins/android/mafia 2>/dev/null | sed -n '1,4p'
+EOF
+EXPECT=<<EOF
+iz+ 0x00049d81 25
+f str.useShouldInterceptRequest.0x49d81 25 @ 0x00049d81
+Cs8 25 @ 0x00049d81
+ax 0x49d81 0x100056cd0
+EOF
+RUN
+
 NAME=plugin-quiet-strings-objectpool-android-mafia
 FILE=-
 CMDS=<<EOF

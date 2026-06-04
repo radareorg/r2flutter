@@ -944,3 +944,7 @@ Use the shared `dart_cid_get ()` / `DartCidKind` API as the source of truth for 
 | 3.0.5 | 6 | 13 | 14 | 18 | 22 | 90 | 93 | 94 | 177 |
 | 3.4.3 | 6 | 13 | 14 | 18 | 22 | 89 | 92 | 93 | 174 |
 | 3.10.7 | 6 | 13 | 14 | 18 | 23 | 90 | 93 | 94 | 175 |
+
+## String Xrefs In R2 Scripts
+
+`-z -r -x` and `-zzrx` emit `ax` commands for string references after registering the recovered strings. ObjectPool string references use the reconstructed synthetic PP address space (`0x100000000 + pp_off`), matching the `-r -p` PP mapping. Metadata-only references that have an object ref but no concrete file address use a synthetic object-ref namespace (`0x200000000 + object_ref`) so r2 can still carry the relation as an xref.

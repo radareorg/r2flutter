@@ -73,9 +73,9 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
 		"| r2flutter -T       dump string-based type names\n"
 		"| r2flutter -V       show version\n"
-		"| r2flutter -x       dump metadata/data-image xrefs; combine with -z to show string refs\n"
+		"| r2flutter -x       dump metadata/data-image xrefs; with -z, include string refs/ax in -r\n"
 		"| r2flutter -z       dump reliable ObjectPool-referenced strings (-q prints values only)\n"
-		"| r2flutter -zz      dump all fuzzy/carved strings (-xzz includes refs)\n");
+		"| r2flutter -zz      dump all fuzzy/carved strings (-xzz includes refs/ax in -r)\n");
 }
 
 static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {

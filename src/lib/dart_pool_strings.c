@@ -6,6 +6,8 @@
 // String Extraction
 // ============================================================================
 
+#define DART_SYNTHETIC_STRING_REF_BASE 0x200000000ULL
+
 void dart_string_ref_free(DartStringRef *sr) {
 	free (sr->kind);
 	free (sr->object_name);
@@ -763,6 +765,45 @@ static char *make_string_flagname(const DartStringInfo *si) {
 	return flagname;
 }
 
+static void dump_string_ref_text(RStrBuf *sb, const DartStringRef *sr) {
+	r_strbuf_appendf (sb, "#     %s %s", r_str_get (sr->kind), string_ref_type_name (sr->object_type));
+	if (R_STR_ISNOTEMPTY (sr->object_name)) {
+		char *escaped = r_str_escape_utf8 (sr->object_name, false, true);
+		r_strbuf_appendf (sb, " %s", escaped);
+		free (escaped);
+	}
+	if (sr->object_ref > 0) {
+		r_strbuf_appendf (sb, " [ref=%" PRIu64 "]", (uint64_t)sr->object_ref);
+	}
+	if (sr->source_addr > 0) {
+		r_strbuf_appendf (sb, " @ 0x%" PFMT64x, (ut64)sr->source_addr);
+	}
+	r_strbuf_append (sb, "\n");
+}
+
+static ut64 string_ref_r2_source_addr(const DartStringRef *sr) {
+	if (!sr) {
+		return 0;
+	}
+	if (sr->source_addr > 0) {
+		return sr->source_addr;
+	}
+	if (sr->object_ref > 0) {
+		return DART_SYNTHETIC_STRING_REF_BASE + sr->object_ref;
+	}
+	return 0;
+}
+
+static void dump_string_ref_r2(RStrBuf *sb, const DartStringInfo *si, const DartStringRef *sr, bool quiet) {
+	if (!quiet) {
+		dump_string_ref_text (sb, sr);
+	}
+	const ut64 source_addr = string_ref_r2_source_addr (sr);
+	if (si && si->address > 0 && source_addr > 0) {
+		r_strbuf_appendf (sb, "ax 0x%" PFMT64x " 0x%" PFMT64x "\n", (ut64)si->address, source_addr);
+	}
+}
+
 static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt, bool quiet, bool refs) {
 	if (!si || !si->value) {
 		return;
@@ -783,25 +824,20 @@ static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt, boo
 		}
 		free (str);
 	}
-	if (refs && !quiet && si->references && r_list_length (si->references) > 0) {
-		r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
-		if (fmt != 'r') {
-			RListIter *rit;
-			DartStringRef *sr;
-			r_list_foreach (si->references, rit, sr) {
-				if (!sr) {
-					continue;
-				}
-				r_strbuf_appendf (sb, "#     %s %s", r_str_get (sr->kind), string_ref_type_name (sr->object_type));
-				if (R_STR_ISNOTEMPTY (sr->object_name)) {
-					char *escaped = r_str_escape_utf8 (sr->object_name, false, true);
-					r_strbuf_appendf (sb, " %s", escaped);
-					free (escaped);
-				}
-				if (sr->object_ref > 0) {
-					r_strbuf_appendf (sb, " [ref=%" PRIu64 "]", (uint64_t)sr->object_ref);
-				}
-				r_strbuf_append (sb, "\n");
+	if (refs && si->references && r_list_length (si->references) > 0) {
+		if (!quiet) {
+			r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
+		}
+		RListIter *rit;
+		DartStringRef *sr;
+		r_list_foreach (si->references, rit, sr) {
+			if (!sr) {
+				continue;
+			}
+			if (fmt == 'r') {
+				dump_string_ref_r2 (sb, si, sr, quiet);
+			} else if (!quiet) {
+				dump_string_ref_text (sb, sr);
 			}
 		}
 	}
