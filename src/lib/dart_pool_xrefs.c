@@ -657,11 +657,13 @@ static void dump_xref_text(RStrBuf *sb, const DartXrefInfo *xi, int fmt, bool qu
 		r_strbuf_append (sb, "\n");
 	}
 	if (fmt == 'r' && xi->dst_addr > 0) {
-		char safe[512];
-		const char *base_name = R_STR_ISNOTEMPTY (xi->src_name)? xi->src_name: (R_STR_ISNOTEMPTY (xi->dst_name)? xi->dst_name: xi->kind);
-		snprintf (safe, sizeof (safe), "xref.%s.%s", xi->kind, base_name);
-		r_name_filter (safe, 0);
-		r_strbuf_appendf (sb, "f %s = 0x%" PFMT64x "\n", safe, (ut64)xi->dst_addr);
+		const char *arg = xi->dst_name? xi->dst_name: xi->kind;
+		char *name = r_base64_encode_dyn ((const ut8*)arg, -1);
+		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CCu base64:%s\n", (ut64)xi->dst_addr, name);
+		free (name);
+		if (xi->src_addr > 0) {
+			r_strbuf_appendf (sb, "ax 0x%" PFMT64x " 0x%" PFMT64x "\n", (ut64)xi->dst_addr, (ut64)xi->src_addr);
+		}
 	}
 }
 
