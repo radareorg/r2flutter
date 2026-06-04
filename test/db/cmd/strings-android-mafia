@@ -7,6 +7,29 @@ EXPECT=<<EOF
 0x00000354  167 :app "97ff04a728735e6b6b098bdf983faabaproduct no-code_comments no-dwarf_stack_traces_mode dedup_instructions no-tsan no-msan no-shared_data arm64 android compressed-pointers"
 0x00000855   15 :app "<optimized out>"
 0x00000865    6 :lib "Handle"
+0x00000870   22 :lib "MonomorphicSmiableCall"
+0x0000088b   11 :lib "ClosureData"
+0x00000897   17 :app "dyn:implicit:call"
+0x000008ae   16 :lib "_NativeFinalizer"
+0x000008c1   13 :lib "_FunctionType"
+0x000008cf   10 :lib "Uint64List"
+0x000008da   11 :lib "UnwindError"
+0x000008ea    8 :lib ".fieldNI"
+0x000008f3    9 :lib "covariant"
+0x000008fd    5 :lib "class"
+0x00000903    8 :lib "abstract"
+EOF
+RUN
+
+NAME=text-strings-xrefs-android-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -xzz bins/android/mafia 2>/dev/null | sed -n '1,14p'
+EOF
+EXPECT=<<EOF
+0x00000354  167 :app "97ff04a728735e6b6b098bdf983faabaproduct no-code_comments no-dwarf_stack_traces_mode dedup_instructions no-tsan no-msan no-shared_data arm64 android compressed-pointers"
+0x00000855   15 :app "<optimized out>"
+0x00000865    6 :lib "Handle"
 #   referenced by 1 objects
 #     class.name class Handle [ref=170740]
 0x00000870   22 :lib "MonomorphicSmiableCall"
@@ -24,9 +47,33 @@ RUN
 NAME=json-strings-objectpool-android-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -q -j -z bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; a = json.load (sys.stdin); e = next (s for s in a if s["value"] == "useShouldInterceptRequest"); r = e["refs"][0]; print ("count=%d value=%s addr=0x%x kind=%s ref=%d name=%s" % (len (a), e["value"], e["addr"], r["kind"], r["obj"], r["name"]))'
+!!../bin/r2flutter -q -j -xz bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; a = json.load (sys.stdin); e = next (s for s in a if s["value"] == "useShouldInterceptRequest"); r = e["refs"][0]; print ("count=%d value=%s addr=0x%x kind=%s ref=%d name=%s" % (len (a), e["value"], e["addr"], r["kind"], r["obj"], r["name"]))'
 EOF
 EXPECT=<<EOF
 count=10630 value=useShouldInterceptRequest addr=0x49d81 kind=object_pool.entry ref=195985 name=pool=195985 index=0 entry=44440 pp_off=0x56cd0
+EOF
+RUN
+
+NAME=quiet-strings-objectpool-android-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -z bins/android/mafia 2>/dev/null | sed -n '1,3p'
+EOF
+EXPECT=<<EOF
+useShouldInterceptRequest
+There was an error but it could not be loaded from IsarCore.
+exercise
+EOF
+RUN
+
+NAME=plugin-quiet-strings-objectpool-android-mafia
+FILE=-
+CMDS=<<EOF
+!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -qz\" -qc q bins/android/mafia/libapp.so 2>/dev/null | sed -n '1,3p'"
+EOF
+EXPECT=<<EOF
+useShouldInterceptRequest
+There was an error but it could not be loaded from IsarCore.
+exercise
 EOF
 RUN

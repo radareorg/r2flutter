@@ -29,8 +29,8 @@ EOF
 EXPECT=<<EOF
 # Dart xrefs
 # scan class.name class _Uint16List -> string _Uint16List @ 0x1b1db0
-ax 0x1b1db0
+'@0x1b1db0'CCu base64:X1VpbnQxNkxpc3Q=
 # scan class.name class _ExternalInt64Array -> string _ExternalInt64Array @ 0x1b1dd0
-ax 0x1b1dd0
+'@0x1b1dd0'CCu base64:X0V4dGVybmFsSW50NjRBcnJheQ==
 EOF
 RUN

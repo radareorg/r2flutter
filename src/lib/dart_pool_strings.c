@@ -713,7 +713,7 @@ static const char *string_ref_type_name(ut32 object_type) {
 	}
 }
 
-static void dump_string_json(PJ *pj, const DartStringInfo *si) {
+static void dump_string_json(PJ *pj, const DartStringInfo *si, bool refs) {
 	pj_o (pj);
 	pj_kn (pj, "ref", si->ref_id);
 	pj_ki (pj, "len", si->length);
@@ -726,7 +726,7 @@ static void dump_string_json(PJ *pj, const DartStringInfo *si) {
 	if (si->address) {
 		pj_kn (pj, "addr", si->address);
 	}
-	if (si->references && r_list_length (si->references) > 0) {
+	if (refs && si->references && r_list_length (si->references) > 0) {
 		pj_ka (pj, "refs");
 		RListIter *rit;
 		DartStringRef *sr;
@@ -763,7 +763,7 @@ static char *make_string_flagname(const DartStringInfo *si) {
 	return flagname;
 }
 
-static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt, bool quiet) {
+static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt, bool quiet, bool refs) {
 	if (!si || !si->value) {
 		return;
 	}
@@ -776,10 +776,14 @@ static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt, boo
 		r_strbuf_appendf (sb, "%s %d @ 0x%08" PFMT64x "\n", (si->flags & DART_STRING_TWO_BYTE)? "Csw": "Cs8", si->length, si->address);
 	} else {
 		char *str = r_str_escape_utf8 (si->value, false, true);
-		r_strbuf_appendf (sb, "0x%08" PRIx64 " %4d :%s \"%s\"\n", si->address, si->length, string_category_name (si->category), str);
+		if (quiet) {
+			r_strbuf_appendf (sb, "%s\n", str);
+		} else {
+			r_strbuf_appendf (sb, "0x%08" PRIx64 " %4d :%s \"%s\"\n", si->address, si->length, string_category_name (si->category), str);
+		}
 		free (str);
 	}
-	if (!quiet && si->references && r_list_length (si->references) > 0) {
+	if (refs && !quiet && si->references && r_list_length (si->references) > 0) {
 		r_strbuf_appendf (sb, "#   referenced by %d objects\n", r_list_length (si->references));
 		if (fmt != 'r') {
 			RListIter *rit;
@@ -804,6 +808,7 @@ static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt, boo
 }
 
 static char *dump_strings_list(DartCtx *ctx, RList *strings, int fmt) {
+	const bool refs = ctx && ctx->dump_string_refs;
 	if (fmt == 'j') {
 		if (!strings || r_list_length (strings) == 0) {
 			return strdup ("[]");
@@ -814,7 +819,7 @@ static char *dump_strings_list(DartCtx *ctx, RList *strings, int fmt) {
 		DartStringInfo *si;
 		r_list_foreach (strings, it, si) {
 			if (si) {
-				dump_string_json (pj, si);
+				dump_string_json (pj, si, refs);
 			}
 		}
 		pj_end (pj);
@@ -828,7 +833,7 @@ static char *dump_strings_list(DartCtx *ctx, RList *strings, int fmt) {
 	RListIter *it;
 	DartStringInfo *si;
 	r_list_foreach (strings, it, si) {
-		dump_string_text (sb, si, fmt, quiet);
+		dump_string_text (sb, si, fmt, quiet, refs);
 	}
 	if (fmt == 'r' && !quiet) {
 		r_strbuf_appendf (sb, "# Total: %d strings\n", r_list_length (strings));

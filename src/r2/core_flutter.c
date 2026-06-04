@@ -17,6 +17,7 @@ typedef struct {
 	int analysis_depth;
 	int header_depth;
 	int string_depth;
+	bool string_refs;
 	bool help;
 	char *obf_map_path;
 } R2FlutterCmd;
@@ -72,9 +73,9 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
 		"| r2flutter -T       dump string-based type names\n"
 		"| r2flutter -V       show version\n"
-		"| r2flutter -x       dump metadata/data-image xrefs\n"
-		"| r2flutter -z       dump reliable ObjectPool-referenced strings\n"
-		"| r2flutter -zz      dump all fuzzy/carved strings\n");
+		"| r2flutter -x       dump metadata/data-image xrefs; combine with -z to show string refs\n"
+		"| r2flutter -z       dump reliable ObjectPool-referenced strings (-q prints values only)\n"
+		"| r2flutter -zz      dump all fuzzy/carved strings (-xzz includes refs)\n");
 }
 
 static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
@@ -156,6 +157,7 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 	cmd->analysis_depth = 0;
 	cmd->header_depth = 0;
 	cmd->string_depth = 0;
+	cmd->string_refs = false;
 	cmd->help = false;
 	cmd->obf_map_path = NULL;
 	char *dup = strdup (args);
@@ -260,9 +262,17 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				dctx->verbose++;
 				break;
 			case 'x':
-				cmd->action = flag;
+				cmd->string_refs = true;
+				dctx->dump_string_refs = true;
+				if (cmd->action != 'z') {
+					cmd->action = flag;
+				}
 				break;
 			case 'z':
+				if (cmd->action == 'x') {
+					cmd->string_refs = true;
+					dctx->dump_string_refs = true;
+				}
 				cmd->action = flag;
 				cmd->string_depth++;
 				break;
@@ -285,6 +295,7 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 
 static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cmd) {
 	char *out = NULL;
+	dctx->dump_string_refs = cmd->string_refs;
 
 	switch (cmd->action) {
 	case 0:

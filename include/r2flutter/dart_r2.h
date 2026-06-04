@@ -71,6 +71,7 @@ typedef struct {
 	int dump_classes;
 	int dump_fields;
 	int dump_strings;
+	bool dump_string_refs;
 	const char *obf_map_path;
 	HtPP *obf_by_obfuscated;
 	bool obf_map_tried;

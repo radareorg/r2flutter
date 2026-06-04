@@ -130,9 +130,11 @@ Important consequences:
   address.
 
 Use carving output for triage. Plain `-z` is the stricter mode: it focuses on
-strings reached from decoded ObjectPool entries and reports their pool-entry
-references when available. Use decoded string records or resolved string objects
-for exact lengths.
+strings reached from decoded ObjectPool entries. Add `-x` (`-xz` or `-xzz`) when
+the dump should include reverse references such as ObjectPool entries, class
+names, field names, or method names. With text output, `-q -z` prints only the
+string values, one per line. Use decoded string records or resolved string
+objects for exact lengths.
 
 ## Object Pools and Indexes
 
@@ -218,7 +220,9 @@ be a user literal containing a path.
 
 The recovery model can attach stronger reference information when metadata
 survives. It matches recovered class, library, field, and method metadata back
-to recovered strings and appends `DartStringRef` records with kinds such as:
+to recovered strings and appends `DartStringRef` records. String dumps render
+those records only when `-x` is combined with the string action. Reference kinds
+include:
 
 - `class.name`
 - `library.name`

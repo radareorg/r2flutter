@@ -247,7 +247,9 @@ The parser also needs a wider scan than the raw `it_off` hint on some iOS sample
 **Finding**: The standalone CLI and radare2 plugin use `-z` for reliable
 ObjectPool-backed string dumping, matching the familiar `rabin2 -z` shape while
 keeping provenance stricter. Use `-j` with `-z` when JSON output is needed.
-Use `-zz` when broad fuzzy/carved string triage is desired.
+Use `-zz` when broad fuzzy/carved string triage is desired. Add `-x` to string
+actions (`-xz`, `-xzz`) to include reverse reference metadata; without `-x`,
+the text output stays focused on strings. `-q -z` prints only string values.
 
 This leaves `-t` for r2 comment/script-style string output and keeps public examples/tests on the same strings flag users already know from rabin2.
 

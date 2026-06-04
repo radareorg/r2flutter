@@ -33,9 +33,9 @@ static const char usage_text[] =
 	"  -p                    Print reconstructed ObjectPool PP value\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
 	"  -T                    Print string-based type names\n"
-	"  -x                    Print metadata/data-image xrefs\n"
-	"  -z                    Print reliable ObjectPool-referenced strings\n"
-	"  -zz                   Print all fuzzy/carved extracted strings\n"
+	"  -x                    Print metadata/data-image xrefs; combine with -z to show string refs\n"
+	"  -z                    Print reliable ObjectPool-referenced strings (-q prints values only)\n"
+	"  -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs)\n"
 	"Options:\n"
 	"  -l <N>                Limit output to N items\n"
 	"  -m <file>             Load Flutter obfuscation map JSON\n";
@@ -164,6 +164,9 @@ int main(int argc, char **argv) {
 			action = c;
 			break;
 		case 'z':
+			if (action == 'x') {
+				dctx.dump_string_refs = true;
+			}
 			action = c;
 			string_depth++;
 			break;
@@ -177,7 +180,10 @@ int main(int argc, char **argv) {
 			printf ("r2flutter %s\n", R2FLUTTER_VERSION);
 			return 0;
 		case 'x':
-			action = c;
+			dctx.dump_string_refs = true;
+			if (action != 'z') {
+				action = c;
+			}
 			break;
 		case 0:
 			R_LOG_ERROR ("Long options are not supported");

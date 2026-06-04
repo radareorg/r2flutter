@@ -250,8 +250,9 @@ confidence.
 
 ### Strings
 
-`-z` dumps reliable strings reached from decoded ObjectPool entries. These
-records carry ObjectPool references in text/JSON output when available.
+`-z` dumps reliable strings reached from decoded ObjectPool entries. Text output
+is a string list by default; `-q -z` prints only string values, one per line.
+Use `-xz` when ObjectPool/reference metadata should be included.
 
 `-zz` dumps broad fuzzy/carved strings. The fuzzy scanner supports:
 
@@ -331,9 +332,9 @@ name, then applies it to:
 | `-p` | Print the reconstructed static ObjectPool PP address pair; with `-r`, map the synthetic pool image and set `anal.gp`/`x27` from the synthetic vaddr. |
 | `-R` | Dump a radare2 script for applying method flags/comments and PP helpers. |
 | `-T` | Dump type-oriented class output and run enum recovery. |
-| `-x` | Dump metadata/data-image xrefs. |
-| `-z` | Dump reliable ObjectPool-referenced strings. |
-| `-zz` | Dump all fuzzy/carved strings. |
+| `-x` | Dump metadata/data-image xrefs; combine with `-z` to include string refs. |
+| `-z` | Dump reliable ObjectPool-referenced strings; `-q -z` prints values only. |
+| `-zz` | Dump all fuzzy/carved strings; `-xzz` includes refs. |
 | `-l <N>` | Limit function or instruction-table/xref output depending on the action. |
 | `-m <file>` | Load a Flutter obfuscation map JSON file. |
 
@@ -381,8 +382,8 @@ Plugin actions:
 | `r2flutter -c` | Dump classes. |
 | `r2flutter -C` | Apply Dart classes, fields, methods, and types to r2. |
 | `r2flutter -x` | Dump xrefs as text. |
-| `r2flutter -z` | Dump reliable ObjectPool-referenced strings. |
-| `r2flutter -zz` | Dump all fuzzy/carved strings. |
+| `r2flutter -z` | Dump reliable ObjectPool-referenced strings; `-q -z` prints values only. |
+| `r2flutter -zz` | Dump all fuzzy/carved strings; `-xzz` includes refs. |
 
 Examples:
 
