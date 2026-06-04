@@ -876,7 +876,25 @@ entry type, patchability, snapshot behavior, raw immediates or target refs, and
 both `pool_off`/`pp_off` annotations. If an `ObjectPool` allocation is visible
 but a prior incomplete fill rule prevents reaching its payload, the row reports
 `object_pool_decode: fill_not_parsed` instead of pretending entries are known.
-This keeps the PP/ObjectPool work inspectable without implementing `-p` yet.
+This keeps the PP/ObjectPool work inspectable and feeds the focused `-p` path.
+
+`-p` now builds a synthetic static ObjectPool image from the decoded fill stream
+when the parser can reach a concrete ObjectPool payload. Plain quiet output is
+the address pair (`vaddr=0x100000000 paddr=...` in current builds). JSON output
+marks the result as `kind=synthetic` and reports top-level `vaddr`/`paddr`, plus
+the source cluster/ref/length. `-r -p` emits a radare2 setup script that maps the
+synthetic image with `o malloc://`, writes it with `wx`, and sets both
+`e anal.gp` and `dr x27` to the synthetic `vaddr`.
+
+The runtime PP value itself is not serialized in the snapshot. Dart's VM creates
+the live object pool during deserialization, so tagged entries that point to heap
+objects cannot be assigned real heap addresses statically. The synthetic image
+preserves pool length, entry bits, and immediate values, while unresolved tagged
+object/native entries remain zero placeholders until deeper object materialization
+exists. The reported `paddr` is the serialized ObjectPool fill payload backing
+the reconstruction, not a live runtime pool mapping. This is why `-p` is useful
+for setting up PP-relative analysis shape but should not be described as a
+recovered live `x27` value.
 
 ObjectHeader cluster tags are still Dart signed-VLE `ReadTagged32 ()` values;
 `no-compressed-pointers` changes object payload layout, not the cluster tag

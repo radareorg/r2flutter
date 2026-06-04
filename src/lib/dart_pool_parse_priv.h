@@ -130,6 +130,26 @@ typedef struct {
 	HtUP *method_by_addr;
 } DartRecoveryModel;
 
+typedef struct {
+	ut64 base;
+	ut64 vaddr;
+	ut64 paddr;
+	ut64 size;
+	ut64 snapshot_base;
+	ut64 data_image_base;
+	ut64 source_vaddr;
+	ut64 source_paddr;
+	ut64 cluster_index;
+	ut64 pool_ref;
+	ut64 pool_index;
+	ut64 length;
+	ut64 entries_offset;
+	ut64 entry_bits_offset;
+	int word_size;
+	char snapshot_label[16];
+	ut8 *image;
+} DartPpInfo;
+
 typedef void(*DartInstructionTableEntryCallback)(const DartInstructionTableEntry *entry, void *user);
 
 bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len);
@@ -177,6 +197,7 @@ void resolve_names(DartCtx *ctx);
 bool modern_skip_n_bytes(ClusterStream *s, ut64 len);
 bool dart_modern_is_supported_snapshot(DartCtx *ctx);
 bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, int limit, int detail, const char *r2_scope, RStrBuf *sb, PJ *pj);
+bool dart_modern_build_synthetic_pp(DartCtx *ctx, ut64 snapshot_base, const char *snapshot_label, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, ut64 data_image_base, DartPpInfo *out);
 bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen);
 bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, RList *class_list);
 

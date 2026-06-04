@@ -891,6 +891,150 @@ char *dart_pool_dump_header_deep(DartCtx *ctx, int fmt) {
 	return dart_pool_dump_header_ext_level (ctx, fmt, 3);
 }
 
+static void dart_pp_info_fini(DartPpInfo *info) {
+	if (!info) {
+		return;
+	}
+	free (info->image);
+	memset (info, 0, sizeof (*info));
+}
+
+static bool resolve_pp_from_snapshot(DartCtx *ctx, ut64 snapshot_base, const char *label, DartPpInfo *info) {
+	if (!ctx || !snapshot_base || !info) {
+		return false;
+	}
+	DartSnapshotHeader sh = { 0 };
+	if (!dart_snapshot_header_read (ctx, snapshot_base, &sh) || !sh.ok) {
+		return false;
+	}
+	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
+	ut64 data_image_base = snapshot_base + ((sh.total_len + (align - 1)) & ~ (align - 1));
+	return dart_modern_build_synthetic_pp (ctx, snapshot_base, label, sh.cluster_start, snapshot_base + sh.total_len, sh.nc, sh.nb, data_image_base, info);
+}
+
+static bool resolve_pp_info(DartCtx *ctx, DartPpInfo *info) {
+	if (!ctx || !ctx->core || !info) {
+		return false;
+	}
+	memset (info, 0, sizeof (*info));
+	if (find_snapshots (ctx) != 0) {
+		return false;
+	}
+	DartVerLayout layout_tmp;
+	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
+	bool ok = resolve_pp_from_snapshot (ctx, ctx->iso_data, "Isolate", info);
+	if (!ok) {
+		ok = resolve_pp_from_snapshot (ctx, ctx->vm_data, "VM", info);
+	}
+	dart_ctx_fini_layout (ctx, layout_owned);
+	return ok;
+}
+
+static char *dump_pp_json(const DartPpInfo *info) {
+	PJ *pj = pj_new ();
+	if (!pj) {
+		return strdup ("{\"error\":\"Failed to create JSON\"}");
+	}
+	pj_o (pj);
+	pj_kn (pj, "pp", info->vaddr);
+	pj_kn (pj, "base", info->vaddr);
+	pj_kn (pj, "vaddr", info->vaddr);
+	pj_kn (pj, "paddr", info->paddr);
+	pj_ks (pj, "kind", "synthetic");
+	pj_ks (pj, "source", "object_pool_fill");
+	pj_ko (pj, "pp_addr");
+	pj_kn (pj, "vaddr", info->vaddr);
+	pj_kn (pj, "paddr", info->paddr);
+	pj_end (pj);
+	pj_ko (pj, "source_addr");
+	pj_kn (pj, "vaddr", info->source_vaddr);
+	pj_kn (pj, "paddr", info->source_paddr);
+	pj_end (pj);
+	pj_ks (pj, "snapshot", info->snapshot_label);
+	pj_kn (pj, "snapshot_base", info->snapshot_base);
+	pj_kn (pj, "data_image_base", info->data_image_base);
+	pj_kn (pj, "cluster_index", info->cluster_index);
+	pj_kn (pj, "pool_ref", info->pool_ref);
+	pj_kn (pj, "pool_index", info->pool_index);
+	pj_kn (pj, "length", info->length);
+	pj_kn (pj, "size", info->size);
+	pj_kn (pj, "entries_offset", info->entries_offset);
+	pj_kn (pj, "entry_bits_offset", info->entry_bits_offset);
+	pj_ki (pj, "word_size", info->word_size);
+	pj_ks (pj, "note", "runtime PP is not serialized; this is a reconstructed static ObjectPool image");
+	pj_end (pj);
+	return pj_drain (pj);
+}
+
+static char *dump_pp_r2(const DartPpInfo *info, bool quiet) {
+	if (info->size > 0x7fffffffULL) {
+		return strdup ("# Error: synthetic ObjectPool image is too large\n");
+	}
+	char *hex = r_hex_bin2strdup (info->image, (int)info->size);
+	if (!hex) {
+		return strdup ("# Error: failed to encode synthetic ObjectPool image\n");
+	}
+	RStrBuf *sb = r_strbuf_new (quiet? "": "# Dart synthetic ObjectPool PP\n");
+	if (!quiet) {
+		r_strbuf_appendf (sb, "# runtime PP is not serialized; mapping reconstructed ObjectPool cluster %" PRIu64 "\n", (uint64_t)info->cluster_index);
+	}
+	r_strbuf_appendf (sb, "o malloc://0x%" PFMT64x " 0x%" PFMT64x " rw\n", info->size, info->base);
+	r_strbuf_appendf (sb, "s 0x%" PFMT64x "\n", info->base);
+	r_strbuf_appendf (sb, "wx %s\n", hex);
+	r_strbuf_appendf (sb, "e anal.gp=0x%" PFMT64x "\n", info->base);
+	r_strbuf_appendf (sb, "dr x27=0x%" PFMT64x "\n", info->base);
+	r_strbuf_appendf (sb, "f PP = 0x%" PFMT64x "\n", info->base);
+	r_strbuf_appendf (sb, "f dart.pp 0x%" PFMT64x " @ 0x%" PFMT64x "\n", info->size, info->base);
+	r_strbuf_appendf (sb, "f dart.pp.entries 0x%" PFMT64x " @ 0x%" PFMT64x "\n", info->entry_bits_offset - info->entries_offset, info->base + info->entries_offset);
+	r_strbuf_appendf (sb, "f dart.pp.entry_bits 0x%" PFMT64x " @ 0x%" PFMT64x "\n", info->length, info->base + info->entry_bits_offset);
+	if (!quiet) {
+		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart synthetic ObjectPool PP length=%" PRIu64 " ref=%" PRIu64 " source=%s cluster=%" PRIu64 "\n", info->base, (uint64_t)info->length, (uint64_t)info->pool_ref, info->snapshot_label, (uint64_t)info->cluster_index);
+	}
+	free (hex);
+	return r_strbuf_drain (sb);
+}
+
+static char *dump_pp_text(const DartPpInfo *info, bool quiet) {
+	if (quiet) {
+		return r_str_newf ("vaddr=0x%" PFMT64x " paddr=0x%" PFMT64x, info->vaddr, info->paddr);
+	}
+	RStrBuf *sb = r_strbuf_new ("# Dart ObjectPool PP\n\n");
+	r_strbuf_appendf (sb, "pp.vaddr:        0x%" PFMT64x "\n", info->vaddr);
+	r_strbuf_appendf (sb, "pp.paddr:        0x%" PFMT64x "\n", info->paddr);
+	r_strbuf_appendf (sb, "kind:            synthetic\n");
+	r_strbuf_appendf (sb, "source:          %s ObjectPool cluster %" PRIu64 "\n", info->snapshot_label, (uint64_t)info->cluster_index);
+	r_strbuf_appendf (sb, "source_vaddr:    0x%" PFMT64x "\n", info->source_vaddr);
+	r_strbuf_appendf (sb, "source_paddr:    0x%" PFMT64x "\n", info->source_paddr);
+	r_strbuf_appendf (sb, "pool_ref:        %" PRIu64 "\n", (uint64_t)info->pool_ref);
+	r_strbuf_appendf (sb, "pool_index:      %" PRIu64 "\n", (uint64_t)info->pool_index);
+	r_strbuf_appendf (sb, "length:          %" PRIu64 " entries\n", (uint64_t)info->length);
+	r_strbuf_appendf (sb, "image_size:      0x%" PFMT64x "\n", info->size);
+	r_strbuf_appendf (sb, "entries_offset:  0x%" PFMT64x "\n", info->entries_offset);
+	r_strbuf_appendf (sb, "entry_bits_off:  0x%" PFMT64x "\n", info->entry_bits_offset);
+	r_strbuf_appendf (sb, "note:            runtime PP is not serialized; use -r -p to map this reconstructed pool and set anal.gp\n");
+	return r_strbuf_drain (sb);
+}
+
+char *dart_pool_dump_pp(DartCtx *ctx, int fmt) {
+	DartPpInfo info = { 0 };
+	if (!resolve_pp_info (ctx, &info)) {
+		if (fmt == 'j') {
+			return strdup ("{\"error\":\"PP not resolved\",\"reason\":\"ObjectPool fill payload was not decoded\"}");
+		}
+		return fmt == 'r'? strdup ("# Error: PP not resolved; ObjectPool fill payload was not decoded\n"): strdup ("Error: PP not resolved; ObjectPool fill payload was not decoded\n");
+	}
+	char *out = NULL;
+	if (fmt == 'j') {
+		out = dump_pp_json (&info);
+	} else if (fmt == 'r') {
+		out = dump_pp_r2 (&info, ctx && ctx->quiet);
+	} else {
+		out = dump_pp_text (&info, ctx && ctx->quiet);
+	}
+	dart_pp_info_fini (&info);
+	return out;
+}
+
 static void collect_it_entry_cb(const DartInstructionTableEntry *entry, void *user) {
 	RVecDartInstructionTableEntry *list = (RVecDartInstructionTableEntry *)user;
 	if (!entry || !list) {

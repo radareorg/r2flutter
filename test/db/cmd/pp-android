@@ -1,0 +1,53 @@
+NAME=pp-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -p bins/android/mafia 2>/dev/null
+EOF
+EXPECT=<<EOF
+vaddr=0x100000000 paddr=0x385154
+EOF
+RUN
+
+NAME=pp-json-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -j -p bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); print ("base=%d vaddr=%d paddr=%d kind=%s cluster=%d pool=%d length=%d size=%d word=%d source_paddr=%d" % (j["base"], j["vaddr"], j["paddr"], j["kind"], j["cluster_index"], j["pool_ref"], j["length"], j["size"], j["word_size"], j["source_addr"]["paddr"]))'
+EOF
+EXPECT=<<EOF
+base=4294967296 vaddr=4294967296 paddr=3690836 kind=synthetic cluster=1088 pool=195985 length=46569 size=419144 word=8 source_paddr=3690836
+EOF
+RUN
+
+NAME=pp-r2-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -r -p bins/android/mafia 2>/dev/null | grep -E '^(o malloc://|e anal[.]gp=|dr x27=|f PP =|f dart[.]pp )'
+EOF
+EXPECT=<<EOF
+o malloc://0x66548 0x100000000 rw
+e anal.gp=0x100000000
+dr x27=0x100000000
+f PP = 0x100000000
+f dart.pp 0x66548 @ 0x100000000
+EOF
+RUN
+
+NAME=pp-plugin-android
+FILE=-
+CMDS=<<EOF
+!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -q -p\" bins/android/mafia/libapp.so 2>/dev/null"
+EOF
+EXPECT=<<EOF
+vaddr=0x100000000 paddr=0x385154
+EOF
+RUN
+
+NAME=pp-json-ios-unresolved
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -j -p bins/ios/Runner.app 2>/dev/null
+EOF
+EXPECT=<<EOF
+{"error":"PP not resolved","reason":"ObjectPool fill payload was not decoded"}
+EOF
+RUN

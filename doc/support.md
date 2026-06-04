@@ -325,6 +325,7 @@ name, then applies it to:
 | `-HH` | Dump the snapshot header plus VM/isolate cluster allocation/fill layout. |
 | `-HHH` | Add selected cluster payload diagnostics, currently ObjectPool entry decoding/status. |
 | `-i` | Dump instruction-table entries. |
+| `-p` | Print the reconstructed static ObjectPool PP address pair; with `-r`, map the synthetic pool image and set `anal.gp`/`x27` from the synthetic vaddr. |
 | `-R` | Dump a radare2 script for applying method flags/comments and PP helpers. |
 | `-T` | Dump type-oriented class output and run enum recovery. |
 | `-x` | Dump metadata/data-image xrefs. |
@@ -370,6 +371,7 @@ Plugin actions:
 | `r2flutter -HH` | Print snapshot header info plus VM/isolate cluster allocation/fill layout. |
 | `r2flutter -HHH` | Print cluster layout plus selected payload diagnostics, currently ObjectPool entries/status. |
 | `r2flutter -i` | Print instruction-table entries. |
+| `r2flutter -p` | Print the reconstructed static ObjectPool PP address pair. |
 | `r2flutter -R` | Print full radare2 script output. |
 | `r2flutter -f` | Dump recovered functions. |
 | `r2flutter -c` | Dump classes. |
@@ -386,6 +388,7 @@ r2flutter -rz      # string registration commands (`iz+`, `f str.*`, `Cs*`)
 r2flutter -jH      # snapshot header as JSON
 r2flutter -HH -l 8 # snapshot header plus first 8 clusters per snapshot
 r2flutter -HHH -l 36 # cluster walk plus ObjectPool entry diagnostics/status
+r2flutter -r -p    # map a synthetic ObjectPool and set anal.gp/x27
 ```
 
 The Dart-aware analysis pass creates or reuses functions at recovered Dart
@@ -403,6 +406,9 @@ The `-R` path emits:
 - comments at method entrypoints
 - `PP=x27`; per-function PP offset helper scanning is intentionally skipped by
   default in script output because it is too slow on large apps
+- `-r -p` is the focused PP setup path: it opens a malloc map at the synthetic
+  PP base, writes the reconstructed ObjectPool image, and sets `e anal.gp` plus
+  `dr x27`
 
 ## Practical Limits
 
@@ -412,6 +418,10 @@ The `-R` path emits:
 - Modern cluster name reconstruction currently requires compressed
   ObjectHeader snapshots. Full-width ObjectHeader snapshots rely more heavily
   on data-image and string heuristics.
+- `-p` currently materializes ObjectPool layout and immediate entries from the
+  fill stream. Tagged Dart object entries remain placeholders because their
+  runtime heap addresses are assigned by VM deserialization and are not stored
+  as static file addresses.
 - Legacy cluster parsing uses conservative decoders and skips unknown clusters;
   when class/function records cannot be trusted, the code falls back to bounded
   scans.

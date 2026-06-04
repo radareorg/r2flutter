@@ -30,6 +30,7 @@ static const char usage_text[] =
 	"  -HH                   Print extended snapshot header and cluster layout\n"
 	"  -HHH                  Decode selected cluster payloads for diagnostics\n"
 	"  -i                    Print instruction table entries to stdout\n"
+	"  -p                    Print reconstructed ObjectPool PP value\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
 	"  -T                    Print string-based type names\n"
 	"  -x                    Print metadata/data-image xrefs\n"
@@ -111,7 +112,7 @@ int main(int argc, char **argv) {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijnm:qrRzTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijnm:pqrRzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -135,6 +136,9 @@ int main(int argc, char **argv) {
 		case 'i':
 			action = c;
 			dctx.dump_it = true;
+			break;
+		case 'p':
+			action = c;
 			break;
 		case 'j':
 			fmt = c;
@@ -287,6 +291,9 @@ int main(int argc, char **argv) {
 		break;
 	case 'i':
 		output = dart_pool_dump_it (&app->dctx, fmt);
+		break;
+	case 'p':
+		output = dart_pool_dump_pp (&app->dctx, fmt);
 		break;
 	case 'x':
 		output = dart_pool_dump_xrefs (&dctx, fmt);

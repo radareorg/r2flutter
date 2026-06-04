@@ -1589,13 +1589,173 @@ static void modern_emit_cluster_r2(DartCtx *ctx, RStrBuf *sb, const char *scope,
 	}
 }
 
-bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, int limit, int detail, const char *r2_scope, RStrBuf *sb, PJ *pj) {
-	if (!ctx || !ctx->layout || ctx->layout->tag_style != DART_TAG_STYLE_OBJECT_HEADER || cluster_start >= cluster_end || num_clusters == 0 || num_clusters > 100000) {
+#define DART_SYNTHETIC_PP_BASE 0x100000000ULL
+#define DART_SYNTHETIC_PP_MAX_SIZE (64ULL << 20)
+
+static ut64 modern_align_up(ut64 value, ut64 align) {
+	if (!align) {
+		return value;
+	}
+	return (value + align - 1) & ~ (align - 1);
+}
+
+static void modern_write_target_word(ut8 *buf, ut64 off, int word_size, ut64 value) {
+	if (word_size == 4) {
+		r_write_le32 (buf + off, (ut32)value);
+		return;
+	}
+	r_write_le64 (buf + off, value);
+}
+
+static ut64 modern_vaddr_to_paddr(DartCtx *ctx, ut64 vaddr) {
+	if (!ctx || !ctx->core || !ctx->core->io) {
+		return vaddr;
+	}
+	ut64 paddr = r_io_v2p (ctx->core->io, vaddr);
+	return paddr == UT64_MAX? vaddr: paddr;
+}
+
+static bool modern_decode_pool_entry_for_pp(ClusterStream *s, ut8 type, ut8 behavior, ut64 *out_ref, ut64 *out_raw);
+
+static bool modern_skip_pool_payload_for_pp(ClusterStream *s) {
+	ut64 length = 0;
+	if (!cs_read_unsigned (s, &length)) {
 		return false;
+	}
+	for (ut64 j = 0; j < length; j++) {
+		ut8 bits = 0;
+		if (!cs_read_u8 (s, &bits)) {
+			return false;
+		}
+		ut8 type = bits & 0x0f;
+		ut8 behavior = bits >> 5;
+		ut64 ref = 0;
+		ut64 raw = 0;
+		if (!modern_decode_pool_entry_for_pp (s, type, behavior, &ref, &raw)) {
+			return false;
+		}
+		(void)ref;
+		(void)raw;
+	}
+	return true;
+}
+
+static bool modern_build_pp_image_from_pool(DartCtx *ctx, const ModernClusterMeta *meta, ut64 cluster_index, ut64 pool_index, ut64 pool_ref, ut64 pool_stream, DartPpInfo *out) {
+	if (!ctx || !meta || !out || meta->fill_offset >= meta->fill_end) {
+		return false;
+	}
+	ClusterStream s = {
+		.ctx = ctx,
+		.cursor = pool_stream,
+		.end = meta->fill_end,
+};
+	ut64 length = 0;
+	if (!cs_read_unsigned (&s, &length) || length == 0) {
+		return false;
+	}
+	int word_size = modern_target_word_size (ctx);
+	ut64 entries_offset = (ut64)word_size * 2;
+	ut64 word_size64 = (ut64)word_size;
+	if (length > DART_SYNTHETIC_PP_MAX_SIZE / word_size64) {
+		return false;
+	}
+	ut64 entries_size = length * word_size64;
+	ut64 entry_bits_offset = entries_offset + entries_size;
+	if (entry_bits_offset < entries_offset || entry_bits_offset > DART_SYNTHETIC_PP_MAX_SIZE || length > DART_SYNTHETIC_PP_MAX_SIZE - entry_bits_offset) {
+		return false;
+	}
+	ut64 image_size = modern_align_up (entry_bits_offset + length, (ut64)word_size);
+	if (image_size == 0 || image_size > DART_SYNTHETIC_PP_MAX_SIZE || image_size < entry_bits_offset) {
+		return false;
+	}
+	ut8 *image = (ut8 *)calloc ((size_t)image_size, 1);
+	if (!image) {
+		return false;
+	}
+	modern_write_target_word (image, (ut64)word_size, word_size, length);
+	for (ut64 j = 0; j < length; j++) {
+		ut8 bits = 0;
+		if (!cs_read_u8 (&s, &bits)) {
+			free (image);
+			return false;
+		}
+		ut8 type = bits & 0x0f;
+		ut8 behavior = bits >> 5;
+		ut64 ref = 0;
+		ut64 raw = 0;
+		if (!modern_decode_pool_entry_for_pp (&s, type, behavior, &ref, &raw)) {
+			free (image);
+			return false;
+		}
+		(void)ref;
+		ut64 value = 0;
+		if (behavior == 0 && type == 0) {
+			value = raw;
+		}
+		modern_write_target_word (image, entries_offset + (j *(ut64)word_size), word_size, value);
+		image[entry_bits_offset + j] = bits;
+	}
+	memset (out, 0, sizeof (*out));
+	out->base = DART_SYNTHETIC_PP_BASE;
+	out->vaddr = DART_SYNTHETIC_PP_BASE;
+	out->paddr = modern_vaddr_to_paddr (ctx, pool_stream);
+	out->size = image_size;
+	out->source_vaddr = pool_stream;
+	out->source_paddr = out->paddr;
+	out->cluster_index = cluster_index;
+	out->pool_ref = pool_ref;
+	out->pool_index = pool_index;
+	out->length = length;
+	out->entries_offset = entries_offset;
+	out->entry_bits_offset = entry_bits_offset;
+	out->word_size = word_size;
+	out->image = image;
+	return true;
+}
+
+static bool modern_decode_pool_entry_for_pp(ClusterStream *s, ut8 type, ut8 behavior, ut64 *out_ref, ut64 *out_raw) {
+	if (out_ref) {
+		*out_ref = 0;
+	}
+	if (out_raw) {
+		*out_raw = 0;
+	}
+	if (behavior != 0) {
+		return true;
+	}
+	if (type == 0) {
+		int64_t imm = 0;
+		if (!cs_read_tagged64 (s, &imm)) {
+			return false;
+		}
+		if (out_raw) {
+			*out_raw = (ut64)imm;
+		}
+		return true;
+	}
+	if (type == 1) {
+		return cs_read_ref_id (s, out_ref);
+	}
+	return type == 2;
+}
+
+static void modern_cluster_meta_free(ModernClusterMeta *meta, ut64 num_clusters) {
+	if (!meta) {
+		return;
+	}
+	for (ut64 i = 0; i < num_clusters; i++) {
+		free (meta[i].discarded_codes);
+	}
+	free (meta);
+}
+
+static ModernClusterMeta *modern_parse_cluster_meta(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects) {
+	if (!ctx || !ctx->layout || ctx->layout->tag_style != DART_TAG_STYLE_OBJECT_HEADER || cluster_start >= cluster_end || num_clusters == 0 || num_clusters > 100000) {
+		return NULL;
 	}
 	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)num_clusters, sizeof (ModernClusterMeta));
 	if (!meta) {
-		return false;
+		return NULL;
 	}
 	ClusterStream s = {
 		.ctx = ctx,
@@ -1645,6 +1805,17 @@ bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 clu
 			break;
 		}
 	}
+	return meta;
+fail:
+	modern_cluster_meta_free (meta, num_clusters);
+	return NULL;
+}
+
+bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, int limit, int detail, const char *r2_scope, RStrBuf *sb, PJ *pj) {
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, cluster_start, cluster_end, num_clusters, num_base_objects);
+	if (!meta) {
+		return false;
+	}
 	ut64 emit_count = num_clusters;
 	if (limit > 0 && (ut64)limit < emit_count) {
 		emit_count = (ut64)limit;
@@ -1665,17 +1836,46 @@ bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 clu
 			r_strbuf_appendf (sb, "  ... %" PRIu64 " clusters omitted by -l\n", (uint64_t) (num_clusters - emit_count));
 		}
 	}
-	for (ut64 i = 0; i < num_clusters; i++) {
-		free (meta[i].discarded_codes);
-	}
-	free (meta);
+	modern_cluster_meta_free (meta, num_clusters);
 	return true;
-fail:
-	for (ut64 i = 0; i < num_clusters; i++) {
-		free (meta[i].discarded_codes);
+}
+
+bool dart_modern_build_synthetic_pp(DartCtx *ctx, ut64 snapshot_base, const char *snapshot_label, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, ut64 data_image_base, DartPpInfo *out) {
+	if (!out) {
+		return false;
 	}
-	free (meta);
-	return false;
+	memset (out, 0, sizeof (*out));
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, cluster_start, cluster_end, num_clusters, num_base_objects);
+	if (!meta) {
+		return false;
+	}
+	bool ok = false;
+	for (ut64 i = 0; i < num_clusters && !ok; i++) {
+		ModernClusterMeta *m = &meta[i];
+		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || m->count == 0) {
+			continue;
+		}
+		ClusterStream s = {
+			.ctx = ctx,
+			.cursor = m->fill_offset,
+			.end = m->fill_end,
+};
+		for (ut64 pool_index = 0; pool_index < m->count && !ok; pool_index++) {
+			ut64 pool_stream = s.cursor;
+			ok = modern_build_pp_image_from_pool (ctx, m, i, pool_index, m->start_ref + pool_index, pool_stream, out);
+			if (ok) {
+				out->snapshot_base = snapshot_base;
+				out->data_image_base = data_image_base;
+				r_str_ncpy (out->snapshot_label, snapshot_label? snapshot_label: "snapshot", sizeof (out->snapshot_label));
+				break;
+			}
+			if (!modern_skip_pool_payload_for_pp (&s)) {
+				break;
+			}
+		}
+	}
+	modern_cluster_meta_free (meta, num_clusters);
+	return ok;
 }
 
 static int modern_name_quality(const char *name) {

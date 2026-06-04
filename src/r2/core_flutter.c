@@ -67,6 +67,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -HHH     decode selected cluster payloads for diagnostics\n"
 		"| r2flutter -h       show this help\n"
 		"| r2flutter -i       dump instruction table entries\n"
+		"| r2flutter -p       print reconstructed ObjectPool PP value\n"
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
 		"| r2flutter -T       dump string-based type names\n"
 		"| r2flutter -V       show version\n"
@@ -204,6 +205,9 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				dctx->dump_it = true;
 				cmd->action = flag;
 				break;
+			case 'p':
+				cmd->action = flag;
+				break;
 			case 'j':
 				cmd->fmt = 'j';
 				break;
@@ -311,6 +315,9 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		break;
 	case 'i':
 		out = dart_pool_dump_it (dctx, cmd->fmt);
+		break;
+	case 'p':
+		out = dart_pool_dump_pp (dctx, cmd->fmt);
 		break;
 	case 'R':
 		r2flutter_dump_r2script (core, dctx);

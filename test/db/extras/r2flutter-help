@@ -30,6 +30,7 @@ Actions:
   -HH                   Print extended snapshot header and cluster layout
   -HHH                  Decode selected cluster payloads for diagnostics
   -i                    Print instruction table entries to stdout
+  -p                    Print reconstructed ObjectPool PP value
   -R                    Print radare2 script for snapshot analysis
   -T                    Print string-based type names
   -x                    Print metadata/data-image xrefs
@@ -58,6 +59,7 @@ Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter -HHH     decode selected cluster payloads for diagnostics
 | r2flutter -h       show this help
 | r2flutter -i       dump instruction table entries
+| r2flutter -p       print reconstructed ObjectPool PP value
 | r2flutter -R       dump full radare2 script (like standalone -R)
 | r2flutter -T       dump string-based type names
 | r2flutter -V       show version
@@ -86,6 +88,7 @@ Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter -HHH     decode selected cluster payloads for diagnostics
 | r2flutter -h       show this help
 | r2flutter -i       dump instruction table entries
+| r2flutter -p       print reconstructed ObjectPool PP value
 | r2flutter -R       dump full radare2 script (like standalone -R)
 | r2flutter -T       dump string-based type names
 | r2flutter -V       show version

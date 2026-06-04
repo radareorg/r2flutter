@@ -162,6 +162,7 @@ int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, DartPoolFunctionC
 char *dart_pool_dump_header(DartCtx *ctx, int fmt);
 char *dart_pool_dump_header_ext(DartCtx *ctx, int fmt);
 char *dart_pool_dump_header_deep(DartCtx *ctx, int fmt);
+char *dart_pool_dump_pp(DartCtx *ctx, int fmt);
 
 // ============================================================================
 // Class Extraction API
