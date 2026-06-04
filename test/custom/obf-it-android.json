@@ -1,7 +1,7 @@
 {
   "name": "obf-it-android",
   "cwd": "test",
-  "cmd": ["../bin/r2flutter", "-i", "-l", "2", "-o", "custom/obf-map.txt", "bins/android/first"],
+  "cmd": ["../bin/r2flutter", "-i", "-l", "2", "-m", "custom/obf-map.txt", "bins/android/first"],
   "timeout": 30,
   "expect": {
     "equals": "# length=1311 first_entry_with_code=0 canonical_stack_map_entries_offset=25731\n0 0x66768 code Object.noSuchMethod\n1 0x66794 code new NoSuchMethodError"

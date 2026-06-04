@@ -250,7 +250,7 @@ This leaves `-t` for r2 comment/script-style string output and keeps public exam
 
 ## Standalone CLI Uses Short Flags Only
 
-The standalone `bin/r2flutter` parser now uses `r_getopt`, so every option is a single-character flag. Keep CLI tests and examples on these action flags: `-A` analyze/apply, `-c` classes, `-f` functions, `-H` header, `-i` instruction table, `-R` r2 script, `-T` types, `-x` xrefs, and `-z` strings. Shared modifiers are `-j`, `-q`, `-r`, `-n`, and `-v`; argument options are `-l` and `-o`.
+The standalone `bin/r2flutter` parser now uses `r_getopt`, so every option is a single-character flag. Keep CLI tests and examples on these action flags: `-A` analyze/apply, `-c` classes, `-f` functions, `-H` header, `-i` instruction table, `-R` r2 script, `-T` types, `-x` xrefs, and `-z` strings. Shared modifiers are `-j`, `-q`, `-r`, `-n`, and `-v`; argument options are `-l` and `-m`. Use `-m` for the Flutter obfuscation map because `-o` reads as output in common CLI conventions.
 
 Bare `r2flutter` must be help-only in both the standalone CLI and core plugin. The core plugin analysis ladder is explicit under repeated `A`: `-A` applies recovered method flags/comments, `-AA` enables the field-extraction analysis layer, and `-AAA` runs the Dart-aware code refs/comments pass.
 

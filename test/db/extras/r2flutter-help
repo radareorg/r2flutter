@@ -32,9 +32,9 @@ Actions:
   -z                    Print all extracted strings
 Options:
   -l <N>                Limit output to N items
-  -o <file>             Load Flutter obfuscation map JSON
+  -m <file>             Load Flutter obfuscation map JSON
 ===
-Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>
+Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter          show this help
 | r2flutter -j <act> output JSON for dump actions
 | r2flutter -q <act> compact output; quiet analysis logs
@@ -42,7 +42,7 @@ Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>
 | r2flutter -n       use heuristic name-pool fallback; names may be wrong
 | r2flutter -v       increase parser verbosity
 | r2flutter -l N     limit function/instruction-table/xref output
-| r2flutter -o file  load Flutter obfuscation map JSON
+| r2flutter -m file  load Flutter obfuscation map JSON
 | r2flutter -A       analyze dart snapshot and apply flags/comments
 | r2flutter -AA      analyze with field extraction enabled
 | r2flutter -AAA     run Dart-aware code analysis and recover code refs
@@ -60,7 +60,7 @@ Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>
 ===
 Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
 ===
-Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>
+Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter          show this help
 | r2flutter -j <act> output JSON for dump actions
 | r2flutter -q <act> compact output; quiet analysis logs
@@ -68,7 +68,7 @@ Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>
 | r2flutter -n       use heuristic name-pool fallback; names may be wrong
 | r2flutter -v       increase parser verbosity
 | r2flutter -l N     limit function/instruction-table/xref output
-| r2flutter -o file  load Flutter obfuscation map JSON
+| r2flutter -m file  load Flutter obfuscation map JSON
 | r2flutter -A       analyze dart snapshot and apply flags/comments
 | r2flutter -AA      analyze with field extraction enabled
 | r2flutter -AAA     run Dart-aware code analysis and recover code refs

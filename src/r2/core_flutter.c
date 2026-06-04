@@ -46,7 +46,7 @@ static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [-jqrnv] [-l N] [-o file] <action>\n"
+		"Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>\n"
 		"| r2flutter          show this help\n"
 		"| r2flutter -j <act> output JSON for dump actions\n"
 		"| r2flutter -q <act> compact output; quiet analysis logs\n"
@@ -54,7 +54,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -n       use heuristic name-pool fallback; names may be wrong\n"
 		"| r2flutter -v       increase parser verbosity\n"
 		"| r2flutter -l N     limit function/instruction-table/xref output\n"
-		"| r2flutter -o file  load Flutter obfuscation map JSON\n"
+		"| r2flutter -m file  load Flutter obfuscation map JSON\n"
 		"| r2flutter -A       analyze dart snapshot and apply flags/comments\n"
 		"| r2flutter -AA      analyze with field extraction enabled\n"
 		"| r2flutter -AAA     run Dart-aware code analysis and recover code refs\n"
@@ -216,7 +216,7 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 			case 'n':
 				dctx->use_name_pool = true;
 				break;
-			case 'o':
+			case 'm':
 				{
 					const char *arg = r2flutter_opt_arg (tail, words, nwords, &i);
 					if (!arg) {
@@ -257,7 +257,7 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				cmd->help = true;
 				break;
 			}
-			if (cmd->help || (R_STR_ISNOTEMPTY (tail) && (flag == 'l' || flag == 'o'))) {
+			if (cmd->help || (R_STR_ISNOTEMPTY (tail) && (flag == 'l' || flag == 'm'))) {
 				break;
 			}
 		}

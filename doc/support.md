@@ -19,7 +19,7 @@ instruction tables, and strings directly.
 | Snapshot kind | Clustered Dart AOT snapshots with magic `0xdcdcf5f5`, 32-byte snapshot hashes, feature strings, and unsigned varint header fields. |
 | Dart layouts | In-tree profiles cover Dart `2.10.0` through `3.10.7`, roughly Flutter `1.22.x` through `3.38.x`. |
 | Unknown hashes | First tries `r2flutter/offsets.json` or `offsets.json`; otherwise uses v3.9.2-shaped ObjectHeader defaults while reporting the Dart version as `unknown`. |
-| Obfuscation maps | Flutter/Dart `--save-obfuscation-map` JSON arrays are supported with `-o <file>` or `e r2flutter.mapfile=<file>` in the plugin. |
+| Obfuscation maps | Flutter/Dart `--save-obfuscation-map` JSON arrays are supported with `-m <file>` or `e r2flutter.mapfile=<file>` in the plugin. |
 
 ## Layout Profiles
 
@@ -326,7 +326,7 @@ name, then applies it to:
 | `-x` | Dump metadata/data-image xrefs. |
 | `-z` | Dump strings. |
 | `-l <N>` | Limit function or instruction-table/xref output depending on the action. |
-| `-o <file>` | Load a Flutter obfuscation map JSON file. |
+| `-m <file>` | Load a Flutter obfuscation map JSON file. |
 
 Directory inputs are resolved as Android first (`libapp.so`), then iOS
 (`Frameworks/App.framework/App`).
@@ -351,7 +351,7 @@ Plugin modifiers:
 | `-n` | Enable heuristic name-pool fallback for otherwise unnamed functions. |
 | `-v`, `-vv` | Increase parser diagnostics. |
 | `-l N` | Limit function, instruction-table, or xref output depending on the action. |
-| `-o file` | Load a Flutter obfuscation map JSON file. |
+| `-m file` | Load a Flutter obfuscation map JSON file. |
 
 Plugin actions:
 

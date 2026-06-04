@@ -31,7 +31,7 @@ static const char usage_text[] =
 	"  -z                    Print all extracted strings\n"
 	"Options:\n"
 	"  -l <N>                Limit output to N items\n"
-	"  -o <file>             Load Flutter obfuscation map JSON\n";
+	"  -m <file>             Load Flutter obfuscation map JSON\n";
 
 static void print_usage(const char *argv0) {
 	printf (usage_text, argv0);
@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijno:qrRzTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijnm:qrRzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
 		case 'n':
 			dctx.use_name_pool = true;
 			break;
-		case 'o':
+		case 'm':
 			dctx.obf_map_path = opt.arg;
 			break;
 		case 'q':

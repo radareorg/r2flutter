@@ -65,12 +65,12 @@ Actions:
   -z                    Print all extracted strings
 Options:
   -l <N>                Limit output to N items
-  -o <file>             Load Flutter obfuscation map JSON
+  -m <file>             Load Flutter obfuscation map JSON
 ```
 
 `-f` and the `-A` analysis flow skip loader-provided ELF/Mach-O stub symbols; radare2 already gets those from `RBin`, so `r2flutter` stays focused on Dart-derived metadata.
 
-`-o` consumes the JSON array emitted by Flutter/Dart `--save-obfuscation-map`. r2flutter inverts that mapping and applies it to recovered functions, instruction-table names, classes, fields, and method owners.
+`-m` consumes the JSON array emitted by Flutter/Dart `--save-obfuscation-map`. r2flutter inverts that mapping and applies it to recovered functions, instruction-table names, classes, fields, and method owners.
 
 `-n` is intentionally opt-in. It consumes `package:` and `dart:` strings from the data image as a sequential fallback for otherwise unnamed functions, so it can produce plausible but incorrect names when the string order does not match the instruction table.
 
