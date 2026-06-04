@@ -27,6 +27,8 @@ Actions:
   -c                    Print extracted class information
   -f                    Print all extracted functions (addr name)
   -H                    Print Dart AOT snapshot header info
+  -HH                   Print extended snapshot header and cluster layout
+  -HHH                  Decode selected cluster payloads for diagnostics
   -i                    Print instruction table entries to stdout
   -R                    Print radare2 script for snapshot analysis
   -T                    Print string-based type names
@@ -52,6 +54,8 @@ Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter -C       apply Dart classes, fields, methods and types
 | r2flutter -f       dump recovered functions
 | r2flutter -H       dump Dart AOT snapshot header info
+| r2flutter -HH      dump Dart AOT snapshot header and cluster layout
+| r2flutter -HHH     decode selected cluster payloads for diagnostics
 | r2flutter -h       show this help
 | r2flutter -i       dump instruction table entries
 | r2flutter -R       dump full radare2 script (like standalone -R)
@@ -78,6 +82,8 @@ Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter -C       apply Dart classes, fields, methods and types
 | r2flutter -f       dump recovered functions
 | r2flutter -H       dump Dart AOT snapshot header info
+| r2flutter -HH      dump Dart AOT snapshot header and cluster layout
+| r2flutter -HHH     decode selected cluster payloads for diagnostics
 | r2flutter -h       show this help
 | r2flutter -i       dump instruction table entries
 | r2flutter -R       dump full radare2 script (like standalone -R)

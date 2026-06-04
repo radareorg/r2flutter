@@ -64,6 +64,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -f       dump recovered functions\n"
 		"| r2flutter -H       dump Dart AOT snapshot header info\n"
 		"| r2flutter -HH      dump Dart AOT snapshot header and cluster layout\n"
+		"| r2flutter -HHH     decode selected cluster payloads for diagnostics\n"
 		"| r2flutter -h       show this help\n"
 		"| r2flutter -i       dump instruction table entries\n"
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
@@ -305,7 +306,8 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		out = r2flutter_dump_functions (core, dctx, cmd->fmt);
 		break;
 	case 'H':
-		out = cmd->header_depth >= 2? dart_pool_dump_header_ext (dctx, cmd->fmt): dart_pool_dump_header (dctx, cmd->fmt);
+		out = cmd->header_depth >= 3? dart_pool_dump_header_deep (dctx, cmd->fmt): cmd->header_depth >= 2? dart_pool_dump_header_ext (dctx, cmd->fmt)
+														: dart_pool_dump_header (dctx, cmd->fmt);
 		break;
 	case 'i':
 		out = dart_pool_dump_it (dctx, cmd->fmt);

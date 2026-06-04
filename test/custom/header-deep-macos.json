@@ -1,0 +1,14 @@
+{
+  "name": "header-deep-macos",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-HHH", "-l", "36", "bins/macos/hello/hello.aot"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "snapshot_hash=78da37fed6bf1489361a312568249f3f dart_version=unknown",
+      "detail: object_pool_entries",
+      "34 cid=23 alloc=object_pool fill=none count=1",
+      "object_pool_decode: fill_not_parsed"
+    ]
+  }
+}

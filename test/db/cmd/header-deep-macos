@@ -1,0 +1,12 @@
+NAME=header-deep-macos
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -HHH -l 36 bins/macos/hello/hello.aot 2>/dev/null | grep -Eo '^(  detail: object_pool_entries|  34 cid=23 alloc=object_pool fill=none count=1|    object_pool_decode: fill_not_parsed)'
+EOF
+EXPECT=<<EOF
+  detail: object_pool_entries
+  detail: object_pool_entries
+  34 cid=23 alloc=object_pool fill=none count=1
+    object_pool_decode: fill_not_parsed
+EOF
+RUN

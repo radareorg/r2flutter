@@ -28,6 +28,7 @@ static const char usage_text[] =
 	"  -f                    Print all extracted functions (addr name)\n"
 	"  -H                    Print Dart AOT snapshot header info\n"
 	"  -HH                   Print extended snapshot header and cluster layout\n"
+	"  -HHH                  Decode selected cluster payloads for diagnostics\n"
 	"  -i                    Print instruction table entries to stdout\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
 	"  -T                    Print string-based type names\n"
@@ -277,7 +278,8 @@ int main(int argc, char **argv) {
 		output = dart_pool_dump_classes (&dctx, fmt);
 		break;
 	case 'H':
-		output = header_depth >= 2? dart_pool_dump_header_ext (&app->dctx, fmt): dart_pool_dump_header (&app->dctx, fmt);
+		output = header_depth >= 3? dart_pool_dump_header_deep (&app->dctx, fmt): header_depth >= 2? dart_pool_dump_header_ext (&app->dctx, fmt)
+													: dart_pool_dump_header (&app->dctx, fmt);
 		break;
 	case 'f':
 		dart_app_load_info (app);

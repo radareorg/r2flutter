@@ -701,7 +701,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	return r_strbuf_drain (sb);
 }
 
-static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, ut64 addr) {
+static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, ut64 addr, int detail) {
 	pj_o (pj);
 	pj_ks (pj, "label", label);
 	pj_kn (pj, "base", addr);
@@ -732,7 +732,7 @@ static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, u
 		pj_kn (pj, "instruction_table_addr", data_image_base + sh.itdata);
 	}
 	pj_ka (pj, "clusters");
-	bool parsed = dart_modern_emit_cluster_summary (ctx, sh.cluster_start, cluster_end, sh.nc, sh.nb, ctx->dump_fns_limit, NULL, NULL, pj);
+	bool parsed = dart_modern_emit_cluster_summary (ctx, sh.cluster_start, cluster_end, sh.nc, sh.nb, ctx->dump_fns_limit, detail, NULL, NULL, pj);
 	pj_end (pj);
 	pj_kb (pj, "clusters_parsed", parsed);
 	if (!parsed) {
@@ -744,7 +744,7 @@ static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, u
 	pj_end (pj);
 }
 
-static char *dump_header_ext_json(DartCtx *ctx) {
+static char *dump_header_ext_json(DartCtx *ctx, int detail) {
 	const char *version = dart_version_from_hash (ctx->snapshot_hash);
 	DartSnapshotHeader iso = { 0 };
 	if (ctx->iso_data) {
@@ -763,6 +763,7 @@ static char *dump_header_ext_json(DartCtx *ctx) {
 	pj_kn (pj, "iso_instr", ctx->iso_instr);
 	pj_ki (pj, "cws", ctx->compressed_word_size);
 	pj_ks (pj, "dart_version", version? version: "unknown");
+	pj_ki (pj, "detail", detail);
 	if (ctx->container_kind[0]) {
 		pj_k (pj, "container");
 		pj_o (pj);
@@ -794,14 +795,14 @@ static char *dump_header_ext_json(DartCtx *ctx) {
 		pj_end (pj);
 	}
 	pj_ka (pj, "snapshots");
-	dump_header_snapshot_json (ctx, pj, "VM", ctx->vm_data);
-	dump_header_snapshot_json (ctx, pj, "Isolate", ctx->iso_data);
+	dump_header_snapshot_json (ctx, pj, "VM", ctx->vm_data, detail);
+	dump_header_snapshot_json (ctx, pj, "Isolate", ctx->iso_data, detail);
 	pj_end (pj);
 	pj_end (pj);
 	return pj_drain (pj);
 }
 
-static void dump_header_ext_snapshot_text(DartCtx *ctx, RStrBuf *sb, const char *label, ut64 addr) {
+static void dump_header_ext_snapshot_text(DartCtx *ctx, RStrBuf *sb, const char *label, ut64 addr, int detail) {
 	if (!addr) {
 		return;
 	}
@@ -819,14 +820,17 @@ static void dump_header_ext_snapshot_text(DartCtx *ctx, RStrBuf *sb, const char 
 	r_strbuf_appendf (sb, "  cluster_end:   0x%" PFMT64x "\n", (ut64)cluster_end);
 	r_strbuf_appendf (sb, "  data_image:    0x%" PFMT64x "\n", (ut64)data_image_base);
 	r_strbuf_appendf (sb, "  it_data:       0x%" PFMT64x "\n", (ut64) (data_image_base + sh.itdata));
+	if (detail >= 3) {
+		r_strbuf_appendf (sb, "  detail: object_pool_entries\n");
+	}
 	r_strbuf_appendf (sb, "  columns: idx cid alloc fill count refs flags alloc_range fill_range extras\n");
-	bool parsed = dart_modern_emit_cluster_summary (ctx, sh.cluster_start, cluster_end, sh.nc, sh.nb, ctx->dump_fns_limit, NULL, sb, NULL);
+	bool parsed = dart_modern_emit_cluster_summary (ctx, sh.cluster_start, cluster_end, sh.nc, sh.nb, ctx->dump_fns_limit, detail, NULL, sb, NULL);
 	if (!parsed) {
 		r_strbuf_appendf (sb, "  parser: unsupported or failed cluster stream\n");
 	}
 }
 
-static void dump_header_ext_snapshot_r2(DartCtx *ctx, RStrBuf *sb, const char *label, const char *scope, ut64 addr) {
+static void dump_header_ext_snapshot_r2(DartCtx *ctx, RStrBuf *sb, const char *label, const char *scope, ut64 addr, int detail) {
 	if (!addr) {
 		return;
 	}
@@ -844,13 +848,16 @@ static void dump_header_ext_snapshot_r2(DartCtx *ctx, RStrBuf *sb, const char *l
 	r_strbuf_appendf (sb, "'f dart.%s.cluster_end = 0x%" PFMT64x "\n", scope, (ut64)cluster_end);
 	r_strbuf_appendf (sb, "'f dart.%s.data_image = 0x%" PFMT64x "\n", scope, (ut64)data_image_base);
 	r_strbuf_appendf (sb, "'f dart.%s.it_data = 0x%" PFMT64x "\n", scope, (ut64) (data_image_base + sh.itdata));
-	bool parsed = dart_modern_emit_cluster_summary (ctx, sh.cluster_start, cluster_end, sh.nc, sh.nb, ctx->dump_fns_limit, scope, sb, NULL);
+	if (detail >= 3) {
+		r_strbuf_appendf (sb, "'# Dart %s cluster detail: object_pool_entries\n", label);
+	}
+	bool parsed = dart_modern_emit_cluster_summary (ctx, sh.cluster_start, cluster_end, sh.nc, sh.nb, ctx->dump_fns_limit, detail, scope, sb, NULL);
 	if (!parsed) {
 		r_strbuf_appendf (sb, "'# Dart %s cluster parser: unsupported or failed cluster stream\n", label);
 	}
 }
 
-char *dart_pool_dump_header_ext(DartCtx *ctx, int fmt) {
+static char *dart_pool_dump_header_ext_level(DartCtx *ctx, int fmt, int detail) {
 	if (prepare_header_data (ctx) != 0) {
 		if (fmt == 'j') {
 			return strdup ("{\"error\":\"Dart snapshots not found\"}");
@@ -858,22 +865,30 @@ char *dart_pool_dump_header_ext(DartCtx *ctx, int fmt) {
 		return fmt == 'r'? strdup ("# Error: Dart snapshots not found\n"): strdup ("Error: Dart snapshots not found\n");
 	}
 	if (fmt == 'j') {
-		return dump_header_ext_json (ctx);
+		return dump_header_ext_json (ctx, detail);
 	}
 	if (fmt == 'r') {
 		char *header = dart_pool_dump_header (ctx, fmt);
 		RStrBuf *sb = r_strbuf_new (header? header: "");
 		free (header);
-		dump_header_ext_snapshot_r2 (ctx, sb, "VM", "vm", ctx->vm_data);
-		dump_header_ext_snapshot_r2 (ctx, sb, "Isolate", "isolate", ctx->iso_data);
+		dump_header_ext_snapshot_r2 (ctx, sb, "VM", "vm", ctx->vm_data, detail);
+		dump_header_ext_snapshot_r2 (ctx, sb, "Isolate", "isolate", ctx->iso_data, detail);
 		return r_strbuf_drain (sb);
 	}
 	char *header = dart_pool_dump_header (ctx, fmt);
 	RStrBuf *sb = r_strbuf_new (header? header: "");
 	free (header);
-	dump_header_ext_snapshot_text (ctx, sb, "VM", ctx->vm_data);
-	dump_header_ext_snapshot_text (ctx, sb, "Isolate", ctx->iso_data);
+	dump_header_ext_snapshot_text (ctx, sb, "VM", ctx->vm_data, detail);
+	dump_header_ext_snapshot_text (ctx, sb, "Isolate", ctx->iso_data, detail);
 	return r_strbuf_drain (sb);
+}
+
+char *dart_pool_dump_header_ext(DartCtx *ctx, int fmt) {
+	return dart_pool_dump_header_ext_level (ctx, fmt, 2);
+}
+
+char *dart_pool_dump_header_deep(DartCtx *ctx, int fmt) {
+	return dart_pool_dump_header_ext_level (ctx, fmt, 3);
 }
 
 static void collect_it_entry_cb(const DartInstructionTableEntry *entry, void *user) {

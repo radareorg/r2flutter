@@ -1036,6 +1036,41 @@ static bool modern_skip_fill_string(ClusterStream *s, const ModernClusterMeta *m
 	return true;
 }
 
+static int modern_target_word_size(DartCtx *ctx) {
+	(void)ctx;
+	return 8;
+}
+
+static ut64 modern_pool_entry_pool_offset(DartCtx *ctx, ut64 index) {
+	ut64 word_size = (ut64)modern_target_word_size (ctx);
+	return (2 * word_size) - 1 + (index * word_size);
+}
+
+static ut64 modern_pool_entry_pp_offset(DartCtx *ctx, ut64 index) {
+	return modern_pool_entry_pool_offset (ctx, index) + 1;
+}
+
+static bool modern_read_raw_word(ClusterStream *s, DartCtx *ctx, ut64 *out) {
+	ut8 buf[8] = { 0 };
+	int word_size = modern_target_word_size (ctx);
+	if (word_size == 4) {
+		if (!cs_read_bytes (s, buf, 4)) {
+			return false;
+		}
+		if (out) {
+			*out = r_read_le32 (buf);
+		}
+		return true;
+	}
+	if (!cs_read_bytes (s, buf, 8)) {
+		return false;
+	}
+	if (out) {
+		*out = r_read_le64 (buf);
+	}
+	return true;
+}
+
 static bool modern_skip_fill_instance(ClusterStream *s, const ModernClusterMeta *meta) {
 	ut64 bitmap = 0;
 	if (!cs_read_unsigned (s, &bitmap)) {
@@ -1191,7 +1226,243 @@ static bool modern_read_cluster_tags(ClusterStream *s, DartCtx *ctx, ut32 *out) 
 	return cs_read_tagged32 (s, out);
 }
 
-static void modern_emit_cluster_json(PJ *pj, ut64 index, const ModernClusterMeta *meta) {
+static const char *modern_pool_entry_type_name(ut8 type) {
+	switch (type) {
+	case 0:
+		return "immediate";
+	case 1:
+		return "tagged_object";
+	case 2:
+		return "native_function";
+	case 3:
+		return "immediate128";
+	default:
+		return "unknown";
+	}
+}
+
+static const char *modern_pool_entry_patch_name(ut8 patch) {
+	return patch? "not_patchable": "patchable";
+}
+
+static const char *modern_pool_entry_behavior_name(ut8 behavior) {
+	switch (behavior) {
+	case 0:
+		return "snapshotable";
+	case 1:
+		return "not_snapshotable";
+	case 2:
+		return "reset_to_bootstrap_native";
+	case 3:
+		return "reset_to_switchable_call_miss";
+	case 4:
+		return "set_to_zero";
+	default:
+		return "unknown";
+	}
+}
+
+static bool modern_decode_pool_entry(ClusterStream *s, DartCtx *ctx, ut8 type, ut8 behavior, ut64 *out_ref, ut64 *out_raw) {
+	if (behavior != 0) {
+		return true;
+	}
+	switch (type) {
+	case 0:
+		return modern_read_raw_word (s, ctx, out_raw);
+	case 1:
+		return cs_read_ref_id (s, out_ref);
+	case 2:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void modern_emit_pool_entry_json(PJ *pj, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw) {
+	pj_o (pj);
+	pj_kn (pj, "index", index);
+	pj_kn (pj, "pool_offset", modern_pool_entry_pool_offset (ctx, index));
+	pj_kn (pj, "pp_offset", modern_pool_entry_pp_offset (ctx, index));
+	pj_kn (pj, "stream_offset", stream_offset);
+	pj_kn (pj, "value_offset", value_offset);
+	pj_ki (pj, "bits", bits);
+	pj_ks (pj, "type", modern_pool_entry_type_name (type));
+	pj_ks (pj, "patch", modern_pool_entry_patch_name (patch));
+	pj_ks (pj, "behavior", modern_pool_entry_behavior_name (behavior));
+	if (behavior == 0 && type == 1) {
+		pj_kn (pj, "ref", ref);
+	} else if (behavior == 0 && type == 0) {
+		pj_kn (pj, "raw", raw);
+	}
+	pj_end (pj);
+}
+
+static void modern_emit_pool_entry_text(RStrBuf *sb, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw) {
+	r_strbuf_appendf (sb,
+		"      [%" PRIu64 "] pool_off=0x%" PFMT64x " pp_off=0x%" PFMT64x " bits=0x%02x type=%s patch=%s behavior=%s stream=0x%" PFMT64x,
+		(uint64_t)index,
+		(ut64)modern_pool_entry_pool_offset (ctx, index),
+		(ut64)modern_pool_entry_pp_offset (ctx, index),
+		(unsigned int)bits,
+		modern_pool_entry_type_name (type),
+		modern_pool_entry_patch_name (patch),
+		modern_pool_entry_behavior_name (behavior),
+		(ut64)stream_offset);
+	if (behavior == 0 && type == 1) {
+		r_strbuf_appendf (sb, " value=0x%" PFMT64x " ref=%" PRIu64, (ut64)value_offset, (uint64_t)ref);
+	} else if (behavior == 0 && type == 0) {
+		r_strbuf_appendf (sb, " value=0x%" PFMT64x " raw=0x%" PFMT64x, (ut64)value_offset, (ut64)raw);
+	}
+	r_strbuf_append (sb, "\n");
+}
+
+static void modern_emit_pool_entry_r2(RStrBuf *sb, const char *scope, ut64 cluster_index, ut64 pool_index, ut64 pool_ref, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw) {
+	r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".entry.%" PRIu64 ".bits = 0x%02x\n", scope, (uint64_t)cluster_index, (uint64_t)pool_index, (uint64_t)index, (unsigned int)bits);
+	r_strbuf_appendf (sb,
+		"'@0x%" PFMT64x "'CC Dart %s ObjectPool ref=%" PRIu64 " entry=%" PRIu64 " pool_off=0x%" PFMT64x " pp_off=0x%" PFMT64x " type=%s patch=%s behavior=%s",
+		(ut64)stream_offset,
+		scope,
+		(uint64_t)pool_ref,
+		(uint64_t)index,
+		(ut64)modern_pool_entry_pool_offset (ctx, index),
+		(ut64)modern_pool_entry_pp_offset (ctx, index),
+		modern_pool_entry_type_name (type),
+		modern_pool_entry_patch_name (patch),
+		modern_pool_entry_behavior_name (behavior));
+	if (behavior == 0 && type == 1) {
+		r_strbuf_appendf (sb, " value=0x%" PFMT64x " target_ref=%" PRIu64, (ut64)value_offset, (uint64_t)ref);
+	} else if (behavior == 0 && type == 0) {
+		r_strbuf_appendf (sb, " value=0x%" PFMT64x " raw=0x%" PFMT64x, (ut64)value_offset, (ut64)raw);
+	}
+	r_strbuf_append (sb, "\n");
+}
+
+static bool modern_emit_object_pool_details(DartCtx *ctx, const ModernClusterMeta *meta, ut64 cluster_index, int limit, const char *r2_scope, RStrBuf *sb, PJ *pj) {
+	if (!ctx || !meta || meta->fill_kind != MODERN_FILL_OBJECT_POOL || !meta->fill_parsed || !meta->fill_ok || meta->fill_offset >= meta->fill_end) {
+		return false;
+	}
+	ClusterStream s = {
+		.ctx = ctx,
+		.cursor = meta->fill_offset,
+		.end = meta->fill_end,
+};
+	bool ok = true;
+	if (pj) {
+		pj_ka (pj, "object_pools");
+	}
+	for (ut64 i = 0; i < meta->count && ok; i++) {
+		ut64 pool_ref = meta->start_ref + i;
+		ut64 pool_stream = s.cursor;
+		ut64 length = 0;
+		if (!cs_read_unsigned (&s, &length)) {
+			ok = false;
+			break;
+		}
+		ut64 emit_count = length;
+		if (limit > 0 && (ut64)limit < emit_count) {
+			emit_count = (ut64)limit;
+		}
+		if (pj) {
+			pj_o (pj);
+			pj_kn (pj, "ref", pool_ref);
+			pj_kn (pj, "index", i);
+			pj_kn (pj, "length", length);
+			pj_kn (pj, "stream_offset", pool_stream);
+			pj_ka (pj, "entries");
+		} else if (sb && r2_scope) {
+			r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".length = %" PRIu64 "\n", r2_scope, (uint64_t)cluster_index, (uint64_t)i, (uint64_t)length);
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart %s ObjectPool ref=%" PRIu64 " length=%" PRIu64 "\n", (ut64)pool_stream, r2_scope, (uint64_t)pool_ref, (uint64_t)length);
+		} else if (sb) {
+			r_strbuf_appendf (sb, "    object_pool ref=%" PRIu64 " index=%" PRIu64 " length=%" PRIu64 " stream=0x%" PFMT64x "\n", (uint64_t)pool_ref, (uint64_t)i, (uint64_t)length, (ut64)pool_stream);
+		}
+		for (ut64 j = 0; j < length; j++) {
+			ut64 entry_stream = s.cursor;
+			ut8 bits = 0;
+			if (!cs_read_u8 (&s, &bits)) {
+				ok = false;
+				break;
+			}
+			ut8 type = bits & 0x0f;
+			ut8 patch = (bits >> 4) & 1;
+			ut8 behavior = bits >> 5;
+			ut64 value_offset = s.cursor;
+			ut64 ref = 0;
+			ut64 raw = 0;
+			if (!modern_decode_pool_entry (&s, ctx, type, behavior, &ref, &raw)) {
+				ok = false;
+				break;
+			}
+			if (j >= emit_count) {
+				continue;
+			}
+			if (pj) {
+				modern_emit_pool_entry_json (pj, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw);
+			} else if (sb && r2_scope) {
+				modern_emit_pool_entry_r2 (sb, r2_scope, cluster_index, i, pool_ref, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw);
+			} else if (sb) {
+				modern_emit_pool_entry_text (sb, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw);
+			}
+		}
+		if (pj) {
+			pj_end (pj);
+			if (emit_count < length) {
+				pj_kn (pj, "entries_omitted", length - emit_count);
+			}
+			pj_kb (pj, "decode_ok", ok);
+			pj_end (pj);
+		} else if (sb && !r2_scope && emit_count < length) {
+			r_strbuf_appendf (sb, "      ... %" PRIu64 " object pool entries omitted by -l\n", (uint64_t) (length - emit_count));
+		} else if (sb && r2_scope && emit_count < length) {
+			r_strbuf_appendf (sb, "'# dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".entries.omitted=%" PRIu64 " by -l\n", r2_scope, (uint64_t)cluster_index, (uint64_t)i, (uint64_t) (length - emit_count));
+		}
+	}
+	if (pj) {
+		pj_end (pj);
+	}
+	if (!ok && sb) {
+		if (r2_scope) {
+			r_strbuf_appendf (sb, "'# Dart %s ObjectPool decode failed near 0x%" PFMT64x "\n", r2_scope, (ut64)s.cursor);
+		} else {
+			r_strbuf_appendf (sb, "    object_pool_decode: failed near 0x%" PFMT64x "\n", (ut64)s.cursor);
+		}
+	}
+	return ok && s.cursor == meta->fill_end;
+}
+
+static const char *modern_object_pool_decode_status(const ModernClusterMeta *meta) {
+	if (!meta || meta->alloc_kind != MODERN_ALLOC_OBJECT_POOL) {
+		return NULL;
+	}
+	if (!meta->fill_parsed) {
+		return "fill_not_parsed";
+	}
+	if (!meta->fill_ok) {
+		return "fill_failed";
+	}
+	if (meta->fill_kind != MODERN_FILL_OBJECT_POOL) {
+		return "not_object_pool_fill";
+	}
+	if (!meta->fill_offset || meta->fill_offset >= meta->fill_end) {
+		return "empty_fill_range";
+	}
+	return "decoded";
+}
+
+static void modern_emit_object_pool_text_status(RStrBuf *sb, const ModernClusterMeta *meta) {
+	const char *status = modern_object_pool_decode_status (meta);
+	if (status && strcmp (status, "decoded")) {
+		r_strbuf_appendf (sb, "    object_pool_decode: %s\n", status);
+	}
+}
+
+static void modern_emit_object_pool_r2_status(RStrBuf *sb, const char *scope, ut64 cluster_index, const ModernClusterMeta *meta) {
+	const char *status = modern_object_pool_decode_status (meta);
+	if (status && strcmp (status, "decoded")) {
+		r_strbuf_appendf (sb, "'# dart.%s.cluster.%" PRIu64 ".object_pool_decode=%s\n", scope, (uint64_t)cluster_index, status);
+	}
+}
+
+static void modern_emit_cluster_json(DartCtx *ctx, PJ *pj, ut64 index, const ModernClusterMeta *meta, int limit, int detail) {
 	pj_o (pj);
 	pj_kn (pj, "index", index);
 	pj_kn (pj, "cid", meta->cid);
@@ -1227,10 +1498,19 @@ static void modern_emit_cluster_json(PJ *pj, ut64 index, const ModernClusterMeta
 		pj_kn (pj, "total", meta->alloc_items_total);
 		pj_end (pj);
 	}
+	if (detail >= 3) {
+		const char *status = modern_object_pool_decode_status (meta);
+		if (status) {
+			pj_ks (pj, "object_pool_decode", status);
+		}
+		if (status && !strcmp (status, "decoded")) {
+			(void)modern_emit_object_pool_details (ctx, meta, index, limit, NULL, NULL, pj);
+		}
+	}
 	pj_end (pj);
 }
 
-static void modern_emit_cluster_text(RStrBuf *sb, ut64 index, const ModernClusterMeta *meta) {
+static void modern_emit_cluster_text(DartCtx *ctx, RStrBuf *sb, ut64 index, const ModernClusterMeta *meta, int limit, int detail) {
 	r_strbuf_appendf (sb,
 		"  %" PRIu64 " cid=%d alloc=%s fill=%s count=%" PRIu64 " refs=%" PRIu64 "..%" PRIu64 " flags=%s%s alloc=0x%" PFMT64x "..0x%" PFMT64x " fill=0x%" PFMT64x "..0x%" PFMT64x,
 		(uint64_t)index,
@@ -1266,9 +1546,17 @@ static void modern_emit_cluster_text(RStrBuf *sb, ut64 index, const ModernCluste
 			(uint64_t)meta->alloc_items_total);
 	}
 	r_strbuf_append (sb, "\n");
+	if (detail >= 3) {
+		const char *status = modern_object_pool_decode_status (meta);
+		if (status && !strcmp (status, "decoded")) {
+			(void)modern_emit_object_pool_details (ctx, meta, index, limit, NULL, sb, NULL);
+		} else {
+			modern_emit_object_pool_text_status (sb, meta);
+		}
+	}
 }
 
-static void modern_emit_cluster_r2(RStrBuf *sb, const char *scope, ut64 index, const ModernClusterMeta *meta) {
+static void modern_emit_cluster_r2(DartCtx *ctx, RStrBuf *sb, const char *scope, ut64 index, const ModernClusterMeta *meta, int limit, int detail) {
 	const char *status = meta->fill_parsed? (meta->fill_ok? "ok": "failed"): "not_parsed";
 	ut64 alloc_size = meta->alloc_end > meta->alloc_offset? meta->alloc_end - meta->alloc_offset: 0;
 	ut64 fill_size = meta->fill_end > meta->fill_offset? meta->fill_end - meta->fill_offset: 0;
@@ -1291,9 +1579,17 @@ static void modern_emit_cluster_r2(RStrBuf *sb, const char *scope, ut64 index, c
 		(uint64_t)meta->start_ref,
 		(uint64_t) (meta->start_ref + meta->count),
 		status);
+	if (detail >= 3) {
+		const char *pool_status = modern_object_pool_decode_status (meta);
+		if (pool_status && !strcmp (pool_status, "decoded")) {
+			(void)modern_emit_object_pool_details (ctx, meta, index, limit, scope, sb, NULL);
+		} else {
+			modern_emit_object_pool_r2_status (sb, scope, index, meta);
+		}
+	}
 }
 
-bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, int limit, const char *r2_scope, RStrBuf *sb, PJ *pj) {
+bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, int limit, int detail, const char *r2_scope, RStrBuf *sb, PJ *pj) {
 	if (!ctx || !ctx->layout || ctx->layout->tag_style != DART_TAG_STYLE_OBJECT_HEADER || cluster_start >= cluster_end || num_clusters == 0 || num_clusters > 100000) {
 		return false;
 	}
@@ -1355,11 +1651,11 @@ bool dart_modern_emit_cluster_summary(DartCtx *ctx, ut64 cluster_start, ut64 clu
 	}
 	for (ut64 i = 0; i < emit_count; i++) {
 		if (pj) {
-			modern_emit_cluster_json (pj, i, &meta[i]);
+			modern_emit_cluster_json (ctx, pj, i, &meta[i], limit, detail);
 		} else if (sb && r2_scope) {
-			modern_emit_cluster_r2 (sb, r2_scope, i, &meta[i]);
+			modern_emit_cluster_r2 (ctx, sb, r2_scope, i, &meta[i], limit, detail);
 		} else if (sb) {
-			modern_emit_cluster_text (sb, i, &meta[i]);
+			modern_emit_cluster_text (ctx, sb, i, &meta[i], limit, detail);
 		}
 	}
 	if (sb && emit_count < num_clusters) {

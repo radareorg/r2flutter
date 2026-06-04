@@ -864,11 +864,19 @@ fallback classes explicitly instead of logging bogus huge CIDs.
 
 ## Extended Header Cluster Walk
 
-`-HH` is the deep form of `-H`: it prints the normal AOT header and then walks
+`-HH` is the structural form of `-H`: it prints the normal AOT header and then walks
 the VM and isolate cluster allocation streams. Each cluster row records the CID,
 allocation kind, fill kind, object count, ref range, allocation/fill byte ranges,
 canonical/immutable flags, and small length aggregates for variable-sized
 clusters. JSON mode mirrors this as `snapshots[].clusters[]`.
+
+`-HHH` enables selected payload diagnostics on top of that same walk. The first
+target is `ObjectPool`: when the fill range is parsed, it decodes entry bits,
+entry type, patchability, snapshot behavior, raw immediates or target refs, and
+both `pool_off`/`pp_off` annotations. If an `ObjectPool` allocation is visible
+but a prior incomplete fill rule prevents reaching its payload, the row reports
+`object_pool_decode: fill_not_parsed` instead of pretending entries are known.
+This keeps the PP/ObjectPool work inspectable without implementing `-p` yet.
 
 ObjectHeader cluster tags are still Dart signed-VLE `ReadTagged32 ()` values;
 `no-compressed-pointers` changes object payload layout, not the cluster tag

@@ -161,6 +161,7 @@ typedef void(*DartPoolFunctionCallback)(const char *name, ut64 addr, ut64 size, 
 int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, DartPoolFunctionCallback on_fn, void *user, ut64 *out_base, ut64 *out_heap_base);
 char *dart_pool_dump_header(DartCtx *ctx, int fmt);
 char *dart_pool_dump_header_ext(DartCtx *ctx, int fmt);
+char *dart_pool_dump_header_deep(DartCtx *ctx, int fmt);
 
 // ============================================================================
 // Class Extraction API
