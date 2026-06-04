@@ -1693,24 +1693,6 @@ static void modern_emit_resolved_text(RStrBuf *sb, const ModernResolvedRef *reso
 	}
 }
 
-static void modern_emit_resolved_r2(RStrBuf *sb, const ModernResolvedRef *resolved) {
-	if (!sb || !resolved || R_STR_ISEMPTY (resolved->kind)) {
-		return;
-	}
-	r_strbuf_appendf (sb, " resolved_kind=%s", resolved->kind);
-	if (resolved->cid >= 0) {
-		r_strbuf_appendf (sb, " resolved_cid=%d", resolved->cid);
-	}
-	if (resolved->code_index != UT64_MAX) {
-		r_strbuf_appendf (sb, " code_index=%" PRIu64, (uint64_t)resolved->code_index);
-	}
-	if (R_STR_ISNOTEMPTY (resolved->name)) {
-		char *escaped = r_str_escape_utf8 (resolved->name, false, true);
-		r_strbuf_appendf (sb, " resolved_name=\"%s\"", escaped);
-		free (escaped);
-	}
-}
-
 static void modern_emit_pool_entry_json(PJ *pj, DartCtx *ctx, ut64 index, ut64 stream_offset, ut64 value_offset, ut8 bits, ut8 type, ut8 patch, ut8 behavior, ut64 ref, ut64 raw, const ModernResolvedRef *resolved) {
 	pj_o (pj);
 	pj_kn (pj, "index", index);
@@ -1771,7 +1753,7 @@ static void modern_emit_pool_entry_r2(RStrBuf *sb, const char *scope, ut64 clust
 	} else if (behavior == 0 && type == 0) {
 		r_strbuf_appendf (sb, " value=0x%" PFMT64x " raw=0x%" PFMT64x, (ut64)value_offset, (ut64)raw);
 	}
-	modern_emit_resolved_r2 (sb, resolved);
+	modern_emit_resolved_text (sb, resolved);
 	r_strbuf_append (sb, "\n");
 }
 

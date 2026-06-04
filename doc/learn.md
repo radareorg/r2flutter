@@ -197,6 +197,10 @@ On `test/bins/android/mafia`, the modern Code cluster payload for the early entr
 
 **Implication**: do not suppress `dyn:` rows by name or adjacency alone. Keep `-i` raw, keep the visible `dyn:` entries in `-f` until a real Code-object relationship is recovered, and test the current behavior so future changes can prove they are improving it rather than hiding it.
 
+## Parser Cleanup Should Delete Before It Wraps
+
+Prefer direct `DartSnapshotHeader` use over wrappers that split the same fields into out-parameters. For duplicated formatters, reuse the existing formatter when output text is identical instead of adding another mode-specific helper.
+
 ## Enum Recovery In `-T` Is Heuristic But Useful
 
 **Finding**: Production AOT samples still do not expose enough `Class` metadata to recover enum declarations directly, but enum names and variants often survive as qualified strings such as `AppLifecycleState.resumed` plus a matching `AppLifecycleState.` marker.

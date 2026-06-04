@@ -177,19 +177,19 @@ static void collect_data_image_xrefs(DartCtx *ctx, DartRecoveryModel *model, RLi
 	}
 	DartVerLayout layout_tmp;
 	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
-	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, total_len = 0, cluster_start = 0;
 	ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
 	RList *seen_fields = r_list_newf (free);
 	HtUP *seen_ep = ht_up_new0 ();
-	if (parse_snapshot_header (ctx, ctx->iso_data, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) == 0) {
-		ut64 data_image_base = ctx->iso_data + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
+	DartSnapshotHeader sh;
+	if (dart_snapshot_header_read (ctx, ctx->iso_data, &sh)) {
+		ut64 data_image_base = ctx->iso_data + ((sh.total_len + (kAlign - 1)) & ~ (kAlign - 1));
 		ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: (data_image_base + (4ULL << 20));
 		collect_field_scan_xrefs (ctx, model, xrefs, seen_fields, count, limit, data_image_base, data_image_end);
 		collect_method_scan_xrefs (ctx, model, xrefs, seen_ep, count, limit, data_image_base, data_image_end);
 	}
 	if (ctx->vm_data && !xref_limit_reached (*count, limit) &&
-		parse_snapshot_header (ctx, ctx->vm_data, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) == 0) {
-		ut64 vm_data_base = ctx->vm_data + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
+		dart_snapshot_header_read (ctx, ctx->vm_data, &sh)) {
+		ut64 vm_data_base = ctx->vm_data + ((sh.total_len + (kAlign - 1)) & ~ (kAlign - 1));
 		ut64 vm_data_end = ctx->vm_instr? ctx->vm_instr: (vm_data_base + (4ULL << 20));
 		collect_field_scan_xrefs (ctx, model, xrefs, seen_fields, count, limit, vm_data_base, vm_data_end);
 		collect_method_scan_xrefs (ctx, model, xrefs, seen_ep, count, limit, vm_data_base, vm_data_end);

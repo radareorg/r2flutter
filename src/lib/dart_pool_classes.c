@@ -1432,21 +1432,6 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 	}
 }
 
-int parse_snapshot_header(DartCtx *ctx, ut64 snapshot_base, ut64 *out_nb, ut64 *out_no, ut64 *out_nc, ut64 *out_itlen, ut64 *out_itdata, ut64 *out_total_len, ut64 *out_cluster_start) {
-	DartSnapshotHeader hdr;
-	if (!dart_snapshot_header_read (ctx, snapshot_base, &hdr)) {
-		return -1;
-	}
-	*out_nb = hdr.nb;
-	*out_no = hdr.no;
-	*out_nc = hdr.nc;
-	*out_itlen = hdr.itlen;
-	*out_itdata = hdr.itdata;
-	*out_total_len = hdr.total_len;
-	*out_cluster_start = hdr.cluster_start;
-	return 0;
-}
-
 RList *dart_pool_extract_classes(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
 		return NULL;
@@ -1457,12 +1442,12 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	ut64 snapshot_base = ctx->iso_data;
 	DartVerLayout layout_tmp;
 	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
-	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, total_len = 0, cluster_start = 0;
-	if (parse_snapshot_header (ctx, snapshot_base, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) != 0) {
+	DartSnapshotHeader sh;
+	if (!dart_snapshot_header_read (ctx, snapshot_base, &sh)) {
 		dart_ctx_fini_layout (ctx, layout_owned);
 		return NULL;
 	}
-	bool header_valid = (nc > 0 && nc < 1000000 && no > 0 && no < 10000000);
+	bool header_valid = (sh.nc > 0 && sh.nc < 1000000 && sh.no > 0 && sh.no < 10000000);
 	RList *class_list = r_list_newf ((RListFree)dart_class_info_free);
 	RList *field_list = r_list_newf ((RListFree)dart_field_info_free);
 	RList *method_list = r_list_newf ((RListFree)dart_method_info_free);
@@ -1473,13 +1458,13 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	RList *libraries = r_list_newf (free_library_info);
 	bool modern_classes = false;
 	if (header_valid) {
-		ctx->num_base_objects = nb;
-		ctx->num_objects = no;
-		ctx->num_clusters = nc;
-		ut64 total_refs = nb + no + 16;
+		ctx->num_base_objects = sh.nb;
+		ctx->num_objects = sh.no;
+		ctx->num_clusters = sh.nc;
+		ut64 total_refs = sh.nb + sh.no + 16;
 		ctx->refs_count = total_refs;
 		ctx->refs = (void **)calloc (total_refs, sizeof (void *));
-		modern_classes = dart_modern_extract_classes_from_clusters (ctx, cluster_start, snapshot_base + total_len, nc, class_list);
+		modern_classes = dart_modern_extract_classes_from_clusters (ctx, sh.cluster_start, snapshot_base + sh.total_len, sh.nc, class_list);
 		if (modern_classes) {
 			if (ctx->verbose > 0) {
 				int modern_fields = 0;
@@ -1497,9 +1482,9 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	bool synthetic_legacy_parse = ctx->layout &&
 		ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER &&
 		ctx->compressed_word_size == 8 &&
-		itlen == 0 &&
-		no < 1000 &&
-		nc < 100;
+		sh.itlen == 0 &&
+		sh.no < 1000 &&
+		sh.nc < 100;
 	if (synthetic_legacy_parse) {
 		for (int i = 0; i < 32; i++) {
 			if (ctx->snapshot_hash[i] != '0') {
@@ -1514,11 +1499,11 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	if (header_valid && !modern_classes && legacy_class_parse) {
 		ClusterStream stream = {
 			.ctx = ctx,
-			.cursor = cluster_start,
-			.end = snapshot_base + total_len
+			.cursor = sh.cluster_start,
+			.end = snapshot_base + sh.total_len
 		};
-		ut64 ref_counter = nb + 1;
-		for (ut64 ci2 = 0; ci2 < nc && stream.cursor < stream.end; ci2++) {
+		ut64 ref_counter = sh.nb + 1;
+		for (ut64 ci2 = 0; ci2 < sh.nc && stream.cursor < stream.end; ci2++) {
 			uint32_t tags = 0;
 			if (!cs_read_u32 (&stream, &tags)) {
 				break;
@@ -1596,7 +1581,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		fprintf (stderr, "[r2flutter] class extraction: ObjectHeader fill parser unavailable for cws=%d, using string fallback\n", ctx->compressed_word_size);
 	} else if (!header_valid) {
 		if (ctx->verbose > 0) {
-			fprintf (stderr, "[r2flutter] class extraction: skipping cluster parse (clusters=%" PRIu64 " objs=%" PRIu64 ")\n", nc, no);
+			fprintf (stderr, "[r2flutter] class extraction: skipping cluster parse (clusters=%" PRIu64 " objs=%" PRIu64 ")\n", sh.nc, sh.no);
 		}
 	}
 	if (ctx->verbose > 0) {
@@ -1658,14 +1643,14 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	r_list_free (field_list);
 	if (ctx->dump_fields && r_list_length (class_list) > 0) {
 		ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
-		ut64 data_image_base = snapshot_base + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
+		ut64 data_image_base = snapshot_base + ((sh.total_len + (kAlign - 1)) & ~ (kAlign - 1));
 		ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: (data_image_base + (4ULL << 20));
 		scan_fields_from_data_image (ctx, class_list, data_image_base, data_image_end);
 		scan_methods_from_data_image (ctx, class_list, data_image_base, data_image_end);
 		if (ctx->vm_data) {
-			ut64 vm_nb = 0, vm_no = 0, vm_nc = 0, vm_itlen = 0, vm_itdata = 0, vm_total = 0, vm_cluster = 0;
-			if (parse_snapshot_header (ctx, ctx->vm_data, &vm_nb, &vm_no, &vm_nc, &vm_itlen, &vm_itdata, &vm_total, &vm_cluster) == 0) {
-				ut64 vm_data_base = ctx->vm_data + ((vm_total + (kAlign - 1)) & ~ (kAlign - 1));
+			DartSnapshotHeader vm_sh;
+			if (dart_snapshot_header_read (ctx, ctx->vm_data, &vm_sh)) {
+				ut64 vm_data_base = ctx->vm_data + ((vm_sh.total_len + (kAlign - 1)) & ~ (kAlign - 1));
 				ut64 vm_data_end = ctx->vm_instr? ctx->vm_instr: (vm_data_base + (4ULL << 20));
 				scan_fields_from_data_image (ctx, class_list, vm_data_base, vm_data_end);
 				scan_methods_from_data_image (ctx, class_list, vm_data_base, vm_data_end);

@@ -9,23 +9,18 @@ bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len) {
 	return r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
 }
 
-bool read_u32_at(DartCtx *ctx, ut64 addr, ut32 *out) {
-	ut8 buf[4];
-	if (!out || !read_mem (ctx, addr, buf, sizeof (buf))) {
-		return false;
+#define READ_LE_AT(bits, type) \
+	bool read_u ## bits ## _at (DartCtx *ctx, ut64 addr, type *out) { \
+		ut8 buf[bits / 8]; \
+		if (!out || !read_mem (ctx, addr, buf, sizeof (buf))) { \
+			return false; \
+		} \
+		*out = r_read_le ## bits (buf); \
+		return true; \
 	}
-	*out = r_read_le32 (buf);
-	return true;
-}
 
-bool read_u64_at(DartCtx *ctx, ut64 addr, ut64 *out) {
-	ut8 buf[8];
-	if (!out || !read_mem (ctx, addr, buf, sizeof (buf))) {
-		return false;
-	}
-	*out = r_read_le64 (buf);
-	return true;
-}
+READ_LE_AT(32, ut32)
+READ_LE_AT(64, ut64)
 
 typedef bool(*DartReadByteCb)(void *user, ut8 *out);
 

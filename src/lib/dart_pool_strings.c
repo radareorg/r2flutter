@@ -488,23 +488,23 @@ static void scan_strings_from_snapshot_window(DartCtx *ctx, ut64 snapshot_base, 
 		return;
 	}
 	ut64 before_count = r_list_length (list);
-	ut64 nb = 0, no = 0, nc = 0, itlen = 0, itdata = 0, total_len = 0, cluster_start = 0;
-	if (parse_snapshot_header (ctx, snapshot_base, &nb, &no, &nc, &itlen, &itdata, &total_len, &cluster_start) != 0) {
+	DartSnapshotHeader sh;
+	if (!dart_snapshot_header_read (ctx, snapshot_base, &sh)) {
 		goto fallback;
 	}
-	if (total_len == 0 || total_len > DART_SNAPSHOT_SCAN_MAX || cluster_start >= total_len) {
+	if (sh.total_len == 0 || sh.total_len > DART_SNAPSHOT_SCAN_MAX || sh.cluster_start >= sh.total_len) {
 		goto fallback;
 	}
 	if (ctx->compressed_word_size == 4) {
 		scan_packed_strings_from_snapshot (ctx, snapshot_base, list, seen_addrs, ref_counter);
 		return;
 	}
-	scan_snapshot_region (ctx, snapshot_base + cluster_start, total_len - cluster_start, list, seen_addrs, ref_counter);
+	scan_snapshot_region (ctx, snapshot_base + sh.cluster_start, sh.total_len - sh.cluster_start, list, seen_addrs, ref_counter);
 	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
 	if (align == 0) {
 		align = 16;
 	}
-	ut64 data_start = snapshot_base + ((total_len + (align - 1)) & ~ (align - 1));
+	ut64 data_start = snapshot_base + ((sh.total_len + (align - 1)) & ~ (align - 1));
 	ut64 data_end = upper_bound;
 	if (data_end > data_start && (data_end - data_start) <= DART_DATA_IMAGE_SCAN_MAX) {
 		scan_snapshot_region (ctx, data_start, data_end - data_start, list, seen_addrs, ref_counter);
