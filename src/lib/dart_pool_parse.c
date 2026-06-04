@@ -191,8 +191,9 @@ static void dart_pool_print_snapshot_json(DartCtx *ctx) {
 		ctx->compressed_word_size);
 }
 
-static int decode_pool_and_emit(DartCtx *ctx, const DartItEmitCallbacks *cb, bool include_stubs, ut64 it_limit) {
-	if (!ctx || !ctx->iso_data || !cb) {
+static int decode_pool_and_emit(DartItEmitRequest *req) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	if (!ctx || !ctx->iso_data) {
 		return -1;
 	}
 	if (!ctx->layout) {
@@ -208,13 +209,13 @@ static int decode_pool_and_emit(DartCtx *ctx, const DartItEmitCallbacks *cb, boo
 	if (ctx->verbose > 1 && sh.flags[0]) {
 		eprintf ("[r2flutter] features: %s\n", sh.flags);
 	}
-	ut64 total_len = sh.total_len;
-	ut64 nb = sh.nb;
-	ut64 no = sh.no;
+	const ut64 total_len = sh.total_len;
+	const ut64 nb = sh.nb;
+	const ut64 no = sh.no;
 	ut64 nc = sh.nc;
-	ut64 itlen = sh.itlen;
-	ut64 itdata = sh.itdata;
-	bool header_valid = (nc > 0 && nc < 1000000 && no > 0 && no < 10000000);
+	const ut64 itlen = sh.itlen;
+	const ut64 itdata = sh.itdata;
+	const bool header_valid = (nc > 0 && nc < 1000000 && no > 0 && no < 10000000);
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] snapshot clustered header: base_objs=%" PRIu64 " objs=%" PRIu64 " clusters=%" PRIu64 " it_len=%" PRIu64 " it_data_off=%" PRIu64 " total_len=%" PRIu64 " valid=%d\n", (uint64_t)nb, (uint64_t)no, (uint64_t)nc, (uint64_t)itlen, (uint64_t)itdata, (uint64_t)total_len, header_valid);
 	}
@@ -232,13 +233,13 @@ static int decode_pool_and_emit(DartCtx *ctx, const DartItEmitCallbacks *cb, boo
 	ctx->it_first_with_code = 0;
 	ctx->it_canonical_stack_map_offset = 0;
 
-	ut64 cluster_start = sh.cluster_start;
-	ut64 cluster_end = base + total_len;
+	const ut64 cluster_start = sh.cluster_start;
+	const ut64 cluster_end = base + total_len;
 	if (nc > 0 && nc < 5000 && no < 500000 && cluster_start < cluster_end) {
-		int deser_rc = deserialize_clusters (ctx, cluster_start, cluster_end, nc, ctx->iso_instr);
+		const int deser_rc = deserialize_clusters (ctx, cluster_start, cluster_end, nc, ctx->iso_instr);
 		if (deser_rc == 0) {
 			resolve_names (ctx);
-			if (ctx->functions && cb->on_fn) {
+			if (ctx->functions && req->on_fn) {
 				RListIter *fit;
 				DartPoolFunction *df;
 				r_list_foreach (ctx->functions, fit, df) {
@@ -249,7 +250,7 @@ static int decode_pool_and_emit(DartCtx *ctx, const DartItEmitCallbacks *cb, boo
 					char clean_name[256];
 					snprintf (clean_name, sizeof (clean_name), "%s", fname);
 					r_name_filter (clean_name, 0);
-					cb->on_fn (clean_name, df->entry_point, 0, cb->fn_user);
+					req->on_fn (clean_name, df->entry_point, 0, req->fn_user);
 				}
 			}
 			if (ctx->verbose > 1 && ctx->strings) {
@@ -290,8 +291,8 @@ static int decode_pool_and_emit(DartCtx *ctx, const DartItEmitCallbacks *cb, boo
 		}
 		return 0;
 	}
-	ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
-	ut64 data_image_base = base + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
+	const ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
+	const ut64 data_image_base = base + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
 	ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: (data_image_base + (1ULL << 22));
 	if (data_image_end < data_image_base) {
 		data_image_end = data_image_base + (1ULL << 22);
@@ -317,43 +318,32 @@ static int decode_pool_and_emit(DartCtx *ctx, const DartItEmitCallbacks *cb, boo
 	if (itlen == 0) {
 		goto cleanup;
 	}
-	ut64 max_entries = 0;
-	if (it_limit > 0) {
-		max_entries = it_limit;
-	} else if (cb->on_it) {
-		max_entries = itlen;
-	} else {
-		max_entries = ctx->layout && ctx->layout->it_cap? ctx->layout->it_cap: 20000;
-	}
-	DartItEmitRequest it_req = {
-		.ctx = ctx,
-		.data_image_base = data_image_base,
-		.data_image_end = data_image_end,
-		.itlen = itlen,
-		.max_entries = max_entries,
-		.include_stubs = include_stubs,
-		.sym_by_addr = sym_by_addr,
-		.cb = *cb,
-};
+	const ut64 layout_cap = ctx->layout && ctx->layout->it_cap? ctx->layout->it_cap: 20000;
+	const ut64 max_entries = req->max_entries > 0? req->max_entries: (req->on_it? itlen: layout_cap);
+	req->data_image_base = data_image_base;
+	req->data_image_end = data_image_end;
+	req->itlen = itlen;
+	req->max_entries = max_entries;
+	req->sym_by_addr = sym_by_addr;
 	if (itdata == 0) {
-		(void)dart_it_emit_linear (&it_req);
+		(void)dart_it_emit_linear (req);
 		goto cleanup;
 	}
 	const ut64 table_addr = data_image_base + itdata;
-	it_req.table_addr = table_addr;
-	if (dart_it_emit_fixed (&it_req) == 0) {
+	req->table_addr = table_addr;
+	if (dart_it_emit_fixed (req) == 0) {
 		goto cleanup;
 	}
 	for (int delta = -64; delta <= 64; delta += 4) {
-		it_req.table_addr = table_addr + delta;
-		if (dart_it_emit_varint (&it_req) == 0) {
+		req->table_addr = table_addr + delta;
+		if (dart_it_emit_varint (req) == 0) {
 			goto cleanup;
 		}
 	}
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] Could not decode InstructionsTable::Data at 0x%" PFMT64x ", using sequential fallback\n", (ut64) (data_image_base + itdata));
 	}
-	(void)dart_it_emit_linear (&it_req);
+	(void)dart_it_emit_linear (req);
 cleanup:
 	if (ctx->name_by_code_index) {
 		for (ut64 i = 0; i < ctx->name_by_code_index_count; i++) {
@@ -454,11 +444,12 @@ int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, DartPoolFunctionC
 			emit_stub_symbols (ctx, on_fn, user);
 		}
 		dart_pool_print_snapshot_json (ctx);
-		const DartItEmitCallbacks cb = {
+		DartItEmitRequest req = {
+			.ctx = ctx,
 			.on_fn = on_fn,
 			.fn_user = user,
 };
-		int rc = decode_pool_and_emit (ctx, &cb, false, 0);
+		const int rc = decode_pool_and_emit (&req);
 		dart_ctx_fini_layout (ctx, layout_owned);
 		return rc;
 	}
@@ -961,7 +952,8 @@ static bool resolve_pp_from_snapshot(DartCtx *ctx, ut64 snapshot_base, const cha
 	}
 	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
 	ut64 data_image_base = snapshot_base + ((sh.total_len + (align - 1)) & ~ (align - 1));
-	return dart_modern_build_synthetic_pp (ctx, snapshot_base, label, sh.cluster_start, snapshot_base + sh.total_len, sh.nc, sh.nb, data_image_base, info);
+	const DartModernClusterRequest req = { ctx, sh.cluster_start, snapshot_base + sh.total_len, sh.nc, sh.nb };
+	return dart_modern_build_synthetic_pp (&req, snapshot_base, label, data_image_base, info);
 }
 
 static bool resolve_pp_info(DartCtx *ctx, DartPpInfo *info) {
@@ -1120,12 +1112,15 @@ RVecDartInstructionTableEntry *dart_pool_extract_instruction_table(DartCtx *ctx)
 	DartVerLayout layout_tmp;
 	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
 	dart_pool_print_snapshot_json (ctx);
-	const DartItEmitCallbacks cb = {
+	DartItEmitRequest req = {
+		.ctx = ctx,
 		.on_it = collect_it_entry_cb,
 		.it_user = list,
+		.include_stubs = true,
 };
 	const ut64 it_limit = ctx->dump_fns_limit > 0? (ut64)ctx->dump_fns_limit: 0;
-	if (decode_pool_and_emit (ctx, &cb, true, it_limit) != 0) {
+	req.max_entries = it_limit;
+	if (decode_pool_and_emit (&req) != 0) {
 		RVecDartInstructionTableEntry_free (list);
 		list = NULL;
 	}

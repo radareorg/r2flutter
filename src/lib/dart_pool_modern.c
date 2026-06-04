@@ -63,13 +63,14 @@ typedef struct {
 } ModernFillSpec;
 
 typedef struct {
+	int cid;
 	ModernFillKind kind;
 	int num_refs;
 	int name_idx;
 	int owner_idx;
 	int scalar_count;
 	ModernScalarOp scalars[4];
-} ModernFillSpecConfig;
+} ModernFillSpecRule;
 
 typedef struct {
 	int cid;
@@ -146,25 +147,27 @@ typedef struct {
 
 typedef struct {
 	DartCtx *ctx;
+	const ModernClusterMeta *all_meta;
 	RStrBuf *sb;
 	PJ *pj;
 	const char *r2_scope;
+	ut64 num_clusters;
+	ut64 num_base_objects;
 	ut64 cluster_index;
 	ut64 pool_index;
 	ut64 pool_ref;
-} ModernClusterEmitCtx;
+	int limit;
+	int detail;
+} ModernEmitCtx;
 
 typedef struct {
 	DartCtx *ctx;
-	const ModernClusterMeta *all_meta;
-	ut64 num_clusters;
-	ut64 num_base_objects;
-	int limit;
-	int detail;
-	const char *r2_scope;
-	RStrBuf *sb;
-	PJ *pj;
-} ModernClusterSummaryCtx;
+	RList *classes;
+	DartClassInfo **class_by_ref;
+	int64_t *mint_values;
+	ut8 *mint_ok;
+	ut64 refs_count;
+} ModernClassExtractCtx;
 
 typedef struct {
 	const char *op;
@@ -760,22 +763,22 @@ static bool modern_skip_alloc(ClusterStream *s, const ModernCidCache *cids, int 
 	}
 }
 
-static ModernFillSpec modern_fill_spec(ModernFillSpecConfig config) {
+static ModernFillSpec modern_fill_spec(const ModernFillSpecRule *rule) {
 	ModernFillSpec spec = { 0 };
-	const int scalar_count = R_MIN (R_MAX (config.scalar_count, 0), (int)R_ARRAY_SIZE (config.scalars));
-	spec.kind = config.kind;
-	spec.num_refs = config.num_refs;
-	spec.name_idx = config.name_idx;
-	spec.owner_idx = config.owner_idx;
+	const int scalar_count = R_MIN (R_MAX (rule->scalar_count, 0), (int)R_ARRAY_SIZE (rule->scalars));
+	spec.kind = rule->kind;
+	spec.num_refs = rule->num_refs;
+	spec.name_idx = rule->name_idx;
+	spec.owner_idx = rule->owner_idx;
 	spec.scalar_count = scalar_count;
 	for (int i = 0; i < scalar_count; i++) {
-		spec.scalars[i] = config.scalars[i];
+		spec.scalars[i] = rule->scalars[i];
 	}
 	return spec;
 }
 
 static ModernFillSpec modern_fill_spec_kind(ModernFillKind kind) {
-	return modern_fill_spec ((ModernFillSpecConfig){
+	return modern_fill_spec (&(ModernFillSpecRule){
 		.kind = kind,
 		.name_idx = -1,
 		.owner_idx = -1,
@@ -787,32 +790,11 @@ static ModernFillSpec modern_fill_spec_unknown(void) {
 }
 
 static ModernFillSpec modern_fill_spec_refs(int num_refs) {
-	return modern_fill_spec ((ModernFillSpecConfig){
+	return modern_fill_spec (&(ModernFillSpecRule){
 		.kind = MODERN_FILL_REFS,
 		.num_refs = num_refs,
 		.name_idx = -1,
 		.owner_idx = -1,
-	});
-}
-
-typedef struct {
-	int cid;
-	ModernFillKind kind;
-	int num_refs;
-	int name_idx;
-	int owner_idx;
-	int scalar_count;
-	ModernScalarOp scalars[4];
-} ModernFillSpecRule;
-
-static ModernFillSpec modern_fill_spec_from_rule(const ModernFillSpecRule *rule) {
-	return modern_fill_spec ((ModernFillSpecConfig){
-		.kind = rule->kind,
-		.num_refs = rule->num_refs,
-		.name_idx = rule->name_idx,
-		.owner_idx = rule->owner_idx,
-		.scalar_count = rule->scalar_count,
-		.scalars = { rule->scalars[0], rule->scalars[1], rule->scalars[2], rule->scalars[3] },
 	});
 }
 
@@ -821,7 +803,7 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 		return modern_fill_spec_kind (MODERN_FILL_NONE);
 	}
 	if (modern_cid_eq (cid, cids->class_)) {
-		return modern_fill_spec ((ModernFillSpecConfig){
+		return modern_fill_spec (&(ModernFillSpecRule){
 			.kind = MODERN_FILL_CLASS,
 			.num_refs = 13,
 			.name_idx = 0,
@@ -829,7 +811,7 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 		});
 	}
 	if (modern_cid_eq (cid, cids->function)) {
-		return modern_fill_spec ((ModernFillSpecConfig){
+		return modern_fill_spec (&(ModernFillSpecRule){
 			.kind = MODERN_FILL_REFS,
 			.num_refs = 4,
 			.name_idx = 0,
@@ -842,7 +824,7 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 		return modern_fill_spec_kind (MODERN_FILL_NONE);
 	}
 	if (modern_cid_eq (cid, cids->double_)) {
-		return modern_fill_spec ((ModernFillSpecConfig){
+		return modern_fill_spec (&(ModernFillSpecRule){
 			.kind = MODERN_FILL_REFS,
 			.name_idx = -1,
 			.owner_idx = -1,
@@ -960,7 +942,7 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 };
 	for (size_t i = 0; i < R_ARRAY_SIZE (rules); i++) {
 		if (rules[i].cid == cid) {
-			return modern_fill_spec_from_rule (&rules[i]);
+			return modern_fill_spec (&rules[i]);
 		}
 	}
 	if (cids->instance >= 0 && cid >= cids->instance) {
@@ -1815,7 +1797,7 @@ static void modern_emit_resolved_text(RStrBuf *sb, const ModernResolvedRef *reso
 	}
 }
 
-static void modern_emit_pool_entry_json(const ModernClusterEmitCtx *emit, const ModernPoolEntry *entry) {
+static void modern_emit_pool_entry_json(const ModernEmitCtx *emit, const ModernPoolEntry *entry) {
 	DartCtx *ctx = emit->ctx;
 	PJ *pj = emit->pj;
 	pj_o (pj);
@@ -1837,7 +1819,7 @@ static void modern_emit_pool_entry_json(const ModernClusterEmitCtx *emit, const 
 	pj_end (pj);
 }
 
-static void modern_emit_pool_entry_text(const ModernClusterEmitCtx *emit, const ModernPoolEntry *entry) {
+static void modern_emit_pool_entry_text(const ModernEmitCtx *emit, const ModernPoolEntry *entry) {
 	DartCtx *ctx = emit->ctx;
 	RStrBuf *sb = emit->sb;
 	r_strbuf_appendf (sb,
@@ -1859,7 +1841,7 @@ static void modern_emit_pool_entry_text(const ModernClusterEmitCtx *emit, const 
 	r_strbuf_append (sb, "\n");
 }
 
-static void modern_emit_pool_entry_r2(const ModernClusterEmitCtx *emit, const ModernPoolEntry *entry) {
+static void modern_emit_pool_entry_r2(const ModernEmitCtx *emit, const ModernPoolEntry *entry) {
 	DartCtx *ctx = emit->ctx;
 	RStrBuf *sb = emit->sb;
 	const char *scope = emit->r2_scope;
@@ -1886,17 +1868,17 @@ static void modern_emit_pool_entry_r2(const ModernClusterEmitCtx *emit, const Mo
 	r_strbuf_append (sb, "\n");
 }
 
-static bool modern_emit_object_pool_details(const ModernClusterSummaryCtx *summary, const ModernClusterMeta *meta, ut64 cluster_index) {
-	DartCtx *ctx = summary->ctx;
-	RStrBuf *sb = summary->sb;
-	PJ *pj = summary->pj;
-	const char *r2_scope = summary->r2_scope;
-	const int limit = summary->limit;
+static bool modern_emit_object_pool_details(ModernEmitCtx *emit, const ModernClusterMeta *meta) {
+	DartCtx *ctx = emit->ctx;
+	RStrBuf *sb = emit->sb;
+	PJ *pj = emit->pj;
+	const char *r2_scope = emit->r2_scope;
+	const int limit = emit->limit;
 	if (!ctx || !meta || meta->fill_kind != MODERN_FILL_OBJECT_POOL || !meta->fill_parsed || !meta->fill_ok || meta->fill_offset >= meta->fill_end) {
 		return false;
 	}
 	ModernRefResolver resolver = { 0 };
-	bool have_resolver = modern_ref_resolver_init (&resolver, ctx, summary->all_meta, summary->num_clusters, summary->num_base_objects);
+	bool have_resolver = modern_ref_resolver_init (&resolver, ctx, emit->all_meta, emit->num_clusters, emit->num_base_objects);
 	ClusterStream s = {
 		.ctx = ctx,
 		.cursor = meta->fill_offset,
@@ -1927,20 +1909,13 @@ static bool modern_emit_object_pool_details(const ModernClusterSummaryCtx *summa
 			pj_kn (pj, "stream_offset", pool_stream);
 			pj_ka (pj, "entries");
 		} else if (sb && r2_scope) {
-			r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".length = %" PRIu64 "\n", r2_scope, (uint64_t)cluster_index, (uint64_t)i, (uint64_t)length);
+			r_strbuf_appendf (sb, "'f dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".length = %" PRIu64 "\n", r2_scope, (uint64_t)emit->cluster_index, (uint64_t)i, (uint64_t)length);
 			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart %s ObjectPool ref=%" PRIu64 " length=%" PRIu64 "\n", (ut64)pool_stream, r2_scope, (uint64_t)pool_ref, (uint64_t)length);
 		} else if (sb) {
 			r_strbuf_appendf (sb, "    object_pool ref=%" PRIu64 " index=%" PRIu64 " length=%" PRIu64 " stream=0x%" PFMT64x "\n", (uint64_t)pool_ref, (uint64_t)i, (uint64_t)length, (ut64)pool_stream);
 		}
-		const ModernClusterEmitCtx emit = {
-			.ctx = ctx,
-			.sb = sb,
-			.pj = pj,
-			.r2_scope = r2_scope,
-			.cluster_index = cluster_index,
-			.pool_index = i,
-			.pool_ref = pool_ref,
-};
+		emit->pool_index = i;
+		emit->pool_ref = pool_ref;
 		for (ut64 j = 0; j < length; j++) {
 			ModernPoolEntry entry = {
 				.index = j,
@@ -1963,11 +1938,11 @@ static bool modern_emit_object_pool_details(const ModernClusterSummaryCtx *summa
 			}
 			modern_resolve_pool_entry (have_resolver? &resolver: NULL, &cids, entry.type, entry.behavior, entry.ref, &entry.resolved);
 			if (pj) {
-				modern_emit_pool_entry_json (&emit, &entry);
+				modern_emit_pool_entry_json (emit, &entry);
 			} else if (sb && r2_scope) {
-				modern_emit_pool_entry_r2 (&emit, &entry);
+				modern_emit_pool_entry_r2 (emit, &entry);
 			} else if (sb) {
-				modern_emit_pool_entry_text (&emit, &entry);
+				modern_emit_pool_entry_text (emit, &entry);
 			}
 			modern_resolved_ref_fini (&entry.resolved);
 		}
@@ -1981,7 +1956,7 @@ static bool modern_emit_object_pool_details(const ModernClusterSummaryCtx *summa
 		} else if (sb && !r2_scope && emit_count < length) {
 			r_strbuf_appendf (sb, "      ... %" PRIu64 " object pool entries omitted by -l\n", (uint64_t) (length - emit_count));
 		} else if (sb && r2_scope && emit_count < length) {
-			r_strbuf_appendf (sb, "'# dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".entries.omitted=%" PRIu64 " by -l\n", r2_scope, (uint64_t)cluster_index, (uint64_t)i, (uint64_t) (length - emit_count));
+			r_strbuf_appendf (sb, "'# dart.%s.cluster.%" PRIu64 ".pool.%" PRIu64 ".entries.omitted=%" PRIu64 " by -l\n", r2_scope, (uint64_t)emit->cluster_index, (uint64_t)i, (uint64_t) (length - emit_count));
 		}
 	}
 	if (pj) {
@@ -2031,8 +2006,9 @@ static void modern_emit_object_pool_r2_status(RStrBuf *sb, const char *scope, ut
 	}
 }
 
-static void modern_emit_cluster_json(const ModernClusterSummaryCtx *summary, ut64 index, const ModernClusterMeta *meta) {
-	PJ *pj = summary->pj;
+static void modern_emit_cluster_json(ModernEmitCtx *emit, const ModernClusterMeta *meta) {
+	PJ *pj = emit->pj;
+	const ut64 index = emit->cluster_index;
 	pj_o (pj);
 	pj_kn (pj, "index", index);
 	pj_kn (pj, "cid", meta->cid);
@@ -2068,20 +2044,21 @@ static void modern_emit_cluster_json(const ModernClusterSummaryCtx *summary, ut6
 		pj_kn (pj, "total", meta->alloc_items_total);
 		pj_end (pj);
 	}
-	if (summary->detail >= 3) {
+	if (emit->detail >= 3) {
 		const char *status = modern_object_pool_decode_status (meta);
 		if (status) {
 			pj_ks (pj, "object_pool_decode", status);
 		}
 		if (status && !strcmp (status, "decoded")) {
-			(void)modern_emit_object_pool_details (summary, meta, index);
+			(void)modern_emit_object_pool_details (emit, meta);
 		}
 	}
 	pj_end (pj);
 }
 
-static void modern_emit_cluster_text(const ModernClusterSummaryCtx *summary, ut64 index, const ModernClusterMeta *meta) {
-	RStrBuf *sb = summary->sb;
+static void modern_emit_cluster_text(ModernEmitCtx *emit, const ModernClusterMeta *meta) {
+	RStrBuf *sb = emit->sb;
+	const ut64 index = emit->cluster_index;
 	r_strbuf_appendf (sb,
 		"  %" PRIu64 " cid=%d alloc=%s fill=%s count=%" PRIu64 " refs=%" PRIu64 "..%" PRIu64 " flags=%s%s alloc=0x%" PFMT64x "..0x%" PFMT64x " fill=0x%" PFMT64x "..0x%" PFMT64x,
 		(uint64_t)index,
@@ -2117,19 +2094,20 @@ static void modern_emit_cluster_text(const ModernClusterSummaryCtx *summary, ut6
 			(uint64_t)meta->alloc_items_total);
 	}
 	r_strbuf_append (sb, "\n");
-	if (summary->detail >= 3) {
+	if (emit->detail >= 3) {
 		const char *status = modern_object_pool_decode_status (meta);
 		if (status && !strcmp (status, "decoded")) {
-			(void)modern_emit_object_pool_details (summary, meta, index);
+			(void)modern_emit_object_pool_details (emit, meta);
 		} else {
 			modern_emit_object_pool_text_status (sb, meta);
 		}
 	}
 }
 
-static void modern_emit_cluster_r2(const ModernClusterSummaryCtx *summary, ut64 index, const ModernClusterMeta *meta) {
-	RStrBuf *sb = summary->sb;
-	const char *scope = summary->r2_scope;
+static void modern_emit_cluster_r2(ModernEmitCtx *emit, const ModernClusterMeta *meta) {
+	RStrBuf *sb = emit->sb;
+	const char *scope = emit->r2_scope;
+	const ut64 index = emit->cluster_index;
 	const char *status = meta->fill_parsed? (meta->fill_ok? "ok": "failed"): "not_parsed";
 	ut64 alloc_size = meta->alloc_end > meta->alloc_offset? meta->alloc_end - meta->alloc_offset: 0;
 	ut64 fill_size = meta->fill_end > meta->fill_offset? meta->fill_end - meta->fill_offset: 0;
@@ -2152,10 +2130,10 @@ static void modern_emit_cluster_r2(const ModernClusterSummaryCtx *summary, ut64 
 		(uint64_t)meta->start_ref,
 		(uint64_t) (meta->start_ref + meta->count),
 		status);
-	if (summary->detail >= 3) {
+	if (emit->detail >= 3) {
 		const char *pool_status = modern_object_pool_decode_status (meta);
 		if (pool_status && !strcmp (pool_status, "decoded")) {
-			(void)modern_emit_object_pool_details (summary, meta, index);
+			(void)modern_emit_object_pool_details (emit, meta);
 		} else {
 			modern_emit_object_pool_r2_status (sb, scope, index, meta);
 		}
@@ -2213,7 +2191,8 @@ static bool modern_skip_pool_payload_for_pp(ClusterStream *s) {
 	return true;
 }
 
-static bool modern_build_pp_image_from_pool(DartCtx *ctx, const ModernClusterMeta *meta, ut64 cluster_index, ut64 pool_index, ut64 pool_ref, ut64 pool_stream, DartPpInfo *out) {
+static bool modern_build_pp_image_from_pool(const ModernEmitCtx *emit, const ModernClusterMeta *meta, ut64 pool_stream, DartPpInfo *out) {
+	DartCtx *ctx = emit? emit->ctx: NULL;
 	if (!ctx || !meta || !out || meta->fill_offset >= meta->fill_end) {
 		return false;
 	}
@@ -2275,9 +2254,9 @@ static bool modern_build_pp_image_from_pool(DartCtx *ctx, const ModernClusterMet
 	out->size = image_size;
 	out->source_vaddr = pool_stream;
 	out->source_paddr = out->paddr;
-	out->cluster_index = cluster_index;
-	out->pool_ref = pool_ref;
-	out->pool_index = pool_index;
+	out->cluster_index = emit->cluster_index;
+	out->pool_ref = emit->pool_ref;
+	out->pool_index = emit->pool_index;
 	out->length = length;
 	out->entries_offset = entries_offset;
 	out->entry_bits_offset = entry_bits_offset;
@@ -2413,8 +2392,9 @@ static void modern_add_object_pool_string_ref(DartStringInfo *si, ut64 pool_ref,
 	r_list_append (si->references, sr);
 }
 
-static void modern_append_object_pool_string(RList *strings, HtUP *seen_refs, ut64 *ref_counter, const ModernRefResolver *resolver, ut64 string_ref, ut64 pool_ref, ut64 pool_index, ut64 entry_index) {
-	if (!strings || !seen_refs || !resolver || string_ref >= resolver->refs_count || R_STR_ISEMPTY (resolver->strings_by_ref[string_ref])) {
+static void modern_append_object_pool_string(RList *strings, HtUP *seen_refs, ut64 *ref_counter, const ModernRefResolver *resolver, const ModernEmitCtx *emit, const ModernPoolEntry *entry) {
+	const ut64 string_ref = entry? entry->ref: UT64_MAX;
+	if (!strings || !seen_refs || !resolver || !emit || !entry || string_ref >= resolver->refs_count || R_STR_ISEMPTY (resolver->strings_by_ref[string_ref])) {
 		return;
 	}
 	DartStringInfo *si = ht_up_find (seen_refs, string_ref, NULL);
@@ -2430,25 +2410,27 @@ static void modern_append_object_pool_string(RList *strings, HtUP *seen_refs, ut
 		r_list_append (strings, si);
 		ht_up_insert (seen_refs, string_ref, si);
 	}
-	modern_add_object_pool_string_ref (si, pool_ref, pool_index, entry_index, modern_pool_entry_pp_offset (resolver->ctx, entry_index));
+	modern_add_object_pool_string_ref (si, emit->pool_ref, emit->pool_index, entry->index, modern_pool_entry_pp_offset (resolver->ctx, entry->index));
 }
 
-bool dart_modern_extract_object_pool_strings_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, RList *strings, HtUP *seen_refs, ut64 *ref_counter) {
+bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClusterRequest *req, RList *strings, HtUP *seen_refs, ut64 *ref_counter) {
+	DartCtx *ctx = req? req->ctx: NULL;
 	if (!ctx || !strings || !seen_refs || !dart_modern_is_supported_snapshot (ctx)) {
 		return false;
 	}
-	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, cluster_start, cluster_end, num_clusters, num_base_objects);
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
 	if (!meta) {
 		return false;
 	}
 	ModernRefResolver resolver = { 0 };
-	bool ok = modern_ref_resolver_init (&resolver, ctx, meta, num_clusters, num_base_objects);
+	bool ok = modern_ref_resolver_init (&resolver, ctx, meta, req->num_clusters, req->num_base_objects);
 	if (!ok) {
-		modern_cluster_meta_free (meta, num_clusters);
+		modern_cluster_meta_free (meta, req->num_clusters);
 		return false;
 	}
 	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
-	for (ut64 i = 0; i < num_clusters; i++) {
+	ModernEmitCtx emit = { .ctx = ctx };
+	for (ut64 i = 0; i < req->num_clusters; i++) {
 		ModernClusterMeta *m = &meta[i];
 		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
 			continue;
@@ -2459,33 +2441,33 @@ bool dart_modern_extract_object_pool_strings_from_clusters(DartCtx *ctx, ut64 cl
 			.end = m->fill_end,
 };
 		for (ut64 pool_index = 0; pool_index < m->count; pool_index++) {
-			ut64 pool_ref = m->start_ref + pool_index;
+			emit.pool_index = pool_index;
+			emit.pool_ref = m->start_ref + pool_index;
 			ut64 length = 0;
 			if (!cs_read_unsigned (&s, &length)) {
 				ok = false;
 				break;
 			}
 			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
-				ut8 bits = 0;
-				if (!cs_read_u8 (&s, &bits)) {
+				ModernPoolEntry entry = {
+					.index = entry_index,
+};
+				if (!cs_read_u8 (&s, &entry.bits)) {
 					ok = false;
 					break;
 				}
-				ut8 type = bits & 0x0f;
-				ut8 behavior = bits >> 5;
-				ut64 ref = 0;
-				ut64 raw = 0;
-				if (!modern_decode_pool_entry (&s, ctx, type, behavior, &ref, &raw)) {
+				entry.type = entry.bits & 0x0f;
+				entry.behavior = entry.bits >> 5;
+				if (!modern_decode_pool_entry (&s, ctx, entry.type, entry.behavior, &entry.ref, &entry.raw)) {
 					ok = false;
 					break;
 				}
-				(void)raw;
-				if (behavior != 0 || type != 1 || ref >= resolver.refs_count) {
+				if (entry.behavior != 0 || entry.type != 1 || entry.ref >= resolver.refs_count) {
 					continue;
 				}
-				const ModernClusterMeta *target = modern_resolver_cluster_for_ref (&resolver, ref);
+				const ModernClusterMeta *target = modern_resolver_cluster_for_ref (&resolver, entry.ref);
 				if (target && modern_is_string_cid (&cids, target->cid)) {
-					modern_append_object_pool_string (strings, seen_refs, ref_counter, &resolver, ref, pool_ref, pool_index, entry_index);
+					modern_append_object_pool_string (strings, seen_refs, ref_counter, &resolver, &emit, &entry);
 				}
 			}
 			if (!ok) {
@@ -2497,7 +2479,7 @@ bool dart_modern_extract_object_pool_strings_from_clusters(DartCtx *ctx, ut64 cl
 		}
 	}
 	modern_ref_resolver_fini (&resolver);
-	modern_cluster_meta_free (meta, num_clusters);
+	modern_cluster_meta_free (meta, req->num_clusters);
 	return ok;
 }
 
@@ -2513,7 +2495,7 @@ bool dart_modern_emit_cluster_summary(const DartModernClusterSummaryRequest *req
 	if (req->limit > 0 && (ut64)req->limit < emit_count) {
 		emit_count = (ut64)req->limit;
 	}
-	const ModernClusterSummaryCtx summary = {
+	ModernEmitCtx emit = {
 		.ctx = req->ctx,
 		.all_meta = meta,
 		.num_clusters = req->num_clusters,
@@ -2525,12 +2507,13 @@ bool dart_modern_emit_cluster_summary(const DartModernClusterSummaryRequest *req
 		.pj = req->pj,
 };
 	for (ut64 i = 0; i < emit_count; i++) {
+		emit.cluster_index = i;
 		if (req->pj) {
-			modern_emit_cluster_json (&summary, i, &meta[i]);
+			modern_emit_cluster_json (&emit, &meta[i]);
 		} else if (req->sb && req->r2_scope) {
-			modern_emit_cluster_r2 (&summary, i, &meta[i]);
+			modern_emit_cluster_r2 (&emit, &meta[i]);
 		} else if (req->sb) {
-			modern_emit_cluster_text (&summary, i, &meta[i]);
+			modern_emit_cluster_text (&emit, &meta[i]);
 		}
 	}
 	if (req->sb && emit_count < req->num_clusters) {
@@ -2544,29 +2527,34 @@ bool dart_modern_emit_cluster_summary(const DartModernClusterSummaryRequest *req
 	return true;
 }
 
-bool dart_modern_build_synthetic_pp(DartCtx *ctx, ut64 snapshot_base, const char *snapshot_label, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects, ut64 data_image_base, DartPpInfo *out) {
-	if (!out) {
+bool dart_modern_build_synthetic_pp(const DartModernClusterRequest *req, ut64 snapshot_base, const char *snapshot_label, ut64 data_image_base, DartPpInfo *out) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	if (!ctx || !out) {
 		return false;
 	}
 	memset (out, 0, sizeof (*out));
-	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, cluster_start, cluster_end, num_clusters, num_base_objects);
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
 	if (!meta) {
 		return false;
 	}
+	ModernEmitCtx emit = { .ctx = ctx };
 	bool ok = false;
-	for (ut64 i = 0; i < num_clusters; i++) {
+	for (ut64 i = 0; i < req->num_clusters; i++) {
 		ModernClusterMeta *m = &meta[i];
 		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || m->count == 0) {
 			continue;
 		}
+		emit.cluster_index = i;
 		ClusterStream s = {
 			.ctx = ctx,
 			.cursor = m->fill_offset,
 			.end = m->fill_end,
 };
 		for (ut64 pool_index = 0; pool_index < m->count; pool_index++) {
-			ut64 pool_stream = s.cursor;
-			ok = modern_build_pp_image_from_pool (ctx, m, i, pool_index, m->start_ref + pool_index, pool_stream, out);
+			const ut64 pool_stream = s.cursor;
+			emit.pool_index = pool_index;
+			emit.pool_ref = m->start_ref + pool_index;
+			ok = modern_build_pp_image_from_pool (&emit, m, pool_stream, out);
 			if (ok) {
 				out->snapshot_base = snapshot_base;
 				out->data_image_base = data_image_base;
@@ -2581,7 +2569,7 @@ bool dart_modern_build_synthetic_pp(DartCtx *ctx, ut64 snapshot_base, const char
 			break;
 		}
 	}
-	modern_cluster_meta_free (meta, num_clusters);
+	modern_cluster_meta_free (meta, req->num_clusters);
 	return ok;
 }
 
@@ -2839,16 +2827,19 @@ static char *modern_dup_ref_name(DartCtx *ctx, char **strings_by_ref, ut64 refs_
 	return name;
 }
 
-static DartClassInfo *modern_class_by_ref(DartClassInfo **class_by_ref, ut64 refs_count, RList *classes, ut64 ref) {
-	if (ref > 0 && ref < refs_count && class_by_ref && class_by_ref[ref]) {
-		return class_by_ref[ref];
+static DartClassInfo *modern_class_by_ref(const ModernClassExtractCtx *extract, ut64 ref) {
+	if (!extract) {
+		return NULL;
 	}
-	if (!classes) {
+	if (ref > 0 && ref < extract->refs_count && extract->class_by_ref && extract->class_by_ref[ref]) {
+		return extract->class_by_ref[ref];
+	}
+	if (!extract->classes) {
 		return NULL;
 	}
 	RListIter *it;
 	DartClassInfo *ci;
-	r_list_foreach (classes, it, ci) {
+	r_list_foreach (extract->classes, it, ci) {
 		if (ci && ci->ref_id == ref) {
 			return ci;
 		}
@@ -2922,7 +2913,8 @@ static bool modern_read_mint_alloc(ClusterStream *s, ModernClusterMeta *meta, in
 	return true;
 }
 
-static bool modern_read_class_fill(DartCtx *ctx, ClusterStream *s, const ModernClusterMeta *meta, RList *classes, DartClassInfo **class_by_ref, ut64 refs_count) {
+static bool modern_read_class_fill(const ModernClassExtractCtx *extract, ClusterStream *s, const ModernClusterMeta *meta) {
+	DartCtx *ctx = extract->ctx;
 	const int word_size = ctx->compressed_word_size? ctx->compressed_word_size: 4;
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
@@ -2971,9 +2963,9 @@ static bool modern_read_class_fill(DartCtx *ctx, ClusterStream *s, const ModernC
 		ci->fields = r_list_newf ((RListFree)dart_field_info_free);
 		ci->interfaces = r_list_newf (NULL);
 		ci->methods = r_list_newf ((RListFree)dart_method_info_free);
-		r_list_append (classes, ci);
-		if (ref < refs_count) {
-			class_by_ref[ref] = ci;
+		r_list_append (extract->classes, ci);
+		if (ref < extract->refs_count) {
+			extract->class_by_ref[ref] = ci;
 		}
 	}
 	return true;
@@ -2996,7 +2988,8 @@ static void modern_field_flags_from_kind(ut32 kind_bits, ut32 *out_flags) {
 	*out_flags = flags;
 }
 
-static bool modern_read_field_fill(DartCtx *ctx, ClusterStream *s, const ModernClusterMeta *meta, RList *classes, DartClassInfo **class_by_ref, int64_t *mint_values, ut8 *mint_ok, ut64 refs_count) {
+static bool modern_read_field_fill(const ModernClassExtractCtx *extract, ClusterStream *s, const ModernClusterMeta *meta) {
+	DartCtx *ctx = extract->ctx;
 	const int word_size = ctx->compressed_word_size? ctx->compressed_word_size: 4;
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
@@ -3015,7 +3008,7 @@ static bool modern_read_field_fill(DartCtx *ctx, ClusterStream *s, const ModernC
 			return false;
 		}
 		(void)initializer_ref;
-		DartClassInfo *owner = modern_class_by_ref (class_by_ref, refs_count, classes, owner_ref);
+		DartClassInfo *owner = modern_class_by_ref (extract, owner_ref);
 		if (!owner || !owner->fields) {
 			continue;
 		}
@@ -3025,8 +3018,8 @@ static bool modern_read_field_fill(DartCtx *ctx, ClusterStream *s, const ModernC
 		fi->owner_ref = owner_ref;
 		fi->type_ref = type_ref;
 		modern_field_flags_from_kind (kind_bits, &fi->flags);
-		if (! (fi->flags & DART_FIELD_STATIC) && offset_ref < refs_count && mint_ok[offset_ref]) {
-			int64_t word_off = mint_values[offset_ref];
+		if (! (fi->flags & DART_FIELD_STATIC) && offset_ref < extract->refs_count && extract->mint_ok[offset_ref]) {
+			int64_t word_off = extract->mint_values[offset_ref];
 			if (word_off > 0 && word_off < INT32_MAX / word_size) {
 				fi->offset = (ut32) (word_off * word_size);
 			}
@@ -3066,10 +3059,10 @@ static bool modern_read_function_fill(ClusterStream *s, const ModernClusterMeta 
 	return true;
 }
 
-static void modern_attach_methods(RList *methods, RList *classes, DartClassInfo **class_by_ref, ut64 refs_count) {
+static void modern_attach_methods(RList *methods, const ModernClassExtractCtx *extract) {
 	while (!r_list_empty (methods)) {
 		DartMethodInfo *mi = (DartMethodInfo *)r_list_pop_head (methods);
-		DartClassInfo *owner = modern_class_by_ref (class_by_ref, refs_count, classes, mi->owner_ref);
+		DartClassInfo *owner = modern_class_by_ref (extract, mi->owner_ref);
 		if (owner && owner->methods) {
 			r_list_append (owner->methods, mi);
 		} else {
@@ -3088,12 +3081,13 @@ static void modern_free_strings(char **strings_by_ref, ut64 refs_count) {
 	free (strings_by_ref);
 }
 
-bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, RList *class_list) {
-	if (!modern_can_extract_classes (ctx) || !class_list || cluster_start >= cluster_end || num_clusters == 0 || num_clusters > 100000) {
+bool dart_modern_extract_classes_from_clusters(const DartModernClusterRequest *req, RList *class_list) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	if (!modern_can_extract_classes (ctx) || !class_list || req->cluster_start >= req->cluster_end || req->num_clusters == 0 || req->num_clusters > 100000) {
 		return false;
 	}
 	const ut64 total_refs = ctx->num_base_objects + ctx->num_objects + 16;
-	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)num_clusters, sizeof (ModernClusterMeta));
+	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)req->num_clusters, sizeof (ModernClusterMeta));
 	char **strings_by_ref = (char **)calloc ((size_t)total_refs, sizeof (char *));
 	DartClassInfo **class_by_ref = (DartClassInfo **)calloc ((size_t)total_refs, sizeof (DartClassInfo *));
 	int64_t *mint_values = (int64_t *)calloc ((size_t)total_refs, sizeof (int64_t));
@@ -3101,7 +3095,7 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 	RList *tmp_classes = r_list_newf ((RListFree)dart_class_info_free);
 	RList *tmp_methods = r_list_newf ((RListFree)dart_method_info_free);
 	if (!meta || !strings_by_ref || !class_by_ref || !mint_values || !mint_ok) {
-		modern_cluster_meta_free (meta, num_clusters);
+		modern_cluster_meta_free (meta, req->num_clusters);
 		modern_free_strings (strings_by_ref, total_refs);
 		free (class_by_ref);
 		free (mint_values);
@@ -3113,15 +3107,16 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 	modern_load_vm_base_strings (ctx, strings_by_ref, total_refs);
 	ClusterStream s = {
 		.ctx = ctx,
-		.cursor = cluster_start,
-		.end = cluster_end,
+		.cursor = req->cluster_start,
+		.end = req->cluster_end,
 };
+	ModernClassExtractCtx extract = { ctx, tmp_classes, class_by_ref, mint_values, mint_ok, total_refs };
 	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
 	const int cid_mint_v = cids.mint;
 	const int cid_field_v = cids.field;
 	const int cid_function_v = cids.function;
 	ut64 next_ref = ctx->num_base_objects + 1;
-	for (ut64 i = 0; i < num_clusters; i++) {
+	for (ut64 i = 0; i < req->num_clusters; i++) {
 		ut32 tags = 0;
 		if (!cs_read_tagged32 (&s, &tags)) {
 			goto fail;
@@ -3142,7 +3137,7 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 		}
 		next_ref += meta[i].count;
 	}
-	for (ut64 i = 0; i < num_clusters; i++) {
+	for (ut64 i = 0; i < req->num_clusters; i++) {
 		const ModernFillSpec spec = modern_get_fill_spec (&cids, meta[i].cid);
 		ut64 ref = meta[i].start_ref;
 		if (modern_is_string_cid (&cids, meta[i].cid)) {
@@ -3161,13 +3156,13 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 			continue;
 		}
 		if (spec.kind == MODERN_FILL_CLASS) {
-			if (!modern_read_class_fill (ctx, &s, &meta[i], tmp_classes, class_by_ref, total_refs)) {
+			if (!modern_read_class_fill (&extract, &s, &meta[i])) {
 				goto fail;
 			}
 			continue;
 		}
 		if (modern_cid_eq (meta[i].cid, cid_field_v)) {
-			if (!modern_read_field_fill (ctx, &s, &meta[i], tmp_classes, class_by_ref, mint_values, mint_ok, total_refs)) {
+			if (!modern_read_field_fill (&extract, &s, &meta[i])) {
 				goto fail;
 			}
 			continue;
@@ -3185,7 +3180,7 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 			goto fail;
 		}
 	}
-	modern_attach_methods (tmp_methods, tmp_classes, class_by_ref, total_refs);
+	modern_attach_methods (tmp_methods, &extract);
 	modern_finalize_class_names (ctx, tmp_classes, strings_by_ref, total_refs);
 	if (r_list_length (tmp_classes) == 0) {
 		goto fail;
@@ -3194,7 +3189,7 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 		DartClassInfo *ci = (DartClassInfo *)r_list_pop_head (tmp_classes);
 		r_list_append (class_list, ci);
 	}
-	modern_cluster_meta_free (meta, num_clusters);
+	modern_cluster_meta_free (meta, req->num_clusters);
 	modern_free_strings (strings_by_ref, total_refs);
 	free (class_by_ref);
 	free (mint_values);
@@ -3203,7 +3198,7 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 	r_list_free (tmp_methods);
 	return true;
 fail:
-	modern_cluster_meta_free (meta, num_clusters);
+	modern_cluster_meta_free (meta, req->num_clusters);
 	modern_free_strings (strings_by_ref, total_refs);
 	free (class_by_ref);
 	free (mint_values);

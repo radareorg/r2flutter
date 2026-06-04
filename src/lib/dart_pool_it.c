@@ -108,12 +108,11 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 }
 
 static void emit_it_entry_record(const DartInstructionTableEntry *entry, const DartItEmitRequest *req) {
-	const DartItEmitCallbacks *cb = &req->cb;
-	if (cb->on_it) {
-		cb->on_it (entry, cb->it_user);
+	if (req->on_it) {
+		req->on_it (entry, req->it_user);
 	}
-	if (entry->has_code && cb->on_fn) {
-		cb->on_fn (entry->name? entry->name: "method.unknown", entry->address, 0, cb->fn_user);
+	if (entry->has_code && req->on_fn) {
+		req->on_fn (entry->name? entry->name: "method.unknown", entry->address, 0, req->fn_user);
 	}
 }
 

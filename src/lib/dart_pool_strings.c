@@ -694,7 +694,8 @@ RList *dart_pool_extract_object_pool_strings(DartCtx *ctx) {
 				if (!seen_refs) {
 					continue;
 				}
-				(void)dart_modern_extract_object_pool_strings_from_clusters (ctx, sh.cluster_start, base + sh.total_len, sh.nc, sh.nb, string_list, seen_refs, &ref_counter);
+				const DartModernClusterRequest req = { ctx, sh.cluster_start, base + sh.total_len, sh.nc, sh.nb };
+				(void)dart_modern_extract_object_pool_strings_from_clusters (&req, string_list, seen_refs, &ref_counter);
 				ht_up_free (seen_refs);
 			}
 		}

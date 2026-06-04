@@ -1464,7 +1464,8 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		ut64 total_refs = sh.nb + sh.no + 16;
 		ctx->refs_count = total_refs;
 		ctx->refs = (void **)calloc (total_refs, sizeof (void *));
-		modern_classes = dart_modern_extract_classes_from_clusters (ctx, sh.cluster_start, snapshot_base + sh.total_len, sh.nc, class_list);
+		const DartModernClusterRequest req = { ctx, sh.cluster_start, snapshot_base + sh.total_len, sh.nc, sh.nb };
+		modern_classes = dart_modern_extract_classes_from_clusters (&req, class_list);
 		if (modern_classes) {
 			if (ctx->verbose > 0) {
 				int modern_fields = 0;
