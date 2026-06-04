@@ -15,11 +15,13 @@ BIN_DIR = bin
 # Source files
 LIB_SRC = $(SRC_DIR)/dart_app.c $(SRC_DIR)/dart_dumper.c $(SRC_DIR)/dart_pool_snapshot.c $(SRC_DIR)/dart_pool_discovery.c $(SRC_DIR)/dart_pool_names.c $(SRC_DIR)/dart_pool_strings.c $(SRC_DIR)/dart_pool_data_image.c $(SRC_DIR)/dart_pool_it.c $(SRC_DIR)/dart_pool_xrefs.c $(SRC_DIR)/dart_pool_clusters.c $(SRC_DIR)/dart_pool_classes.c $(SRC_DIR)/dart_pool_model.c $(SRC_DIR)/dart_pool_parse.c $(SRC_DIR)/dart_pool_modern.c $(SRC_DIR)/dart_version.c $(SRC_DIR)/dart_obf.c
 MAIN_SRC = src/tool/main.c
+ANALYSIS_SRC = src/r2/flutter_analysis.c
 
 # Object files
 LIB_OBJ = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(LIB_SRC))
 MAIN_OBJ = $(BUILD_DIR)/main.o
-DEP_FILES = $(LIB_OBJ:.o=.d) $(MAIN_OBJ:.o=.d)
+ANALYSIS_OBJ = $(BUILD_DIR)/flutter_analysis.o
+DEP_FILES = $(LIB_OBJ:.o=.d) $(MAIN_OBJ:.o=.d) $(ANALYSIS_OBJ:.o=.d)
 
 # Artifacts
 BIN_FILE = $(BIN_DIR)/r2flutter
@@ -30,14 +32,18 @@ all: $(BIN_FILE)
 $(STATIC_LIB): $(LIB_OBJ)
 	ar rcs $@ $^
 
-$(BIN_FILE): $(STATIC_LIB) $(MAIN_OBJ) | $(shell mkdir -p $(BIN_DIR))
-	$(CC) $(CFLAGS) -o $@ $(MAIN_OBJ) -L$(BUILD_DIR) -lr2flutter $(LDFLAGS) -Wl,-rpath,/usr/local/lib -g
+$(BIN_FILE): $(STATIC_LIB) $(MAIN_OBJ) $(ANALYSIS_OBJ) | $(shell mkdir -p $(BIN_DIR))
+	$(CC) $(CFLAGS) -o $@ $(MAIN_OBJ) $(ANALYSIS_OBJ) -L$(BUILD_DIR) -lr2flutter $(LDFLAGS) -Wl,-rpath,/usr/local/lib -g
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -g -c $< -o $@
 
 $(MAIN_OBJ): $(MAIN_SRC)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -g -c $< -o $@
+
+$(ANALYSIS_OBJ): $(ANALYSIS_SRC) src/r2/flutter_analysis.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -g -c $< -o $@
 

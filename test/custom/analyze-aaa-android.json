@@ -1,0 +1,11 @@
+{
+  "name": "analyze-aaa-android",
+  "cwd": "test",
+  "cmd": ["sh", "-c", "../bin/r2flutter -AAA bins/android/first/libapp.so 2>&1"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "Flutter analysis:"
+    ]
+  }
+}

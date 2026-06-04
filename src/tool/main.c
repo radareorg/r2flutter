@@ -7,6 +7,7 @@
 #include "../../include/r2flutter/dart_obf.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "../../include/r2flutter/version.h"
+#include "../r2/flutter_analysis.h"
 
 static const char usage_text[] =
 	"Usage: %s [options] <libapp_path_or_dir>\n"
@@ -21,6 +22,8 @@ static const char usage_text[] =
 	"  -V                    Show version\n"
 	"Actions:\n"
 	"  -A                    Analyze Dart snapshot and apply flags/comments\n"
+	"  -AA                   Analyze with field extraction enabled\n"
+	"  -AAA                  Run Dart-aware code analysis and recover code refs\n"
 	"  -c                    Print extracted class information\n"
 	"  -f                    Print all extracted functions (addr name)\n"
 	"  -H                    Print Dart AOT snapshot header info\n"
@@ -100,6 +103,7 @@ int main(int argc, char **argv) {
 	const char *libapp_path_in = NULL;
 	int fmt = 0;
 	char action = 0;
+	int analysis_depth = 0;
 	DartCtx dctx = {
 		.no_stubs = true
 	};
@@ -110,6 +114,7 @@ int main(int argc, char **argv) {
 		switch (c) {
 		case 'A':
 			action = c;
+			analysis_depth++;
 			break;
 		case 'c':
 			action = c;
@@ -208,6 +213,20 @@ int main(int argc, char **argv) {
 	r_core_bin_load (core, NULL, 0);
 
 	dctx.core = core;
+	int ret = 0;
+	if (action == 'A' && analysis_depth >= 2) {
+		dctx.dump_fields = 1;
+	}
+
+	if (action == 'A' && analysis_depth >= 3) {
+		if (!r2flutter_analysis_run (core, &dctx, dctx.quiet)) {
+			ret = 1;
+		}
+		dart_obf_fini (&dctx);
+		r_core_free (core);
+		free_resolved_path (libapp_path, extracted_inner);
+		return ret;
+	}
 
 	DartApp *app = dart_app_new_from_core (core, &dctx);
 	if (!app) {
@@ -229,7 +248,6 @@ int main(int argc, char **argv) {
 		fprintf (stderr, "app->file_path = %s\n", app->file_path? app->file_path: "(null)");
 	}
 
-	int ret = 0;
 	char *output = NULL;
 
 	switch (action) {

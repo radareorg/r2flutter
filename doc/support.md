@@ -317,6 +317,8 @@ name, then applies it to:
 | `-n` | Enable heuristic name-pool fallback for otherwise unnamed functions. |
 | `-v`, `-vv` | Increase stderr diagnostics; `-vv` also prints extra snapshot/header bytes. |
 | `-A` | Analyze the snapshot and apply recovered flags/comments without dumping. |
+| `-AA` | Analyze with field extraction enabled. |
+| `-AAA` | Run Dart-aware code analysis and recover refs/comments. |
 | `-c` | Dump classes. |
 | `-f` | Dump recovered functions as `addr name`; with `-j`, emits objects with `addr`, `name`, and optional `size`. |
 | `-H` | Dump snapshot header/layout/container information. |
@@ -334,7 +336,8 @@ Directory inputs are resolved as Android first (`libapp.so`), then iOS
 ## radare2 Plugin Support
 
 The core plugin command is `r2flutter`. Running it with no flags shows help.
-Use repeated `A` actions for analysis depth: `-A`, `-AA`, and `-AAA`.
+Both the standalone CLI and core plugin use repeated `A` actions for analysis
+depth: `-A`, `-AA`, and `-AAA`.
 
 Config keys:
 

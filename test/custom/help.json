@@ -7,7 +7,9 @@
     "contains": [
       "Usage:",
       "-i",
-      "-H"
+      "-H",
+      "-AA",
+      "-AAA"
     ],
     "not_contains": [
       "--no-stubs"

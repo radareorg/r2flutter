@@ -55,6 +55,8 @@ Modifiers:
   -V                    Show version
 Actions:
   -A                    Analyze Dart snapshot and apply flags/comments
+  -AA                   Analyze with field extraction enabled
+  -AAA                  Run Dart-aware code analysis and recover code refs
   -c                    Print extracted class information
   -f                    Print all extracted functions (addr name)
   -H                    Print Dart AOT snapshot header info
