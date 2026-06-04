@@ -168,7 +168,8 @@ bool read_data_image_method(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_e
 	if (!read_mem (ctx, pos, buf, sizeof (buf))) {
 		return false;
 	}
-	int cid_function = ctx->layout->cid_function? ctx->layout->cid_function: kFunctionCid;
+	const int resolved_function_cid = dart_cid_get (ctx->layout, DART_CID_FUNCTION);
+	const int cid_function = resolved_function_cid >= 0? resolved_function_cid: kFunctionCid;
 	if ((int)extract_cid_from_header (ctx, r_read_le64 (buf)) != cid_function) {
 		return false;
 	}

@@ -244,155 +244,171 @@ static void modern_cluster_record_item(ModernClusterMeta *meta, ut64 item) {
 	meta->alloc_items_count++;
 }
 
-static inline int modern_cid_class(DartCtx *ctx) {
-	return ctx->layout->cid_class;
+typedef struct {
+	int native_pointer;
+	int class_;
+	int patch_class;
+	int function;
+	int closure_data;
+	int field;
+	int library;
+	int weak_array;
+	int weak_serialization_reference;
+	int code;
+	int object_pool;
+	int string;
+	int one_byte_string;
+	int two_byte_string;
+	int array;
+	int immutable_array;
+	int growable_array;
+	int mint;
+	int double_;
+	int type_arguments;
+	int type;
+	int function_type;
+	int record_type;
+	int type_parameter;
+	int exception_handlers;
+	int context;
+	int context_scope;
+	int record;
+	int typed_data;
+	int external_typed_data;
+	int typed_data_view;
+	int instance;
+	int library_prefix;
+	int closure;
+	int float32x4;
+	int int32x4;
+	int float64x2;
+	int capability;
+	int receive_port;
+	int send_port;
+	int stack_trace;
+	int suspend_state;
+	int regexp;
+	int weak_property;
+	int weak_reference;
+	int future_or;
+	int user_tag;
+	int transferable_typed_data;
+	int map;
+	int const_map;
+	int set;
+	int const_set;
+	int num_predefined_cids;
+	int typed_data_internal_base;
+	int typed_data_internal_limit;
+	int typed_data_stride;
+} ModernCidCache;
+
+static ModernCidCache modern_cid_cache_init(const DartVerLayout *layout) {
+	const ModernCidCache cids = {
+		.native_pointer = dart_cid_get (layout, DART_CID_NATIVE_POINTER),
+		.class_ = dart_cid_get (layout, DART_CID_CLASS),
+		.patch_class = dart_cid_get (layout, DART_CID_PATCH_CLASS),
+		.function = dart_cid_get (layout, DART_CID_FUNCTION),
+		.closure_data = dart_cid_get (layout, DART_CID_CLOSURE_DATA),
+		.field = dart_cid_get (layout, DART_CID_FIELD),
+		.library = dart_cid_get (layout, DART_CID_LIBRARY),
+		.weak_array = dart_cid_get (layout, DART_CID_WEAK_ARRAY),
+		.weak_serialization_reference = dart_cid_get (layout, DART_CID_WEAK_SERIALIZATION_REFERENCE),
+		.code = dart_cid_get (layout, DART_CID_CODE),
+		.object_pool = dart_cid_get (layout, DART_CID_OBJECT_POOL),
+		.string = dart_cid_get (layout, DART_CID_STRING),
+		.one_byte_string = dart_cid_get (layout, DART_CID_ONE_BYTE_STRING),
+		.two_byte_string = dart_cid_get (layout, DART_CID_TWO_BYTE_STRING),
+		.array = dart_cid_get (layout, DART_CID_ARRAY),
+		.immutable_array = dart_cid_get (layout, DART_CID_IMMUTABLE_ARRAY),
+		.growable_array = dart_cid_get (layout, DART_CID_GROWABLE_OBJECT_ARRAY),
+		.mint = dart_cid_get (layout, DART_CID_MINT),
+		.double_ = dart_cid_get (layout, DART_CID_DOUBLE),
+		.type_arguments = dart_cid_get (layout, DART_CID_TYPE_ARGUMENTS),
+		.type = dart_cid_get (layout, DART_CID_TYPE),
+		.function_type = dart_cid_get (layout, DART_CID_FUNCTION_TYPE),
+		.record_type = dart_cid_get (layout, DART_CID_RECORD_TYPE),
+		.type_parameter = dart_cid_get (layout, DART_CID_TYPE_PARAMETER),
+		.exception_handlers = dart_cid_get (layout, DART_CID_EXCEPTION_HANDLERS),
+		.context = dart_cid_get (layout, DART_CID_CONTEXT),
+		.context_scope = dart_cid_get (layout, DART_CID_CONTEXT_SCOPE),
+		.record = dart_cid_get (layout, DART_CID_RECORD),
+		.typed_data = dart_cid_get (layout, DART_CID_TYPED_DATA),
+		.external_typed_data = dart_cid_get (layout, DART_CID_EXTERNAL_TYPED_DATA),
+		.typed_data_view = dart_cid_get (layout, DART_CID_TYPED_DATA_VIEW),
+		.instance = dart_cid_get (layout, DART_CID_INSTANCE),
+		.library_prefix = dart_cid_get (layout, DART_CID_LIBRARY_PREFIX),
+		.closure = dart_cid_get (layout, DART_CID_CLOSURE),
+		.float32x4 = dart_cid_get (layout, DART_CID_FLOAT32X4),
+		.int32x4 = dart_cid_get (layout, DART_CID_INT32X4),
+		.float64x2 = dart_cid_get (layout, DART_CID_FLOAT64X2),
+		.capability = dart_cid_get (layout, DART_CID_CAPABILITY),
+		.receive_port = dart_cid_get (layout, DART_CID_RECEIVE_PORT),
+		.send_port = dart_cid_get (layout, DART_CID_SEND_PORT),
+		.stack_trace = dart_cid_get (layout, DART_CID_STACK_TRACE),
+		.suspend_state = dart_cid_get (layout, DART_CID_SUSPEND_STATE),
+		.regexp = dart_cid_get (layout, DART_CID_REGEXP),
+		.weak_property = dart_cid_get (layout, DART_CID_WEAK_PROPERTY),
+		.weak_reference = dart_cid_get (layout, DART_CID_WEAK_REFERENCE),
+		.future_or = dart_cid_get (layout, DART_CID_FUTURE_OR),
+		.user_tag = dart_cid_get (layout, DART_CID_USER_TAG),
+		.transferable_typed_data = dart_cid_get (layout, DART_CID_TRANSFERABLE_TYPED_DATA),
+		.map = dart_cid_get (layout, DART_CID_MAP),
+		.const_map = dart_cid_get (layout, DART_CID_CONST_MAP),
+		.set = dart_cid_get (layout, DART_CID_SET),
+		.const_set = dart_cid_get (layout, DART_CID_CONST_SET),
+		.num_predefined_cids = dart_cid_get (layout, DART_CID_NUM_PREDEFINED_CIDS),
+		.typed_data_internal_base = dart_cid_typed_data_internal_base (layout),
+		.typed_data_internal_limit = dart_cid_typed_data_internal_limit (layout),
+		.typed_data_stride = dart_cid_typed_data_stride (layout),
+};
+	return cids;
 }
 
-static inline int modern_cid_function(DartCtx *ctx) {
-	return ctx->layout->cid_function;
+static inline bool modern_cid_eq(int cid, int value) {
+	return value >= 0 && cid == value;
 }
 
-static inline int modern_cid_code(DartCtx *ctx) {
-	return ctx->layout->cid_code;
+static inline bool modern_is_string_cid(const ModernCidCache *cids, int cid) {
+	return modern_cid_eq (cid, cids->string) || modern_cid_eq (cid, cids->one_byte_string) || modern_cid_eq (cid, cids->two_byte_string);
 }
 
-static inline int modern_cid_object_pool(DartCtx *ctx) {
-	return ctx->layout->cid_object_pool;
+static inline bool modern_is_array_cid(const ModernCidCache *cids, int cid) {
+	return modern_cid_eq (cid, cids->array) || modern_cid_eq (cid, cids->immutable_array);
 }
 
-static inline int modern_cid_string(DartCtx *ctx) {
-	return ctx->layout->cid_string;
-}
-
-static inline int modern_cid_mint(DartCtx *ctx) {
-	return ctx->layout->cid_mint;
-}
-
-static inline int modern_cid_double(DartCtx *ctx) {
-	return modern_cid_mint (ctx) + 1;
-}
-
-static inline int modern_cid_one_byte_string(DartCtx *ctx) {
-	return ctx->layout->cid_one_byte_string;
-}
-
-static inline int modern_cid_two_byte_string(DartCtx *ctx) {
-	return ctx->layout->cid_two_byte_string;
-}
-
-static inline int modern_cid_array(DartCtx *ctx) {
-	return ctx->layout->cid_array;
-}
-
-static inline int modern_cid_immutable_array(DartCtx *ctx) {
-	return modern_cid_array (ctx) + 1;
-}
-
-static inline int modern_cid_growable_array(DartCtx *ctx) {
-	return modern_cid_array (ctx) + 2;
-}
-
-static inline int modern_cid_type_arguments(DartCtx *ctx) {
-	return modern_cid_array (ctx) - 43;
-}
-
-static inline int modern_cid_type(DartCtx *ctx) {
-	return modern_cid_type_arguments (ctx) + 2;
-}
-
-static inline int modern_cid_function_type(DartCtx *ctx) {
-	return modern_cid_type_arguments (ctx) + 3;
-}
-
-static inline int modern_cid_record_type(DartCtx *ctx) {
-	return modern_cid_type_arguments (ctx) + 4;
-}
-
-static inline int modern_cid_type_parameter(DartCtx *ctx) {
-	return modern_cid_type_arguments (ctx) + 5;
-}
-
-static inline int modern_cid_exception_handlers(DartCtx *ctx) {
-	return modern_cid_object_pool (ctx) + 5;
-}
-
-static inline int modern_cid_context(DartCtx *ctx) {
-	return modern_cid_object_pool (ctx) + 6;
-}
-
-static inline int modern_cid_context_scope(DartCtx *ctx) {
-	return modern_cid_object_pool (ctx) + 7;
-}
-
-static inline int modern_cid_record(DartCtx *ctx) {
-	return modern_cid_mint (ctx) + 6;
-}
-
-static inline int modern_cid_typed_data(DartCtx *ctx) {
-	return modern_cid_string (ctx) - 24;
-}
-
-static inline int modern_cid_external_typed_data(DartCtx *ctx) {
-	return modern_cid_typed_data (ctx) + 1;
-}
-
-static inline int modern_cid_typed_data_view(DartCtx *ctx) {
-	return modern_cid_typed_data (ctx) + 2;
-}
-
-static inline bool modern_is_string_cid(DartCtx *ctx, int cid) {
-	return cid == modern_cid_string (ctx) || cid == modern_cid_one_byte_string (ctx) || cid == modern_cid_two_byte_string (ctx);
-}
-
-static inline bool modern_is_array_cid(DartCtx *ctx, int cid) {
-	return cid == modern_cid_array (ctx) || cid == modern_cid_immutable_array (ctx);
-}
-
-static inline int modern_typed_data_internal_base(DartCtx *ctx) {
-	const int predefined_cids = ctx->layout->num_predefined_cids;
-	return predefined_cids > 0? predefined_cids - 63: 112;
-}
-
-static inline int modern_typed_data_internal_limit(DartCtx *ctx) {
-	return modern_typed_data_internal_base (ctx) + (14 * 4);
-}
-
-static bool modern_typed_data_internal_kind(DartCtx *ctx, int cid, int *out_rem) {
-	int base = modern_typed_data_internal_base (ctx);
-	int limit = modern_typed_data_internal_limit (ctx);
-	if (cid < base || cid >= limit) {
+static bool modern_typed_data_internal_kind(const ModernCidCache *cids, int cid, int *out_rem) {
+	if (cids->typed_data_stride <= 0 || cid < cids->typed_data_internal_base || cid >= cids->typed_data_internal_limit) {
 		return false;
 	}
-	int rem = (cid - base) % 4;
+	const int rem = (cid - cids->typed_data_internal_base) % cids->typed_data_stride;
 	if (out_rem) {
 		*out_rem = rem;
 	}
 	return true;
 }
 
-static bool modern_is_typed_data_alloc_cid(DartCtx *ctx, int cid) {
-	if (cid == 1 || cid == modern_cid_typed_data (ctx)) {
+static bool modern_is_typed_data_alloc_cid(const ModernCidCache *cids, int cid) {
+	if (modern_cid_eq (cid, cids->native_pointer) || modern_cid_eq (cid, cids->typed_data)) {
 		return true;
 	}
 	int rem;
-	return modern_typed_data_internal_kind (ctx, cid, &rem) && !rem;
+	return modern_typed_data_internal_kind (cids, cid, &rem) && !rem;
 }
 
-static bool modern_is_rodata_cid(DartCtx *ctx, int cid) {
-	int pc_descriptors = modern_cid_object_pool (ctx) + 1;
-	return cid >= pc_descriptors && cid <= pc_descriptors + 2;
+static bool modern_is_rodata_cid(const ModernCidCache *cids, int cid) {
+	const int pc_descriptors = cids->object_pool + 1;
+	return pc_descriptors > 0 && cid >= pc_descriptors && cid <= pc_descriptors + 2;
 }
 
-static int modern_typed_data_element_size(DartCtx *ctx, int cid) {
-	if (cid == 1 || cid == modern_cid_typed_data (ctx)) {
+static int modern_typed_data_element_size(const ModernCidCache *cids, int cid) {
+	if (modern_cid_eq (cid, cids->native_pointer) || modern_cid_eq (cid, cids->typed_data)) {
 		return 1;
 	}
-	int base = modern_typed_data_internal_base (ctx);
-	int limit = modern_typed_data_internal_limit (ctx);
-	if (cid < base || cid >= limit) {
+	if (cid < cids->typed_data_internal_base || cid >= cids->typed_data_internal_limit || cids->typed_data_stride <= 0) {
 		return 1;
 	}
-	int idx = (cid - base) / 4;
+	const int idx = (cid - cids->typed_data_internal_base) / cids->typed_data_stride;
 	static const int sizes[] = { 1, 1, 1, 2, 2, 4, 4, 8, 8, 4, 8, 16, 16, 16 };
 	if (idx >= 0 && idx < (int) (sizeof (sizes) / sizeof (sizes[0]))) {
 		return sizes[idx];
@@ -400,12 +416,29 @@ static int modern_typed_data_element_size(DartCtx *ctx, int cid) {
 	return 1;
 }
 
-static bool modern_is_simple_alloc_cid(int cid) {
-	return cid == 46 || cid == 57 || cid == 62 ||
-		(cid >= 64 && cid <= 66) ||
-		(cid >= 74 && cid <= 81) ||
-		(cid >= 83 && cid <= 89) ||
-		cid == 92;
+static bool modern_is_simple_alloc_cid(const ModernCidCache *cids, int cid) {
+	return modern_cid_eq (cid, cids->library_prefix) ||
+		modern_cid_eq (cid, cids->closure) ||
+		modern_cid_eq (cid, cids->double_) ||
+		modern_cid_eq (cid, cids->float32x4) ||
+		modern_cid_eq (cid, cids->int32x4) ||
+		modern_cid_eq (cid, cids->float64x2) ||
+		modern_cid_eq (cid, cids->capability) ||
+		modern_cid_eq (cid, cids->receive_port) ||
+		modern_cid_eq (cid, cids->send_port) ||
+		modern_cid_eq (cid, cids->stack_trace) ||
+		modern_cid_eq (cid, cids->suspend_state) ||
+		modern_cid_eq (cid, cids->regexp) ||
+		modern_cid_eq (cid, cids->weak_property) ||
+		modern_cid_eq (cid, cids->weak_reference) ||
+		modern_cid_eq (cid, cids->future_or) ||
+		modern_cid_eq (cid, cids->user_tag) ||
+		modern_cid_eq (cid, cids->transferable_typed_data) ||
+		modern_cid_eq (cid, cids->map) ||
+		modern_cid_eq (cid, cids->const_map) ||
+		modern_cid_eq (cid, cids->set) ||
+		modern_cid_eq (cid, cids->const_set) ||
+		modern_cid_eq (cid, cids->growable_array);
 }
 
 bool modern_skip_n_bytes(ClusterStream *s, ut64 len) {
@@ -459,70 +492,70 @@ static bool modern_skip_canonical_set(ClusterStream *s, ut64 count) {
 	return true;
 }
 
-static ModernAllocKind modern_alloc_kind(DartCtx *ctx, int cid) {
-	if (modern_is_string_cid (ctx, cid)) {
-		return ctx->compressed_word_size == 8? MODERN_ALLOC_RODATA: MODERN_ALLOC_STRING;
+static ModernAllocKind modern_alloc_kind(const ModernCidCache *cids, int compressed_word_size, int cid) {
+	if (modern_is_string_cid (cids, cid)) {
+		return compressed_word_size == 8? MODERN_ALLOC_RODATA: MODERN_ALLOC_STRING;
 	}
-	if (cid == modern_cid_mint (ctx)) {
+	if (modern_cid_eq (cid, cids->mint)) {
 		return MODERN_ALLOC_MINT;
 	}
-	if (cid == modern_cid_double (ctx)) {
+	if (modern_cid_eq (cid, cids->double_)) {
 		return MODERN_ALLOC_SIMPLE;
 	}
-	if (modern_is_simple_alloc_cid (cid)) {
+	if (modern_is_simple_alloc_cid (cids, cid)) {
 		return MODERN_ALLOC_SIMPLE;
 	}
-	if (modern_is_array_cid (ctx, cid)) {
+	if (modern_is_array_cid (cids, cid)) {
 		return MODERN_ALLOC_ARRAY;
 	}
-	if (cid == 17) {
+	if (modern_cid_eq (cid, cids->weak_array)) {
 		return MODERN_ALLOC_WEAK_ARRAY;
 	}
-	if (cid == modern_cid_type_arguments (ctx)) {
+	if (modern_cid_eq (cid, cids->type_arguments)) {
 		return MODERN_ALLOC_TYPE_ARGUMENTS;
 	}
-	if (cid == modern_cid_class (ctx)) {
+	if (modern_cid_eq (cid, cids->class_)) {
 		return MODERN_ALLOC_CLASS;
 	}
-	if (cid == modern_cid_code (ctx)) {
+	if (modern_cid_eq (cid, cids->code)) {
 		return MODERN_ALLOC_CODE;
 	}
-	if (cid == modern_cid_object_pool (ctx)) {
+	if (modern_cid_eq (cid, cids->object_pool)) {
 		return MODERN_ALLOC_OBJECT_POOL;
 	}
-	if (modern_is_rodata_cid (ctx, cid)) {
+	if (modern_is_rodata_cid (cids, cid)) {
 		return MODERN_ALLOC_RODATA;
 	}
-	if (cid == modern_cid_exception_handlers (ctx)) {
+	if (modern_cid_eq (cid, cids->exception_handlers)) {
 		return MODERN_ALLOC_EXCEPTION_HANDLERS;
 	}
-	if (cid == modern_cid_context (ctx)) {
+	if (modern_cid_eq (cid, cids->context)) {
 		return MODERN_ALLOC_CONTEXT;
 	}
-	if (cid == modern_cid_context_scope (ctx)) {
+	if (modern_cid_eq (cid, cids->context_scope)) {
 		return MODERN_ALLOC_CONTEXT_SCOPE;
 	}
-	if (cid == modern_cid_record (ctx)) {
+	if (modern_cid_eq (cid, cids->record)) {
 		return MODERN_ALLOC_RECORD;
 	}
-	if (modern_is_typed_data_alloc_cid (ctx, cid)) {
+	if (modern_is_typed_data_alloc_cid (cids, cid)) {
 		return MODERN_ALLOC_TYPED_DATA;
 	}
-	if (cid == modern_cid_type (ctx) || cid == modern_cid_function_type (ctx) || cid == modern_cid_record_type (ctx) || cid == modern_cid_type_parameter (ctx)) {
+	if (modern_cid_eq (cid, cids->type) || modern_cid_eq (cid, cids->function_type) || modern_cid_eq (cid, cids->record_type) || modern_cid_eq (cid, cids->type_parameter)) {
 		return MODERN_ALLOC_CANONICAL_SET;
 	}
-	if (cid == 16) {
+	if (modern_cid_eq (cid, cids->weak_serialization_reference)) {
 		return MODERN_ALLOC_EMPTY;
 	}
-	if (cid >= 45) {
+	if (cids->instance >= 0 && cid >= cids->instance) {
 		return MODERN_ALLOC_INSTANCE;
 	}
 	return MODERN_ALLOC_SIMPLE;
 }
 
-static bool modern_skip_alloc(ClusterStream *s, DartCtx *ctx, ModernClusterMeta *meta) {
+static bool modern_skip_alloc(ClusterStream *s, const ModernCidCache *cids, int compressed_word_size, ModernClusterMeta *meta) {
 	ut64 count = 0;
-	ModernAllocKind kind = modern_alloc_kind (ctx, meta->cid);
+	const ModernAllocKind kind = modern_alloc_kind (cids, compressed_word_size, meta->cid);
 	meta->alloc_kind = kind;
 	switch (kind) {
 	case MODERN_ALLOC_EMPTY:
@@ -602,8 +635,7 @@ static bool modern_skip_alloc(ClusterStream *s, DartCtx *ctx, ModernClusterMeta 
 			if (!cs_read_unsigned (s, &predefined)) {
 				return false;
 			}
-			const int predefined_cids = ctx->layout->num_predefined_cids;
-			if (predefined_cids > 0 && predefined > (ut64)predefined_cids) {
+			if (cids->num_predefined_cids > 0 && predefined > (ut64)cids->num_predefined_cids) {
 				if (!cs_read_unsigned (s, &predefined)) {
 					return false;
 				}
@@ -723,45 +755,45 @@ static ModernFillSpec modern_fill_spec_from_rule(const ModernFillSpecRule *rule)
 	return modern_fill_spec_make (rule->kind, rule->num_refs, rule->name_idx, rule->owner_idx, rule->scalar_count, rule->scalars[0], rule->scalars[1], rule->scalars[2], rule->scalars[3]);
 }
 
-static ModernFillSpec modern_get_fill_spec(DartCtx *ctx, int cid) {
-	if (modern_is_string_cid (ctx, cid)) {
+static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) {
+	if (modern_is_string_cid (cids, cid)) {
 		return modern_fill_spec_kind (MODERN_FILL_NONE);
 	}
-	if (cid == modern_cid_class (ctx)) {
+	if (modern_cid_eq (cid, cids->class_)) {
 		return modern_fill_spec_make (MODERN_FILL_CLASS, 13, 0, -1, 0, 0, 0, 0, 0);
 	}
-	if (cid == modern_cid_function (ctx)) {
+	if (modern_cid_eq (cid, cids->function)) {
 		return modern_fill_spec_refs (4, 0, 1, 2, MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_TAGGED32, 0, 0);
 	}
-	if (cid == modern_cid_mint (ctx)) {
+	if (modern_cid_eq (cid, cids->mint)) {
 		return modern_fill_spec_kind (MODERN_FILL_NONE);
 	}
-	if (cid == modern_cid_double (ctx)) {
+	if (modern_cid_eq (cid, cids->double_)) {
 		return modern_fill_spec_refs (0, -1, -1, 1, MODERN_SCALAR_TAGGED64, 0, 0, 0);
 	}
-	if (cid == modern_cid_code (ctx)) {
+	if (modern_cid_eq (cid, cids->code)) {
 		return modern_fill_spec_kind (MODERN_FILL_CODE);
 	}
-	if (cid == modern_cid_object_pool (ctx)) {
+	if (modern_cid_eq (cid, cids->object_pool)) {
 		return modern_fill_spec_kind (MODERN_FILL_OBJECT_POOL);
 	}
-	if (modern_is_rodata_cid (ctx, cid)) {
+	if (modern_is_rodata_cid (cids, cid)) {
 		return modern_fill_spec_kind (MODERN_FILL_INLINE_BYTES);
 	}
-	if (modern_is_array_cid (ctx, cid)) {
+	if (modern_is_array_cid (cids, cid)) {
 		return modern_fill_spec_kind (MODERN_FILL_ARRAY);
 	}
-	if (cid == modern_cid_typed_data_view (ctx)) {
+	if (modern_cid_eq (cid, cids->typed_data_view)) {
 		return modern_fill_spec_refs (3, -1, -1, 0, 0, 0, 0, 0);
 	}
-	if (cid == modern_cid_external_typed_data (ctx)) {
+	if (modern_cid_eq (cid, cids->external_typed_data)) {
 		return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
 	}
-	if (cid == modern_cid_typed_data (ctx) || cid == 1) {
+	if (modern_cid_eq (cid, cids->typed_data) || modern_cid_eq (cid, cids->native_pointer)) {
 		return modern_fill_spec_kind (MODERN_FILL_TYPED_DATA);
 	}
 	int typed_rem = 0;
-	if (modern_typed_data_internal_kind (ctx, cid, &typed_rem)) {
+	if (modern_typed_data_internal_kind (cids, cid, &typed_rem)) {
 		if (typed_rem == 0) {
 			return modern_fill_spec_kind (MODERN_FILL_TYPED_DATA);
 		}
@@ -770,22 +802,22 @@ static ModernFillSpec modern_get_fill_spec(DartCtx *ctx, int cid) {
 		}
 		return modern_fill_spec_refs (1, -1, -1, 0, 0, 0, 0, 0);
 	}
-	if (cid == modern_cid_growable_array (ctx)) {
+	if (modern_cid_eq (cid, cids->growable_array)) {
 		return modern_fill_spec_refs (3, -1, -1, 0, 0, 0, 0, 0);
 	}
-	if (cid == modern_cid_type_arguments (ctx)) {
+	if (modern_cid_eq (cid, cids->type_arguments)) {
 		return modern_fill_spec_kind (MODERN_FILL_TYPE_ARGUMENTS);
 	}
-	if (cid == modern_cid_exception_handlers (ctx)) {
+	if (modern_cid_eq (cid, cids->exception_handlers)) {
 		return modern_fill_spec_kind (MODERN_FILL_EXCEPTION_HANDLERS);
 	}
-	if (cid == modern_cid_context (ctx)) {
+	if (modern_cid_eq (cid, cids->context)) {
 		return modern_fill_spec_kind (MODERN_FILL_CONTEXT);
 	}
-	if (cid == modern_cid_context_scope (ctx)) {
+	if (modern_cid_eq (cid, cids->context_scope)) {
 		return modern_fill_spec_kind (MODERN_FILL_CONTEXT_SCOPE);
 	}
-	if (cid == modern_cid_record (ctx)) {
+	if (modern_cid_eq (cid, cids->record)) {
 		return modern_fill_spec_kind (MODERN_FILL_RECORD);
 	}
 	static const ModernFillSpecRule rules[] = {
@@ -852,7 +884,7 @@ static ModernFillSpec modern_get_fill_spec(DartCtx *ctx, int cid) {
 			return modern_fill_spec_from_rule (&rules[i]);
 		}
 	}
-	if (cid >= 45) {
+	if (cids->instance >= 0 && cid >= cids->instance) {
 		return modern_fill_spec_kind (MODERN_FILL_INSTANCE);
 	}
 	return modern_fill_spec_unknown ();
@@ -1014,8 +1046,8 @@ static bool modern_skip_fill_inline_bytes(ClusterStream *s, const ModernClusterM
 	return true;
 }
 
-static bool modern_skip_fill_typed_data(ClusterStream *s, DartCtx *ctx, const ModernClusterMeta *meta) {
-	int elem_size = modern_typed_data_element_size (ctx, meta->cid);
+static bool modern_skip_fill_typed_data(ClusterStream *s, const ModernCidCache *cids, const ModernClusterMeta *meta) {
+	const int elem_size = modern_typed_data_element_size (cids, meta->cid);
 	for (ut64 i = 0; i < meta->count; i++) {
 		ut64 length = 0;
 		if (!cs_read_unsigned (s, &length)) {
@@ -1188,7 +1220,7 @@ static bool modern_skip_fill_class(ClusterStream *s, const ModernClusterMeta *me
 	return true;
 }
 
-static bool modern_skip_fill_by_kind(ClusterStream *s, DartCtx *ctx, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_skip_fill_by_kind(ClusterStream *s, const ModernCidCache *cids, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
 	switch (spec->kind) {
 	case MODERN_FILL_REFS:
 		return modern_skip_fill_refs (s, meta, spec);
@@ -1213,7 +1245,7 @@ static bool modern_skip_fill_by_kind(ClusterStream *s, DartCtx *ctx, const Moder
 	case MODERN_FILL_INLINE_BYTES:
 		return modern_skip_fill_inline_bytes (s, meta);
 	case MODERN_FILL_TYPED_DATA:
-		return modern_skip_fill_typed_data (s, ctx, meta);
+		return modern_skip_fill_typed_data (s, cids, meta);
 	case MODERN_FILL_RECORD:
 		return modern_skip_fill_record (s, meta);
 	case MODERN_FILL_INSTANCE:
@@ -1369,7 +1401,8 @@ static void modern_ref_resolver_fini(ModernRefResolver *resolver) {
 }
 
 static bool modern_resolver_read_class_fill(ClusterStream *s, const ModernClusterMeta *meta, ModernRefResolver *resolver) {
-	ModernFillSpec spec = modern_get_fill_spec (resolver->ctx, meta->cid);
+	const ModernCidCache cids = modern_cid_cache_init (resolver->ctx->layout);
+	const ModernFillSpec spec = modern_get_fill_spec (&cids, meta->cid);
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
 		ut64 name_ref = 0;
@@ -1427,7 +1460,8 @@ static bool modern_resolver_read_function_fill(ClusterStream *s, const ModernClu
 }
 
 static bool modern_resolver_read_library_fill(ClusterStream *s, const ModernClusterMeta *meta, ModernRefResolver *resolver) {
-	ModernFillSpec spec = modern_get_fill_spec (resolver->ctx, meta->cid);
+	const ModernCidCache cids = modern_cid_cache_init (resolver->ctx->layout);
+	const ModernFillSpec spec = modern_get_fill_spec (&cids, meta->cid);
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
 		ut64 name_ref = 0;
@@ -1506,6 +1540,7 @@ static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, 
 		}
 	}
 	modern_load_vm_base_strings (ctx, resolver->strings_by_ref, resolver->refs_count);
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
 	for (ut64 i = 0; i < num_clusters; i++) {
 		const ModernClusterMeta *m = &meta[i];
 		if (!m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
@@ -1517,7 +1552,7 @@ static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, 
 			.end = m->fill_end,
 };
 		ut64 ref = m->start_ref;
-		if (modern_is_string_cid (ctx, m->cid)) {
+		if (modern_is_string_cid (&cids, m->cid)) {
 			for (ut64 j = 0; j < m->count; j++, ref++) {
 				char *value = NULL;
 				ut32 length = 0;
@@ -1541,15 +1576,15 @@ static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, 
 			(void)modern_resolver_read_class_fill (&s, m, resolver);
 			continue;
 		}
-		if (m->cid == modern_cid_function (ctx)) {
+		if (modern_cid_eq (m->cid, cids.function)) {
 			(void)modern_resolver_read_function_fill (&s, m, resolver);
 			continue;
 		}
-		if (m->cid == 13) {
+		if (modern_cid_eq (m->cid, cids.library)) {
 			(void)modern_resolver_read_library_fill (&s, m, resolver);
 			continue;
 		}
-		if (m->cid == 6) {
+		if (modern_cid_eq (m->cid, cids.patch_class)) {
 			(void)modern_resolver_read_patch_class_fill (&s, m, resolver);
 			continue;
 		}
@@ -1557,32 +1592,32 @@ static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, 
 	return true;
 }
 
-static const char *modern_ref_kind_for_meta(DartCtx *ctx, const ModernClusterMeta *meta) {
+static const char *modern_ref_kind_for_meta(const ModernCidCache *cids, const ModernClusterMeta *meta) {
 	if (!meta) {
 		return "base_object";
 	}
-	if (modern_is_string_cid (ctx, meta->cid)) {
+	if (modern_is_string_cid (cids, meta->cid)) {
 		return "string";
 	}
-	if (meta->cid == modern_cid_class (ctx)) {
+	if (modern_cid_eq (meta->cid, cids->class_)) {
 		return "class";
 	}
-	if (meta->cid == modern_cid_function (ctx)) {
+	if (modern_cid_eq (meta->cid, cids->function)) {
 		return "function";
 	}
-	if (meta->cid == 13) {
+	if (modern_cid_eq (meta->cid, cids->library)) {
 		return "library";
 	}
-	if (meta->cid == modern_cid_code (ctx)) {
+	if (modern_cid_eq (meta->cid, cids->code)) {
 		return "code";
 	}
-	if (meta->cid == modern_cid_object_pool (ctx)) {
+	if (modern_cid_eq (meta->cid, cids->object_pool)) {
 		return "object_pool";
 	}
 	return modern_alloc_kind_name (meta->alloc_kind);
 }
 
-static void modern_ref_resolver_resolve(ModernRefResolver *resolver, ut64 ref, ModernResolvedRef *resolved) {
+static void modern_ref_resolver_resolve(ModernRefResolver *resolver, const ModernCidCache *cids, ut64 ref, ModernResolvedRef *resolved) {
 	if (!resolved) {
 		return;
 	}
@@ -1602,7 +1637,7 @@ static void modern_ref_resolver_resolve(ModernRefResolver *resolver, ut64 ref, M
 		resolved->kind = ref <= resolver->num_base_objects? "base_object": "unknown_ref";
 		return;
 	}
-	resolved->kind = modern_ref_kind_for_meta (resolver->ctx, meta);
+	resolved->kind = modern_ref_kind_for_meta (cids, meta);
 	resolved->cid = meta->cid;
 	if (!strcmp (resolved->kind, "string")) {
 		if (R_STR_ISNOTEMPTY (resolver->strings_by_ref[ref])) {
@@ -1633,7 +1668,7 @@ static void modern_ref_resolver_resolve(ModernRefResolver *resolver, ut64 ref, M
 	}
 }
 
-static void modern_resolve_pool_entry(ModernRefResolver *resolver, ut8 type, ut8 behavior, ut64 ref, ModernResolvedRef *resolved) {
+static void modern_resolve_pool_entry(ModernRefResolver *resolver, const ModernCidCache *cids, ut8 type, ut8 behavior, ut64 ref, ModernResolvedRef *resolved) {
 	if (!resolved) {
 		return;
 	}
@@ -1653,7 +1688,7 @@ static void modern_resolve_pool_entry(ModernRefResolver *resolver, ut8 type, ut8
 		return;
 	}
 	if (type == 1) {
-		modern_ref_resolver_resolve (resolver, ref, resolved);
+		modern_ref_resolver_resolve (resolver, cids, ref, resolved);
 		return;
 	}
 	resolved->kind = modern_pool_entry_type_name (type);
@@ -1768,6 +1803,7 @@ static bool modern_emit_object_pool_details(DartCtx *ctx, const ModernClusterMet
 		.cursor = meta->fill_offset,
 		.end = meta->fill_end,
 };
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
 	bool ok = true;
 	if (pj) {
 		pj_ka (pj, "object_pools");
@@ -1818,7 +1854,7 @@ static bool modern_emit_object_pool_details(DartCtx *ctx, const ModernClusterMet
 				continue;
 			}
 			ModernResolvedRef resolved;
-			modern_resolve_pool_entry (have_resolver? &resolver: NULL, type, behavior, ref, &resolved);
+			modern_resolve_pool_entry (have_resolver? &resolver: NULL, &cids, type, behavior, ref, &resolved);
 			if (pj) {
 				modern_emit_pool_entry_json (pj, ctx, j, entry_stream, value_offset, bits, type, patch, behavior, ref, raw, &resolved);
 			} else if (sb && r2_scope) {
@@ -2188,6 +2224,7 @@ static ModernClusterMeta *modern_parse_cluster_meta(DartCtx *ctx, ut64 cluster_s
 		.cursor = cluster_start,
 		.end = cluster_end,
 };
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
 	ut64 next_ref = num_base_objects + 1;
 	for (ut64 i = 0; i < num_clusters; i++) {
 		ut32 tags = 0;
@@ -2200,7 +2237,7 @@ static ModernClusterMeta *modern_parse_cluster_meta(DartCtx *ctx, ut64 cluster_s
 		meta[i].is_immutable = (tags & (1 << 6)) != 0;
 		meta[i].start_ref = next_ref;
 		meta[i].alloc_offset = s.cursor;
-		if (!modern_skip_alloc (&s, ctx, &meta[i])) {
+		if (!modern_skip_alloc (&s, &cids, ctx->compressed_word_size, &meta[i])) {
 			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] cluster summary alloc failed cid=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, (uint64_t)i, s.cursor);
 			}
@@ -2210,16 +2247,16 @@ static ModernClusterMeta *modern_parse_cluster_meta(DartCtx *ctx, ut64 cluster_s
 		next_ref += meta[i].count;
 	}
 	for (ut64 i = 0; i < num_clusters; i++) {
-		ModernFillSpec spec = modern_get_fill_spec (ctx, meta[i].cid);
+		const ModernFillSpec spec = modern_get_fill_spec (&cids, meta[i].cid);
 		meta[i].fill_kind = spec.kind;
 		meta[i].fill_offset = s.cursor;
 		bool ok = true;
 		if (spec.kind == MODERN_FILL_UNKNOWN && meta[i].count == 0) {
 			meta[i].fill_kind = MODERN_FILL_NONE;
 		} else {
-			ok = modern_is_string_cid (ctx, meta[i].cid) && ctx->compressed_word_size != 8
+			ok = modern_is_string_cid (&cids, meta[i].cid) && ctx->compressed_word_size != 8
 				? modern_skip_fill_string (&s, &meta[i])
-				: modern_skip_fill_by_kind (&s, ctx, &meta[i], &spec);
+				: modern_skip_fill_by_kind (&s, &cids, &meta[i], &spec);
 		}
 		meta[i].fill_parsed = true;
 		meta[i].fill_ok = ok;
@@ -2298,6 +2335,7 @@ bool dart_modern_extract_object_pool_strings_from_clusters(DartCtx *ctx, ut64 cl
 		modern_cluster_meta_free (meta, num_clusters);
 		return false;
 	}
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
 	for (ut64 i = 0; i < num_clusters; i++) {
 		ModernClusterMeta *m = &meta[i];
 		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
@@ -2334,7 +2372,7 @@ bool dart_modern_extract_object_pool_strings_from_clusters(DartCtx *ctx, ut64 cl
 					continue;
 				}
 				const ModernClusterMeta *target = modern_resolver_cluster_for_ref (&resolver, ref);
-				if (target && modern_is_string_cid (ctx, target->cid)) {
+				if (target && modern_is_string_cid (&cids, target->cid)) {
 					modern_append_object_pool_string (strings, seen_refs, ref_counter, &resolver, ref, pool_ref, pool_index, entry_index);
 				}
 			}
@@ -2590,6 +2628,7 @@ static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut6
 		.cursor = cluster_start,
 		.end = cluster_end,
 };
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
 	ut64 next_ref = sh.nb + 1;
 	for (ut64 i = 0; i < sh.nc; i++) {
 		ut32 tags = 0;
@@ -2600,7 +2639,7 @@ static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut6
 		meta[i].is_canonical = ((tags >> 1) & 1) != 0;
 		meta[i].is_immutable = (tags & (1 << 6)) != 0;
 		meta[i].start_ref = next_ref;
-		if (modern_is_string_cid (ctx, meta[i].cid)) {
+		if (modern_is_string_cid (&cids, meta[i].cid)) {
 			ut64 count = 0;
 			if (!cs_read_unsigned (&s, &count)) {
 				goto fail;
@@ -2612,14 +2651,14 @@ static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut6
 					goto fail;
 				}
 			}
-		} else if (!modern_skip_alloc (&s, ctx, &meta[i])) {
+		} else if (!modern_skip_alloc (&s, &cids, ctx->compressed_word_size, &meta[i])) {
 			goto fail;
 		}
 		next_ref += meta[i].count;
 	}
 	for (ut64 i = 0; i < sh.nc; i++) {
 		ut64 ref = meta[i].start_ref;
-		if (modern_is_string_cid (ctx, meta[i].cid)) {
+		if (modern_is_string_cid (&cids, meta[i].cid)) {
 			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
 				char *value = NULL;
 				if (!modern_read_cluster_string (&s, &value)) {
@@ -2633,8 +2672,8 @@ static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut6
 			}
 			continue;
 		}
-		ModernFillSpec spec = modern_get_fill_spec (ctx, meta[i].cid);
-		if (!modern_skip_fill_by_kind (&s, ctx, &meta[i], &spec)) {
+		const ModernFillSpec spec = modern_get_fill_spec (&cids, meta[i].cid);
+		if (!modern_skip_fill_by_kind (&s, &cids, &meta[i], &spec)) {
 			goto fail;
 		}
 	}
@@ -2656,11 +2695,6 @@ static bool modern_can_extract_classes(DartCtx *ctx) {
 		return false;
 	}
 	return ctx->compressed_word_size == 4;
-}
-
-static inline int modern_cid_field(DartCtx *ctx) {
-	(void)ctx;
-	return 11;
 }
 
 static char *modern_dup_ref_name(DartCtx *ctx, char **strings_by_ref, ut64 refs_count, ut64 ref, const char *fallback, ut64 id) {
@@ -2929,7 +2963,7 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 	if (!modern_can_extract_classes (ctx) || !class_list || cluster_start >= cluster_end || num_clusters == 0 || num_clusters > 100000) {
 		return false;
 	}
-	ut64 total_refs = ctx->num_base_objects + ctx->num_objects + 16;
+	const ut64 total_refs = ctx->num_base_objects + ctx->num_objects + 16;
 	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)num_clusters, sizeof (ModernClusterMeta));
 	char **strings_by_ref = (char **)calloc ((size_t)total_refs, sizeof (char *));
 	DartClassInfo **class_by_ref = (DartClassInfo **)calloc ((size_t)total_refs, sizeof (DartClassInfo *));
@@ -2953,6 +2987,10 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 		.cursor = cluster_start,
 		.end = cluster_end,
 };
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
+	const int cid_mint_v = cids.mint;
+	const int cid_field_v = cids.field;
+	const int cid_function_v = cids.function;
 	ut64 next_ref = ctx->num_base_objects + 1;
 	for (ut64 i = 0; i < num_clusters; i++) {
 		ut32 tags = 0;
@@ -2963,11 +3001,11 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 		meta[i].is_canonical = ((tags >> 1) & 1) != 0;
 		meta[i].is_immutable = (tags & (1 << 6)) != 0;
 		meta[i].start_ref = next_ref;
-		if (meta[i].cid == modern_cid_mint (ctx)) {
+		if (modern_cid_eq (meta[i].cid, cid_mint_v)) {
 			if (!modern_read_mint_alloc (&s, &meta[i], mint_values, mint_ok, total_refs)) {
 				goto fail;
 			}
-		} else if (!modern_skip_alloc (&s, ctx, &meta[i])) {
+		} else if (!modern_skip_alloc (&s, &cids, ctx->compressed_word_size, &meta[i])) {
 			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] modern classes alloc: failed cid=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, i, s.cursor);
 			}
@@ -2976,9 +3014,9 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 		next_ref += meta[i].count;
 	}
 	for (ut64 i = 0; i < num_clusters; i++) {
-		ModernFillSpec spec = modern_get_fill_spec (ctx, meta[i].cid);
+		const ModernFillSpec spec = modern_get_fill_spec (&cids, meta[i].cid);
 		ut64 ref = meta[i].start_ref;
-		if (modern_is_string_cid (ctx, meta[i].cid)) {
+		if (modern_is_string_cid (&cids, meta[i].cid)) {
 			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
 				char *value = NULL;
 				if (!modern_read_cluster_string (&s, &value)) {
@@ -2999,19 +3037,19 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 			}
 			continue;
 		}
-		if (meta[i].cid == modern_cid_field (ctx)) {
+		if (modern_cid_eq (meta[i].cid, cid_field_v)) {
 			if (!modern_read_field_fill (ctx, &s, &meta[i], tmp_classes, class_by_ref, mint_values, mint_ok, total_refs)) {
 				goto fail;
 			}
 			continue;
 		}
-		if (meta[i].cid == modern_cid_function (ctx)) {
+		if (modern_cid_eq (meta[i].cid, cid_function_v)) {
 			if (!modern_read_function_fill (&s, &meta[i], tmp_methods)) {
 				goto fail;
 			}
 			continue;
 		}
-		if (!modern_skip_fill_by_kind (&s, ctx, &meta[i], &spec)) {
+		if (!modern_skip_fill_by_kind (&s, &cids, &meta[i], &spec)) {
 			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] modern classes fill: failed cid=%d kind=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, spec.kind, i, s.cursor);
 			}
@@ -3060,7 +3098,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 	if (!meta) {
 		return false;
 	}
-	ut64 total_refs = ctx->num_base_objects + ctx->num_objects + 16;
+	const ut64 total_refs = ctx->num_base_objects + ctx->num_objects + 16;
 	char **strings_by_ref = (char **)calloc ((size_t)total_refs, sizeof (char *));
 	ut64 *class_name_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
 	ut64 *library_name_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
@@ -3096,6 +3134,13 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 		.cursor = cluster_start,
 		.end = cluster_end,
 };
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
+	const int cid_class_v = cids.class_;
+	const int cid_function_v = cids.function;
+	const int cid_code_v = cids.code;
+	const int cid_closure_data_v = cids.closure_data;
+	const int cid_library_v = cids.library;
+	const int cid_patch_class_v = cids.patch_class;
 	ut64 current_cluster = UT64_MAX;
 	int current_cid = -1;
 	ut64 next_code_index = 0;
@@ -3114,7 +3159,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 		meta[i].is_canonical = ((tags >> 1) & 1) != 0;
 		meta[i].is_immutable = (tags & (1 << 6)) != 0;
 		meta[i].start_ref = next_ref;
-		if (!modern_skip_alloc (&s, ctx, &meta[i])) {
+		if (!modern_skip_alloc (&s, &cids, ctx->compressed_word_size, &meta[i])) {
 			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] modern alloc: failed skipping cid=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, i, s.cursor);
 			}
@@ -3142,9 +3187,9 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 	for (ut64 i = 0; i < num_clusters; i++) {
 		current_cluster = i;
 		current_cid = meta[i].cid;
-		ModernFillSpec spec = modern_get_fill_spec (ctx, meta[i].cid);
+		const ModernFillSpec spec = modern_get_fill_spec (&cids, meta[i].cid);
 		ut64 ref = meta[i].start_ref;
-		if (modern_is_string_cid (ctx, meta[i].cid)) {
+		if (modern_is_string_cid (&cids, meta[i].cid)) {
 			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
 				char *value = NULL;
 				if (!modern_read_cluster_string (&s, &value)) {
@@ -3186,7 +3231,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 			}
 			continue;
 		}
-		if (meta[i].cid == modern_cid_function (ctx)) {
+		if (modern_cid_eq (meta[i].cid, cid_function_v)) {
 			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
 				ut64 name_ref = 0;
 				ut64 owner_ref = 0;
@@ -3204,7 +3249,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 			}
 			continue;
 		}
-		if (meta[i].cid == modern_cid_code (ctx)) {
+		if (modern_cid_eq (meta[i].cid, cid_code_v)) {
 			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
 				ut64 owner_ref = 0;
 				ut64 tmp_ref = 0;
@@ -3256,7 +3301,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 			}
 			continue;
 		}
-		if (meta[i].cid == 9) {
+		if (modern_cid_eq (meta[i].cid, cid_closure_data_v)) {
 			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
 				ut64 parent_function_ref = 0;
 				ut64 closure_ref = 0;
@@ -3268,7 +3313,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 			}
 			continue;
 		}
-		if (meta[i].cid == 13) {
+		if (modern_cid_eq (meta[i].cid, cid_library_v)) {
 			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
 				ut64 name_ref = 0;
 				for (int k = 0; k < 10; k++) {
@@ -3289,7 +3334,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 			}
 			continue;
 		}
-		if (meta[i].cid == 6) {
+		if (modern_cid_eq (meta[i].cid, cid_patch_class_v)) {
 			for (ut64 j = 0; j < meta[i].count; j++, ref++) {
 				ut64 wrapped_ref = 0;
 				ut64 script_ref = 0;
@@ -3300,7 +3345,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 			}
 			continue;
 		}
-		if (!modern_skip_fill_by_kind (&s, ctx, &meta[i], &spec)) {
+		if (!modern_skip_fill_by_kind (&s, &cids, &meta[i], &spec)) {
 			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] modern fill: failed skipping cid=%d kind=%d cluster=%" PRIu64 " off=0x%" PFMT64x "\n", meta[i].cid, spec.kind, i, s.cursor);
 			}
@@ -3308,8 +3353,6 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 		}
 	}
 	ut64 mapped = 0;
-	const int cid_class_v = modern_cid_class (ctx);
-	const int cid_function_v = modern_cid_function (ctx);
 	// Cluster cids for abstract-type owners (Type/FunctionType/RecordType).
 	// These live just past the Class/Function predefined cids; on Dart 3.8.x
 	// they are 112/113/114 in the VM but in the snapshot cluster-cid space

@@ -927,3 +927,20 @@ first failed cluster with `fill_status=failed` and leave later clusters as
 Use `RVec` for hot arrays of plain records or records with simple per-element finalizers. `DartApp.functions`, instruction-table entries, and local address/offset collector arrays fit this model because iteration is linear and callers do not require stable heap object addresses.
 
 Do not convert clustered `ctx->strings`, `ctx->classes`, and `ctx->functions` blindly: `ctx->refs` stores object pointers into those decoded records. Moving those records into a growing vector would invalidate pointers on reallocation unless the parser first reserves a stable capacity or changes `ctx->refs` to store indexes.
+
+## Dart VM CID Tables
+
+Dart VM predefined CIDs are deterministic for one SDK build, but they are not a stable cross-version ABI. The numeric values come from the ordered `CLASS_LIST` macros in `runtime/vm/class_id.h`, so inserting or removing a VM class shifts later IDs. For example, `Library` is `12` in Dart 2.14 but `13` in Dart 2.15+, while `Namespace` is `13` in Dart 2.14. Avoid global constants such as `kLibraryCid` when parsing versioned snapshots.
+
+Use the shared `dart_cid_get ()` / `DartCidKind` API as the source of truth for named CIDs. In hot cluster walks, resolve the version table once before entering the loop and compare cached `const int` values instead of calling the generic lookup for every object or cluster.
+
+| Dart VM | PatchClass | Library | Namespace | Code | ObjectPool | Array | String | OneByteString | NumPredefined |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2.10.0 | 5 | 13 | 14 | 16 | 20 | 78 | 80 | 81 | 156 |
+| 2.13.0 | 5 | 11 | 12 | 15 | 18 | 75 | 77 | 78 | 148 |
+| 2.14.0 | 5 | 12 | 13 | 16 | 20 | 79 | 81 | 82 | 152 |
+| 2.15.0 | 6 | 13 | 14 | 17 | 21 | 79 | 82 | 83 | 153 |
+| 2.19.0 | 6 | 13 | 14 | 17 | 21 | 89 | 92 | 93 | 176 |
+| 3.0.5 | 6 | 13 | 14 | 18 | 22 | 90 | 93 | 94 | 177 |
+| 3.4.3 | 6 | 13 | 14 | 18 | 22 | 89 | 92 | 93 | 174 |
+| 3.10.7 | 6 | 13 | 14 | 18 | 23 | 90 | 93 | 94 | 175 |

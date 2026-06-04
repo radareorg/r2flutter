@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "dart_version.h"
+#include "dart_cid.h"
 
 typedef struct r_core_t RCore;
 typedef struct r_list_t RList;
