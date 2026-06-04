@@ -678,7 +678,7 @@ static bool modern_skip_alloc(ClusterStream *s, const ModernCidCache *cids, int 
 			}
 			modern_cluster_record_item (meta, item);
 		}
-		if ((kind == MODERN_ALLOC_STRING || kind == MODERN_ALLOC_TYPE_ARGUMENTS || kind == MODERN_ALLOC_RODATA) && meta->is_canonical) {
+		if ((kind == MODERN_ALLOC_TYPE_ARGUMENTS || kind == MODERN_ALLOC_RODATA) && meta->is_canonical) {
 			return modern_skip_canonical_set (s, count);
 		}
 		return true;
@@ -3101,7 +3101,7 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 	RList *tmp_classes = r_list_newf ((RListFree)dart_class_info_free);
 	RList *tmp_methods = r_list_newf ((RListFree)dart_method_info_free);
 	if (!meta || !strings_by_ref || !class_by_ref || !mint_values || !mint_ok) {
-		free (meta);
+		modern_cluster_meta_free (meta, num_clusters);
 		modern_free_strings (strings_by_ref, total_refs);
 		free (class_by_ref);
 		free (mint_values);
@@ -3194,10 +3194,7 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 		DartClassInfo *ci = (DartClassInfo *)r_list_pop_head (tmp_classes);
 		r_list_append (class_list, ci);
 	}
-	for (ut64 i = 0; i < num_clusters; i++) {
-		free (meta[i].discarded_codes);
-	}
-	free (meta);
+	modern_cluster_meta_free (meta, num_clusters);
 	modern_free_strings (strings_by_ref, total_refs);
 	free (class_by_ref);
 	free (mint_values);
@@ -3206,10 +3203,7 @@ bool dart_modern_extract_classes_from_clusters(DartCtx *ctx, ut64 cluster_start,
 	r_list_free (tmp_methods);
 	return true;
 fail:
-	for (ut64 i = 0; i < num_clusters; i++) {
-		free (meta[i].discarded_codes);
-	}
-	free (meta);
+	modern_cluster_meta_free (meta, num_clusters);
 	modern_free_strings (strings_by_ref, total_refs);
 	free (class_by_ref);
 	free (mint_values);
@@ -3243,8 +3237,8 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 	// instead of letting the name_pool fallback shift every later entry.
 	int *code_owner_cid_by_index = (int *)calloc ((size_t)itlen, sizeof (int));
 	if (!strings_by_ref || !class_name_ref || !library_name_ref || !patch_wrapped_ref || !function_name_ref || !function_owner_ref || !function_data_ref || !function_code_index || !closure_parent_ref || !code_owner_ref_by_index || !code_owner_cid_by_index) {
-		free (meta);
-		free (strings_by_ref);
+		modern_cluster_meta_free (meta, num_clusters);
+		modern_free_strings (strings_by_ref, total_refs);
 		free (class_name_ref);
 		free (library_name_ref);
 		free (patch_wrapped_ref);
@@ -3578,14 +3572,8 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] modern cluster naming mapped=%" PRIu64 "\n", mapped);
 	}
-	for (ut64 i = 0; i < total_refs; i++) {
-		free (strings_by_ref[i]);
-	}
-	for (ut64 i = 0; i < num_clusters; i++) {
-		free (meta[i].discarded_codes);
-	}
-	free (meta);
-	free (strings_by_ref);
+	modern_cluster_meta_free (meta, num_clusters);
+	modern_free_strings (strings_by_ref, total_refs);
 	free (class_name_ref);
 	free (library_name_ref);
 	free (patch_wrapped_ref);
@@ -3601,14 +3589,8 @@ fail:
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] modern scan failed cluster=%" PRIu64 " cid=%d off=0x%" PFMT64x "\n", current_cluster, current_cid, s.cursor);
 	}
-	for (ut64 i = 0; i < total_refs; i++) {
-		free (strings_by_ref[i]);
-	}
-	for (ut64 i = 0; i < num_clusters; i++) {
-		free (meta[i].discarded_codes);
-	}
-	free (meta);
-	free (strings_by_ref);
+	modern_cluster_meta_free (meta, num_clusters);
+	modern_free_strings (strings_by_ref, total_refs);
 	free (class_name_ref);
 	free (library_name_ref);
 	free (patch_wrapped_ref);

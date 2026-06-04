@@ -163,6 +163,34 @@ void dart_ctx_fini_layout(DartCtx *ctx, DartVerLayout *owned) {
 	ctx->layout = NULL;
 }
 
+static void dart_pool_print_snapshot_json(DartCtx *ctx) {
+	if (!ctx || !ctx->dump_snapshot_json || !ctx->iso_data) {
+		return;
+	}
+	DartSnapshotHeader sh;
+	if (!dart_snapshot_header_read (ctx, ctx->iso_data, &sh)) {
+		return;
+	}
+	ut64 nc = sh.nc;
+	if (! (sh.nc > 0 && sh.nc < 1000000 && sh.no > 0 && sh.no < 10000000)) {
+		nc = 0;
+	}
+	printf ("{\"kind\":%" PFMT64u ",\"hash\":\"%s\",\"vm_data\":%" PFMT64u ",\"vm_instr\":%" PFMT64u ",\"iso_data\":%" PFMT64u ",\"iso_instr\":%" PFMT64u ",\"cluster\":{\"base\":%" PFMT64u ",\"objs\":%" PFMT64u ",\"clusters\":%" PFMT64u ",\"it_len\":%" PFMT64u ",\"it_off\":%" PFMT64u ",\"total\":%" PFMT64u "},\"cws\":%d}\n",
+		(ut64)sh.kind,
+		ctx->snapshot_hash,
+		(ut64)ctx->vm_data,
+		(ut64)ctx->vm_instr,
+		(ut64)ctx->iso_data,
+		(ut64)ctx->iso_instr,
+		(ut64)sh.nb,
+		(ut64)sh.no,
+		(ut64)nc,
+		(ut64)sh.itlen,
+		(ut64)sh.itdata,
+		(ut64)sh.total_len,
+		ctx->compressed_word_size);
+}
+
 static int decode_pool_and_emit(DartCtx *ctx, const DartItEmitCallbacks *cb, bool include_stubs, ut64 it_limit) {
 	if (!ctx || !ctx->iso_data || !cb) {
 		return -1;
@@ -181,7 +209,6 @@ static int decode_pool_and_emit(DartCtx *ctx, const DartItEmitCallbacks *cb, boo
 		eprintf ("[r2flutter] features: %s\n", sh.flags);
 	}
 	ut64 total_len = sh.total_len;
-	ut64 kind = sh.kind;
 	ut64 nb = sh.nb;
 	ut64 no = sh.no;
 	ut64 nc = sh.nc;
@@ -196,23 +223,6 @@ static int decode_pool_and_emit(DartCtx *ctx, const DartItEmitCallbacks *cb, boo
 			fprintf (stderr, "[r2flutter] warning: snapshot header values out of expected range, skipping cluster deserialization\n");
 		}
 		nc = 0;
-	}
-
-	if (ctx->dump_snapshot_json) {
-		printf ("{\"kind\":%" PFMT64u ",\"hash\":\"%s\",\"vm_data\":%" PFMT64u ",\"vm_instr\":%" PFMT64u ",\"iso_data\":%" PFMT64u ",\"iso_instr\":%" PFMT64u ",\"cluster\":{\"base\":%" PFMT64u ",\"objs\":%" PFMT64u ",\"clusters\":%" PFMT64u ",\"it_len\":%" PFMT64u ",\"it_off\":%" PFMT64u ",\"total\":%" PFMT64u "},\"cws\":%d}\n",
-			(ut64)kind,
-			ctx->snapshot_hash,
-			(ut64)ctx->vm_data,
-			(ut64)ctx->vm_instr,
-			(ut64)ctx->iso_data,
-			(ut64)ctx->iso_instr,
-			(ut64)nb,
-			(ut64)no,
-			(ut64)nc,
-			(ut64)itlen,
-			(ut64)itdata,
-			(ut64)total_len,
-			ctx->compressed_word_size);
 	}
 
 	ctx->num_base_objects = nb;
@@ -443,6 +453,7 @@ int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, DartPoolFunctionC
 		if (!ctx->no_stubs) {
 			emit_stub_symbols (ctx, on_fn, user);
 		}
+		dart_pool_print_snapshot_json (ctx);
 		const DartItEmitCallbacks cb = {
 			.on_fn = on_fn,
 			.fn_user = user,
@@ -1108,6 +1119,7 @@ RVecDartInstructionTableEntry *dart_pool_extract_instruction_table(DartCtx *ctx)
 	}
 	DartVerLayout layout_tmp;
 	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
+	dart_pool_print_snapshot_json (ctx);
 	const DartItEmitCallbacks cb = {
 		.on_it = collect_it_entry_cb,
 		.it_user = list,
