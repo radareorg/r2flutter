@@ -934,7 +934,7 @@ char *dart_pool_dump_header_deep(DartCtx *ctx, int fmt) {
 	return dart_pool_dump_header_ext_level (ctx, fmt, 3);
 }
 
-static void dart_pp_info_fini(DartPpInfo *info) {
+void dart_pp_info_fini(DartPpInfo *info) {
 	if (!info) {
 		return;
 	}
@@ -956,7 +956,7 @@ static bool resolve_pp_from_snapshot(DartCtx *ctx, ut64 snapshot_base, const cha
 	return dart_modern_build_synthetic_pp (&req, snapshot_base, label, data_image_base, info);
 }
 
-static bool resolve_pp_info(DartCtx *ctx, DartPpInfo *info) {
+bool dart_resolve_pp_info(DartCtx *ctx, DartPpInfo *info) {
 	if (!ctx || !ctx->core || !info) {
 		return false;
 	}
@@ -965,12 +965,14 @@ static bool resolve_pp_info(DartCtx *ctx, DartPpInfo *info) {
 		return false;
 	}
 	DartVerLayout layout_tmp;
-	DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
+	DartVerLayout *layout_owned = ctx->layout? NULL: dart_ctx_init_layout (ctx, &layout_tmp);
 	bool ok = resolve_pp_from_snapshot (ctx, ctx->iso_data, "Isolate", info);
 	if (!ok) {
 		ok = resolve_pp_from_snapshot (ctx, ctx->vm_data, "VM", info);
 	}
-	dart_ctx_fini_layout (ctx, layout_owned);
+	if (layout_owned) {
+		dart_ctx_fini_layout (ctx, layout_owned);
+	}
 	return ok;
 }
 
@@ -1061,7 +1063,7 @@ static char *dump_pp_text(const DartPpInfo *info, bool quiet) {
 
 char *dart_pool_dump_pp(DartCtx *ctx, int fmt) {
 	DartPpInfo info = { 0 };
-	if (!resolve_pp_info (ctx, &info)) {
+	if (!dart_resolve_pp_info (ctx, &info)) {
 		if (fmt == 'j') {
 			return strdup ("{\"error\":\"PP not resolved\",\"reason\":\"ObjectPool fill payload was not decoded\"}");
 		}

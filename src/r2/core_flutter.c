@@ -20,6 +20,7 @@ typedef struct {
 	bool string_refs;
 	bool help;
 	char *obf_map_path;
+	char *object_spec;
 } R2FlutterCmd;
 
 static bool r2flutter_core_init(RCorePluginSession *cps) {
@@ -69,6 +70,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -HHH     decode selected cluster payloads for diagnostics\n"
 		"| r2flutter -h       show this help\n"
 		"| r2flutter -i       dump instruction table entries\n"
+		"| r2flutter -O addr  decode Dart tagged/object pointer or ObjectPool PP slot\n"
 		"| r2flutter -p       print reconstructed ObjectPool PP value\n"
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
 		"| r2flutter -S       dump best-effort recovered SBOM/components\n"
@@ -161,6 +163,7 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 	cmd->string_refs = false;
 	cmd->help = false;
 	cmd->obf_map_path = NULL;
+	cmd->object_spec = NULL;
 	char *dup = strdup (args);
 	int nwords = r_str_word_set0 (dup);
 	char **words = R_NEWS0 (char *, nwords);
@@ -211,6 +214,19 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				dctx->dump_it = true;
 				cmd->action = flag;
 				break;
+			case 'O':
+				{
+					const char *arg = r2flutter_opt_arg (tail, words, nwords, &i);
+					if (!arg) {
+						cmd->help = true;
+						break;
+					}
+					free (cmd->object_spec);
+					cmd->object_spec = strdup (arg);
+					cmd->action = flag;
+					j += strlen (tail);
+					break;
+				}
 			case 'p':
 				cmd->action = flag;
 				break;
@@ -284,7 +300,7 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				cmd->help = true;
 				break;
 			}
-			if (cmd->help || (R_STR_ISNOTEMPTY (tail) && (flag == 'l' || flag == 'm'))) {
+			if (cmd->help || (R_STR_ISNOTEMPTY (tail) && (flag == 'l' || flag == 'm' || flag == 'O'))) {
 				break;
 			}
 		}
@@ -334,6 +350,9 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		break;
 	case 'i':
 		out = dart_pool_dump_it (dctx, cmd->fmt);
+		break;
+	case 'O':
+		out = dart_pool_dump_object (dctx, cmd->object_spec, cmd->fmt);
 		break;
 	case 'p':
 		out = dart_pool_dump_pp (dctx, cmd->fmt);
@@ -401,6 +420,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 			ret = r2flutter_run_cmd (core, &dctx, &cmd);
 		}
 		free (cmd.obf_map_path);
+		free (cmd.object_spec);
 		return ret;
 	}
 	r2flutter_help (core);

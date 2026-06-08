@@ -963,3 +963,19 @@ Dart package versions are not normally serialized in AOT snapshots. Treat
 is explicit packaged metadata. The report carries `source`, `confidence`, and
 `evidence` so downstream tooling can distinguish hard metadata from URI/string
 inference. The top-level JSON intentionally says `complete: false`.
+
+## Object And PP Slot Inspector
+
+Runtime Dart values and static ObjectPool serialization need separate decode
+paths. `-O <addr>` treats the input as a Dart tagged value first: low-bit-clear
+values are Smis, low-bit-set values are untagged before reading an object
+header, and plain aligned addresses are also tried as object starts. When the
+CID resolves to a string class, the length Smi is the exact code-unit length;
+NUL padding is only display padding.
+
+`-O pp+<off>` resolves against the same reconstructed static PP image as `-p`.
+The synthetic PP stores immediate entries directly, but tagged-object entries
+are zero placeholders because the serialized cluster stores reference IDs, not
+live object pointers. The inspector therefore also walks the first decoded
+ObjectPool cluster entry at that PP offset and reports entry bits, ref ID,
+resolved kind/name/CID, and code index when available.

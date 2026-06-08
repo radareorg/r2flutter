@@ -1,0 +1,29 @@
+NAME=object-inspect-tagged-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -j -O 0x1651 bins/android/first 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); o = j["value"]["object"]; s = o["string"]; print ("%s addr=0x%x cid=%d len=%d value=%s" % (j["kind"], o["addr"], o["cid"], s["length"], s["value"]))'
+EOF
+EXPECT=<<EOF
+object addr=0x1650 cid=93 len=11 value=_Uint16List
+EOF
+RUN
+
+NAME=object-inspect-pp-mafia
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -j -O pp+0x68 bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); p = j["pp_slot"]; v = j["value"]; print ("%s index=%d type=%s kind=%s cid=%d name=%s decoded=%s" % (j["kind"], p["entry_index"], p["type"], p["resolved_kind"], p["resolved_cid"], p["resolved_name"], v["decoded"]))'
+EOF
+EXPECT=<<EOF
+object_pool_ref index=11 type=tagged_object kind=string cid=93 name=getCallbackHandle decoded=False
+EOF
+RUN
+
+NAME=object-inspect-plugin-android
+FILE=-
+CMDS=<<EOF
+!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -q -O 0x1651\" bins/android/first/libapp.so 2>/dev/null"
+EOF
+EXPECT=<<EOF
+_Uint16List
+EOF
+RUN

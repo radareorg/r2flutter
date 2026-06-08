@@ -1,0 +1,26 @@
+NAME=sbom-synthetic
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -S bins/synthetic/field_snapshot.bin 2>/dev/null | sed -n '1,8p'
+EOF
+EXPECT=<<EOF
+# Dart/Flutter Recovered Components
+# complete: false
+# versions: explicit metadata only; AOT snapshots usually do not serialize pub package versions
+snapshot_hash: 00000000000000000000000000000000
+dart_version: unknown
+components: 2
+dart-package test - confidence=90 source=library_cluster occurrences=3 evidence=package:test
+runtime dart-sdk - confidence=70 source=snapshot_header evidence=snapshot_hash=00000000000000000000000000000000
+EOF
+RUN
+
+NAME=json-sbom-synthetic
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -jS bins/synthetic/field_snapshot.bin 2>/dev/null
+EOF
+EXPECT=<<EOF
+{"format":"r2flutter-recovered-sbom","complete":false,"note":"Best-effort component report. Dart package versions are null unless explicit packaged metadata is present.","input":"bins/synthetic/field_snapshot.bin","snapshot":{"hash":"00000000000000000000000000000000","dart_version":"unknown","vm_data":4,"iso_data":4},"count":2,"components":[{"type":"dart-package","name":"test","version":null,"confidence":90,"occurrences":3,"source":"library_cluster","evidence":"package:test"},{"type":"runtime","name":"dart-sdk","version":null,"confidence":70,"occurrences":1,"source":"snapshot_header","evidence":"snapshot_hash=00000000000000000000000000000000"}]}
+EOF
+RUN

@@ -30,6 +30,7 @@ static const char usage_text[] =
 	"  -HH                   Print extended snapshot header and cluster layout\n"
 	"  -HHH                  Decode selected cluster payloads for diagnostics\n"
 	"  -i                    Print instruction table entries to stdout\n"
+	"  -O <addr|pp+off>      Decode Dart tagged/object pointer or ObjectPool PP slot\n"
 	"  -p                    Print reconstructed ObjectPool PP value\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
 	"  -S                    Print best-effort recovered SBOM/components\n"
@@ -111,11 +112,12 @@ int main(int argc, char **argv) {
 	int analysis_depth = 0;
 	int header_depth = 0;
 	int string_depth = 0;
+	const char *object_spec = NULL;
 	DartCtx dctx = {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijnm:pqrRSzTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijnm:O:pqrRSzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -139,6 +141,10 @@ int main(int argc, char **argv) {
 		case 'i':
 			action = c;
 			dctx.dump_it = true;
+			break;
+		case 'O':
+			action = c;
+			object_spec = opt.arg;
 			break;
 		case 'p':
 			action = c;
@@ -304,6 +310,9 @@ int main(int argc, char **argv) {
 		break;
 	case 'i':
 		output = dart_pool_dump_it (&app->dctx, fmt);
+		break;
+	case 'O':
+		output = dart_pool_dump_object (&app->dctx, object_spec, fmt);
 		break;
 	case 'p':
 		output = dart_pool_dump_pp (&app->dctx, fmt);

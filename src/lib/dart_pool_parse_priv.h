@@ -150,6 +150,32 @@ typedef struct {
 	ut8 *image;
 } DartPpInfo;
 
+typedef struct {
+	bool valid;
+	ut64 cluster_index;
+	ut64 pool_index;
+	ut64 pool_ref;
+	ut64 length;
+	ut64 index;
+	ut64 pool_offset;
+	ut64 pp_offset;
+	ut64 stream_offset;
+	ut64 value_offset;
+	ut64 ref;
+	ut64 raw;
+	ut8 bits;
+	ut8 type;
+	ut8 patch;
+	ut8 behavior;
+	const char *type_name;
+	const char *patch_name;
+	const char *behavior_name;
+	const char *resolved_kind;
+	char *resolved_name;
+	int resolved_cid;
+	ut64 resolved_code_index;
+} DartModernPoolSlotInfo;
+
 typedef void(*DartInstructionTableEntryCallback)(const DartInstructionTableEntry *entry, void *user);
 
 typedef struct {
@@ -233,6 +259,8 @@ bool modern_skip_n_bytes(ClusterStream *s, ut64 len);
 bool dart_modern_is_supported_snapshot(DartCtx *ctx);
 bool dart_modern_emit_cluster_summary(const DartModernClusterSummaryRequest *req);
 bool dart_modern_build_synthetic_pp(const DartModernClusterRequest *req, ut64 snapshot_base, const char *snapshot_label, ut64 data_image_base, DartPpInfo *out);
+bool dart_modern_resolve_pp_slot(const DartModernClusterRequest *req, ut64 pp_offset, DartModernPoolSlotInfo *out);
+void dart_modern_pool_slot_info_fini(DartModernPoolSlotInfo *info);
 bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClusterRequest *req, RList *strings, HtUP *seen_refs, ut64 *ref_counter);
 bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen);
 bool dart_modern_extract_classes_from_clusters(const DartModernClusterRequest *req, RList *class_list);
@@ -248,5 +276,8 @@ const char *method_kind_name(uint32_t kind_tag);
 int dart_it_emit_linear(const DartItEmitRequest *req);
 int dart_it_emit_fixed(const DartItEmitRequest *req);
 int dart_it_emit_varint(const DartItEmitRequest *req);
+
+bool dart_resolve_pp_info(DartCtx *ctx, DartPpInfo *info);
+void dart_pp_info_fini(DartPpInfo *info);
 
 #endif

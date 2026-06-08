@@ -2364,6 +2364,112 @@ fail:
 	return NULL;
 }
 
+void dart_modern_pool_slot_info_fini(DartModernPoolSlotInfo *info) {
+	if (!info) {
+		return;
+	}
+	free (info->resolved_name);
+	memset (info, 0, sizeof (*info));
+	info->resolved_cid = -1;
+	info->resolved_code_index = UT64_MAX;
+}
+
+static void modern_pool_slot_info_set_resolved(DartModernPoolSlotInfo *out, const ModernResolvedRef *resolved) {
+	if (!out || !resolved) {
+		return;
+	}
+	out->resolved_kind = resolved->kind;
+	out->resolved_cid = resolved->cid;
+	out->resolved_code_index = resolved->code_index;
+	if (R_STR_ISNOTEMPTY (resolved->name)) {
+		out->resolved_name = strdup (resolved->name);
+	}
+}
+
+bool dart_modern_resolve_pp_slot(const DartModernClusterRequest *req, ut64 pp_offset, DartModernPoolSlotInfo *out) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	if (!ctx || !out || !dart_modern_is_supported_snapshot (ctx)) {
+		return false;
+	}
+	memset (out, 0, sizeof (*out));
+	out->resolved_cid = -1;
+	out->resolved_code_index = UT64_MAX;
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
+	if (!meta) {
+		return false;
+	}
+	ModernRefResolver resolver = { 0 };
+	bool have_resolver = modern_ref_resolver_init (&resolver, ctx, meta, req->num_clusters, req->num_base_objects);
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
+	bool done = false;
+	bool ok = false;
+	for (ut64 i = 0; i < req->num_clusters && !done; i++) {
+		ModernClusterMeta *m = &meta[i];
+		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
+			continue;
+		}
+		ClusterStream s = {
+			.ctx = ctx,
+			.cursor = m->fill_offset,
+			.end = m->fill_end,
+};
+		for (ut64 pool_index = 0; pool_index < m->count && !done; pool_index++) {
+			ut64 length = 0;
+			if (!cs_read_unsigned (&s, &length)) {
+				break;
+			}
+			done = true;
+			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
+				ModernPoolEntry entry = {
+					.index = entry_index,
+					.stream_offset = s.cursor,
+};
+				if (!cs_read_u8 (&s, &entry.bits)) {
+					break;
+				}
+				entry.type = entry.bits & 0x0f;
+				entry.patch = (entry.bits >> 4) & 1;
+				entry.behavior = entry.bits >> 5;
+				entry.value_offset = s.cursor;
+				if (!modern_decode_pool_entry (&s, ctx, entry.type, entry.behavior, &entry.ref, &entry.raw)) {
+					break;
+				}
+				ut64 entry_pp = modern_pool_entry_pp_offset (ctx, entry_index);
+				if (entry_pp != pp_offset) {
+					continue;
+				}
+				modern_resolve_pool_entry (have_resolver? &resolver: NULL, &cids, entry.type, entry.behavior, entry.ref, &entry.resolved);
+				out->valid = true;
+				out->cluster_index = i;
+				out->pool_index = pool_index;
+				out->pool_ref = m->start_ref + pool_index;
+				out->length = length;
+				out->index = entry_index;
+				out->pool_offset = modern_pool_entry_pool_offset (ctx, entry_index);
+				out->pp_offset = entry_pp;
+				out->stream_offset = entry.stream_offset;
+				out->value_offset = entry.value_offset;
+				out->ref = entry.ref;
+				out->raw = entry.raw;
+				out->bits = entry.bits;
+				out->type = entry.type;
+				out->patch = entry.patch;
+				out->behavior = entry.behavior;
+				out->type_name = modern_pool_entry_type_name (entry.type);
+				out->patch_name = modern_pool_entry_patch_name (entry.patch);
+				out->behavior_name = modern_pool_entry_behavior_name (entry.behavior);
+				modern_pool_slot_info_set_resolved (out, &entry.resolved);
+				modern_resolved_ref_fini (&entry.resolved);
+				ok = true;
+				break;
+			}
+		}
+	}
+	modern_ref_resolver_fini (&resolver);
+	modern_cluster_meta_free (meta, req->num_clusters);
+	return ok;
+}
+
 static bool modern_object_pool_string_ref_exists(RList *refs, ut64 pool_ref, ut64 entry_index) {
 	if (!refs) {
 		return false;

@@ -1,0 +1,12 @@
+{
+  "name": "sbom-synthetic",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-S", "bins/synthetic/field_snapshot.bin"],
+  "timeout": 10,
+  "expect": {
+    "contains": [
+      "dart-package\ttest\t-\tlibrary_cluster\t90",
+      "runtime\tdart-sdk\t-\tsnapshot_header\t70"
+    ]
+  }
+}

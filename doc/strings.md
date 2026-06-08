@@ -67,6 +67,23 @@ value, which may be a string object pointer, a Smi, a class, a type, a code
 object, or something else. The length comes only after resolving and decoding
 the target object.
 
+### Decision Rule
+
+Exact string length is available only when the parser has structured Dart
+metadata:
+
+1. a snapshot string record boundary, where `encoded >> 1` gives the code-unit
+   length; or
+2. a resolved Dart string object, where the object `length_` Smi gives the
+   code-unit length.
+
+If the parser only has a raw address into bytes, and it cannot prove that the
+address is the start of a serialized string record or a valid Dart string
+object, then the exact Dart string length is not knowable. Reading until
+`0x00`, until a non-printable byte, until padding, or until the next plausible
+record is carving. That can be useful for `-zz` triage, but it must not be
+treated as a non-heuristic string length.
+
 ## Tagged Pointers
 
 Dart heap object pointers are tagged. Smis and heap objects are distinguished
@@ -89,6 +106,19 @@ pointer. In practice, `r2flutter` must know:
 The CID table is version-dependent. Do not hardcode string CIDs globally. Use
 the resolved `DartVerLayout` values for `cid_string`, `cid_one_byte_string`, and
 `cid_two_byte_string`.
+
+`r2flutter -O <addr>` is the direct inspector for this path. It accepts a Smi,
+a tagged heap pointer such as `0x1651`, or an untagged object address such as
+`0x1650`. For string objects it reports the object header, CID, length Smi,
+payload address, code-unit length, encoding, and a bounded value preview. With
+`-j`, the same fields are emitted as JSON.
+
+`r2flutter -O pp+<off>` resolves a reconstructed ObjectPool PP slot. For
+immediate entries it decodes the raw tagged value. For tagged-object entries it
+reports the serialized ObjectPool entry bits, target reference ID, and any
+cluster-resolved kind/name/CID. The synthetic PP image contains zero
+placeholders for those object refs, so the command must not treat that zero as
+the runtime object value.
 
 ## NUL Termination
 

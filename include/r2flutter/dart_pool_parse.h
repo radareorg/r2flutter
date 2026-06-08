@@ -165,6 +165,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt);
 char *dart_pool_dump_header_ext(DartCtx *ctx, int fmt);
 char *dart_pool_dump_header_deep(DartCtx *ctx, int fmt);
 char *dart_pool_dump_pp(DartCtx *ctx, int fmt);
+char *dart_pool_dump_object(DartCtx *ctx, const char *spec, int fmt);
 
 // ============================================================================
 // Class Extraction API
