@@ -1168,6 +1168,8 @@ static ut64 modern_pool_entry_pp_offset(DartCtx *ctx, ut64 index) {
 	return modern_pool_entry_pool_offset (ctx, index) + 1;
 }
 
+static bool modern_read_pool_entry(ClusterStream *s, DartCtx *ctx, ut64 index, ModernPoolEntry *entry);
+
 static bool modern_skip_fill_instance(ClusterStream *s, const ModernClusterMeta *meta) {
 	ut64 bitmap = 0;
 	if (!cs_read_unsigned (s, &bitmap)) {
@@ -1230,26 +1232,9 @@ static bool modern_skip_fill_object_pool(ClusterStream *s, const ModernClusterMe
 			return false;
 		}
 		for (ut64 j = 0; j < length; j++) {
-			ut8 entry_bits = 0;
-			if (!cs_read_u8 (s, &entry_bits)) {
+			ModernPoolEntry entry;
+			if (!modern_read_pool_entry (s, s->ctx, j, &entry)) {
 				return false;
-			}
-			ut8 behavior = entry_bits >> 5;
-			ut8 type = entry_bits & 0x0f;
-			if (behavior == 0) {
-				if (type == 0) {
-					int64_t imm = 0;
-					if (!cs_read_tagged64 (s, &imm)) {
-						return false;
-					}
-				} else if (type == 1) {
-					ut64 ref = 0;
-					if (!cs_read_ref_id (s, &ref)) {
-						return false;
-					}
-				} else if (type != 2) {
-					return false;
-				}
 			}
 		}
 	}
@@ -1405,6 +1390,25 @@ static bool modern_decode_pool_entry(ClusterStream *s, DartCtx *ctx, ut8 type, u
 	default:
 		return false;
 	}
+}
+
+static bool modern_read_pool_entry(ClusterStream *s, DartCtx *ctx, ut64 index, ModernPoolEntry *entry) {
+	if (!s || !entry) {
+		return false;
+	}
+	memset (entry, 0, sizeof (*entry));
+	entry->index = index;
+	entry->stream_offset = s->cursor;
+	entry->resolved.cid = -1;
+	entry->resolved.code_index = UT64_MAX;
+	if (!cs_read_u8 (s, &entry->bits)) {
+		return false;
+	}
+	entry->type = entry->bits & 0x0f;
+	entry->patch = (entry->bits >> 4) & 1;
+	entry->behavior = entry->bits >> 5;
+	entry->value_offset = s->cursor;
+	return modern_decode_pool_entry (s, ctx, entry->type, entry->behavior, &entry->ref, &entry->raw);
 }
 
 static ut64 modern_resolver_ref_count(const ModernClusterMeta *meta, ut64 num_clusters, ut64 num_base_objects) {
@@ -1917,19 +1921,8 @@ static bool modern_emit_object_pool_details(ModernEmitCtx *emit, const ModernClu
 		emit->pool_index = i;
 		emit->pool_ref = pool_ref;
 		for (ut64 j = 0; j < length; j++) {
-			ModernPoolEntry entry = {
-				.index = j,
-				.stream_offset = s.cursor,
-};
-			if (!cs_read_u8 (&s, &entry.bits)) {
-				ok = false;
-				break;
-			}
-			entry.type = entry.bits & 0x0f;
-			entry.patch = (entry.bits >> 4) & 1;
-			entry.behavior = entry.bits >> 5;
-			entry.value_offset = s.cursor;
-			if (!modern_decode_pool_entry (&s, ctx, entry.type, entry.behavior, &entry.ref, &entry.raw)) {
+			ModernPoolEntry entry;
+			if (!modern_read_pool_entry (&s, ctx, j, &entry)) {
 				ok = false;
 				break;
 			}
@@ -2140,7 +2133,6 @@ static void modern_emit_cluster_r2(ModernEmitCtx *emit, const ModernClusterMeta 
 	}
 }
 
-#define DART_SYNTHETIC_PP_BASE 0x100000000ULL
 #define DART_SYNTHETIC_PP_MAX_SIZE (64ULL << 20)
 
 static ut64 modern_align_up(ut64 value, ut64 align) {
@@ -2166,27 +2158,16 @@ static ut64 modern_vaddr_to_paddr(DartCtx *ctx, ut64 vaddr) {
 	return paddr == UT64_MAX? vaddr: paddr;
 }
 
-static bool modern_decode_pool_entry_for_pp(ClusterStream *s, ut8 type, ut8 behavior, ut64 *out_ref, ut64 *out_raw);
-
 static bool modern_skip_pool_payload_for_pp(ClusterStream *s) {
 	ut64 length = 0;
 	if (!cs_read_unsigned (s, &length)) {
 		return false;
 	}
 	for (ut64 j = 0; j < length; j++) {
-		ut8 bits = 0;
-		if (!cs_read_u8 (s, &bits)) {
+		ModernPoolEntry entry;
+		if (!modern_read_pool_entry (s, s->ctx, j, &entry)) {
 			return false;
 		}
-		ut8 type = bits & 0x0f;
-		ut8 behavior = bits >> 5;
-		ut64 ref = 0;
-		ut64 raw = 0;
-		if (!modern_decode_pool_entry_for_pp (s, type, behavior, &ref, &raw)) {
-			return false;
-		}
-		(void)ref;
-		(void)raw;
 	}
 	return true;
 }
@@ -2226,26 +2207,17 @@ static bool modern_build_pp_image_from_pool(const ModernEmitCtx *emit, const Mod
 	}
 	modern_write_target_word (image, (ut64)word_size, word_size, length);
 	for (ut64 j = 0; j < length; j++) {
-		ut8 bits = 0;
-		if (!cs_read_u8 (&s, &bits)) {
+		ModernPoolEntry entry;
+		if (!modern_read_pool_entry (&s, ctx, j, &entry)) {
 			free (image);
 			return false;
 		}
-		ut8 type = bits & 0x0f;
-		ut8 behavior = bits >> 5;
-		ut64 ref = 0;
-		ut64 raw = 0;
-		if (!modern_decode_pool_entry_for_pp (&s, type, behavior, &ref, &raw)) {
-			free (image);
-			return false;
-		}
-		(void)ref;
 		ut64 value = 0;
-		if (behavior == 0 && type == 0) {
-			value = raw;
+		if (entry.behavior == 0 && entry.type == 0) {
+			value = entry.raw;
 		}
 		modern_write_target_word (image, entries_offset + (j *(ut64)word_size), word_size, value);
-		image[entry_bits_offset + j] = bits;
+		image[entry_bits_offset + j] = entry.bits;
 	}
 	memset (out, 0, sizeof (*out));
 	out->base = DART_SYNTHETIC_PP_BASE;
@@ -2263,32 +2235,6 @@ static bool modern_build_pp_image_from_pool(const ModernEmitCtx *emit, const Mod
 	out->word_size = word_size;
 	out->image = image;
 	return true;
-}
-
-static bool modern_decode_pool_entry_for_pp(ClusterStream *s, ut8 type, ut8 behavior, ut64 *out_ref, ut64 *out_raw) {
-	if (out_ref) {
-		*out_ref = 0;
-	}
-	if (out_raw) {
-		*out_raw = 0;
-	}
-	if (behavior != 0) {
-		return true;
-	}
-	if (type == 0) {
-		int64_t imm = 0;
-		if (!cs_read_tagged64 (s, &imm)) {
-			return false;
-		}
-		if (out_raw) {
-			*out_raw = (ut64)imm;
-		}
-		return true;
-	}
-	if (type == 1) {
-		return cs_read_ref_id (s, out_ref);
-	}
-	return type == 2;
 }
 
 static void modern_cluster_meta_free(ModernClusterMeta *meta, ut64 num_clusters) {
@@ -2420,18 +2366,8 @@ bool dart_modern_resolve_pp_slot(const DartModernClusterRequest *req, ut64 pp_of
 			}
 			done = true;
 			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
-				ModernPoolEntry entry = {
-					.index = entry_index,
-					.stream_offset = s.cursor,
-};
-				if (!cs_read_u8 (&s, &entry.bits)) {
-					break;
-				}
-				entry.type = entry.bits & 0x0f;
-				entry.patch = (entry.bits >> 4) & 1;
-				entry.behavior = entry.bits >> 5;
-				entry.value_offset = s.cursor;
-				if (!modern_decode_pool_entry (&s, ctx, entry.type, entry.behavior, &entry.ref, &entry.raw)) {
+				ModernPoolEntry entry;
+				if (!modern_read_pool_entry (&s, ctx, entry_index, &entry)) {
 					break;
 				}
 				ut64 entry_pp = modern_pool_entry_pp_offset (ctx, entry_index);
@@ -2555,16 +2491,8 @@ bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClust
 				break;
 			}
 			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
-				ModernPoolEntry entry = {
-					.index = entry_index,
-};
-				if (!cs_read_u8 (&s, &entry.bits)) {
-					ok = false;
-					break;
-				}
-				entry.type = entry.bits & 0x0f;
-				entry.behavior = entry.bits >> 5;
-				if (!modern_decode_pool_entry (&s, ctx, entry.type, entry.behavior, &entry.ref, &entry.raw)) {
+				ModernPoolEntry entry;
+				if (!modern_read_pool_entry (&s, ctx, entry_index, &entry)) {
 					ok = false;
 					break;
 				}

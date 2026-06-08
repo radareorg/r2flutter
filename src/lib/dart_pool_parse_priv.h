@@ -9,6 +9,8 @@
 #include "../../include/r2flutter/dart_r2.h"
 #include "../../include/r2flutter/dart_version.h"
 
+#define DART_SYNTHETIC_PP_BASE 0x100000000ULL
+
 typedef struct {
 	DartCtx *ctx;
 	ut64 cursor;
@@ -151,6 +153,15 @@ typedef struct {
 } DartPpInfo;
 
 typedef struct {
+	bool bits_ok;
+	ut64 offset;
+	ut64 addr;
+	ut64 raw;
+	ut64 index;
+	ut8 bits;
+} DartPpSlotRaw;
+
+typedef struct {
 	bool valid;
 	ut64 cluster_index;
 	ut64 pool_index;
@@ -278,6 +289,7 @@ int dart_it_emit_fixed(const DartItEmitRequest *req);
 int dart_it_emit_varint(const DartItEmitRequest *req);
 
 bool dart_resolve_pp_info(DartCtx *ctx, DartPpInfo *info);
+bool dart_pp_info_read_slot(const DartPpInfo *info, ut64 offset, DartPpSlotRaw *slot);
 void dart_pp_info_fini(DartPpInfo *info);
 
 #endif

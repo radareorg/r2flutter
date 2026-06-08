@@ -5,7 +5,6 @@
 #define DART_OBJECT_STRING_PREVIEW_BYTES 4096ULL
 #define DART_OBJECT_MAX_STRING_BYTES (1024ULL * 1024ULL)
 #define DART_OBJECT_MAX_CANDIDATES 8
-#define DART_OBJECT_SYNTHETIC_PP_BASE 0x100000000ULL
 
 typedef struct {
 	bool valid;
@@ -345,22 +344,16 @@ static bool dart_pp_slot_decode(DartCtx *ctx, ut64 offset, DartPpSlotInfo *slot)
 	if (!dart_resolve_pp_info (ctx, &slot->pp)) {
 		return false;
 	}
-	if (offset + (ut64)slot->pp.word_size > slot->pp.size) {
+	DartPpSlotRaw raw_slot;
+	if (!dart_pp_info_read_slot (&slot->pp, offset, &raw_slot)) {
 		return false;
 	}
-	slot->addr = slot->pp.base + offset;
-	slot->raw = slot->pp.word_size == 4? (ut64)r_read_le32 (slot->pp.image + offset): r_read_le64 (slot->pp.image + offset);
+	slot->addr = raw_slot.addr;
+	slot->raw = raw_slot.raw;
+	slot->index = raw_slot.index;
+	slot->bits = raw_slot.bits;
+	slot->bits_ok = raw_slot.bits_ok;
 	slot->read_ok = true;
-	if (offset >= slot->pp.entries_offset && offset < slot->pp.entry_bits_offset) {
-		ut64 entry_off = offset - slot->pp.entries_offset;
-		if (slot->pp.word_size > 0 && entry_off % (ut64)slot->pp.word_size == 0) {
-			slot->index = entry_off / (ut64)slot->pp.word_size;
-			if (slot->index < slot->pp.length) {
-				slot->bits = slot->pp.image[slot->pp.entry_bits_offset + slot->index];
-				slot->bits_ok = true;
-			}
-		}
-	}
 	if (slot->bits_ok) {
 		DartSnapshotHeader sh = { 0 };
 		if (dart_snapshot_header_read (ctx, slot->pp.snapshot_base, &sh) && sh.ok) {
@@ -688,8 +681,8 @@ char *dart_pool_dump_object(DartCtx *ctx, const char *spec, int fmt) {
 			}
 			return fmt == 'r'? strdup ("# Error: invalid object spec\n"): strdup ("Error: invalid object spec\n");
 		}
-		if (raw >= DART_OBJECT_SYNTHETIC_PP_BASE) {
-			pp_offset = raw - DART_OBJECT_SYNTHETIC_PP_BASE;
+		if (raw >= DART_SYNTHETIC_PP_BASE) {
+			pp_offset = raw - DART_SYNTHETIC_PP_BASE;
 			is_pp = true;
 		}
 	}

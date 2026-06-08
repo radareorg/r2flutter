@@ -942,6 +942,37 @@ void dart_pp_info_fini(DartPpInfo *info) {
 	memset (info, 0, sizeof (*info));
 }
 
+bool dart_pp_info_read_slot(const DartPpInfo *info, ut64 offset, DartPpSlotRaw *slot) {
+	if (!info || !info->image || !slot) {
+		return false;
+	}
+	memset (slot, 0, sizeof (*slot));
+	const ut64 word_size = (ut64)info->word_size;
+	if ((word_size != 4 && word_size != 8) || offset > info->size || word_size > info->size - offset) {
+		return false;
+	}
+	slot->offset = offset;
+	slot->addr = info->base + offset;
+	slot->raw = word_size == 4? (ut64)r_read_le32 (info->image + offset): r_read_le64 (info->image + offset);
+	if (offset < info->entries_offset || offset >= info->entry_bits_offset) {
+		return true;
+	}
+	const ut64 entry_off = offset - info->entries_offset;
+	if (entry_off % word_size) {
+		return true;
+	}
+	slot->index = entry_off / word_size;
+	if (slot->index >= info->length) {
+		return true;
+	}
+	if (info->entry_bits_offset > info->size || slot->index >= info->size - info->entry_bits_offset) {
+		return true;
+	}
+	slot->bits = info->image[info->entry_bits_offset + slot->index];
+	slot->bits_ok = true;
+	return true;
+}
+
 static bool resolve_pp_from_snapshot(DartCtx *ctx, ut64 snapshot_base, const char *label, DartPpInfo *info) {
 	if (!ctx || !snapshot_base || !info) {
 		return false;
