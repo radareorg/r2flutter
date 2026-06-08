@@ -294,6 +294,33 @@ Supported xref kinds include:
 
 Origins are reported as `metadata`, `data-image`, or `scan`.
 
+### Recovered Components / SBOM
+
+`-S` emits a best-effort component report. It is a provenance report, not a
+guarantee that every dependency is present or versioned.
+
+Recovered component sources include:
+
+- snapshot header metadata for the Dart SDK snapshot hash/version
+- `Library` objects and `package:` URIs recovered from class metadata
+- package-looking strings carved from snapshot/data-image windows
+- Flutter asset paths such as `flutter_assets/packages/<name>/...` when the
+  standalone input is a directory/bundle
+- native bundle files such as `.so`, `.dylib`, and `.framework` entries
+- explicit metadata files, if present, such as `pubspec.lock`,
+  `.dart_tool/package_config.json`, and framework `Info.plist`
+
+Each component records `type`, `name`, nullable `version`, `source`,
+`confidence`, `occurrences`, and an evidence string. Dart package versions are
+usually `null` for AOT-only inputs because release snapshots do not serialize
+the pub resolution lockfile. Versions are filled only from explicit packaged
+metadata such as `pubspec.lock` or framework plist fields.
+
+JSON mode returns `format: "r2flutter-recovered-sbom"`, `complete: false`,
+snapshot hash/version/address metadata, and `components[]`. Text mode is
+human-readable; `-q -S` prints tab-separated component rows. `-r -S` emits
+radare2 flags under `dart.sbom.<type>.<name>`.
+
 ### Obfuscation Maps
 
 The obfuscation map loader expects a JSON array of alternating original and
@@ -331,6 +358,7 @@ name, then applies it to:
 | `-i` | Dump instruction-table entries. |
 | `-p` | Print the reconstructed static ObjectPool PP address pair; with `-r`, map the synthetic pool image and set `anal.gp`/`x27` from the synthetic vaddr. |
 | `-R` | Dump a radare2 script for applying method flags/comments and PP helpers. |
+| `-S` | Dump best-effort recovered components/SBOM with source, confidence, evidence, and nullable versions. |
 | `-T` | Dump type-oriented class output and run enum recovery. |
 | `-x` | Dump metadata/data-image xrefs; combine with `-z` to include string refs. |
 | `-z` | Dump reliable ObjectPool-referenced strings; `-q -z` prints values only. |
@@ -378,6 +406,7 @@ Plugin actions:
 | `r2flutter -i` | Print instruction-table entries. |
 | `r2flutter -p` | Print the reconstructed static ObjectPool PP address pair. |
 | `r2flutter -R` | Print full radare2 script output. |
+| `r2flutter -S` | Dump best-effort recovered components/SBOM from the current binary context. |
 | `r2flutter -f` | Dump recovered functions. |
 | `r2flutter -c` | Dump classes. |
 | `r2flutter -C` | Apply Dart classes, fields, methods, and types to r2. |
@@ -393,6 +422,7 @@ r2flutter -jc      # classes as JSON
 r2flutter -rz      # reliable ObjectPool string registration commands
 r2flutter -rzz     # fuzzy/carved string registration commands
 r2flutter -jH      # snapshot header as JSON
+r2flutter -jS      # recovered components/SBOM as JSON
 r2flutter -HH -l 8 # snapshot header plus first 8 clusters per snapshot
 r2flutter -HHH -l 36 # cluster walk plus ObjectPool entry diagnostics/status/ref resolution
 r2flutter -r -p    # map a synthetic ObjectPool and set anal.gp/x27

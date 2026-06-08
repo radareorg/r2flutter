@@ -948,3 +948,18 @@ Use the shared `dart_cid_get ()` / `DartCidKind` API as the source of truth for 
 ## String Xrefs In R2 Scripts
 
 `-z -r -x` and `-zzrx` emit `ax` commands for string references after registering the recovered strings. ObjectPool string references use the reconstructed synthetic PP address space (`0x100000000 + pp_off`), matching the `-r -p` PP mapping. Metadata-only references that have an object ref but no concrete file address use a synthetic object-ref namespace (`0x200000000 + object_ref`) so r2 can still carry the relation as an xref.
+
+## Recovered Component Reports Are Not Complete SBOMs
+
+`-S` now reports components from sources r2flutter can actually justify: the
+snapshot header (`dart-sdk` version/hash), Library/package URIs recovered from
+cluster metadata, package-looking snapshot strings, Flutter asset paths when
+the standalone input is a bundle directory, native `.so`/`.dylib`/`.framework`
+bundle files, and explicit metadata files such as `pubspec.lock`,
+`package_config.json`, or framework `Info.plist` when they survive packaging.
+
+Dart package versions are not normally serialized in AOT snapshots. Treat
+`version: null` as the honest default for `dart-package` rows unless the source
+is explicit packaged metadata. The report carries `source`, `confidence`, and
+`evidence` so downstream tooling can distinguish hard metadata from URI/string
+inference. The top-level JSON intentionally says `complete: false`.

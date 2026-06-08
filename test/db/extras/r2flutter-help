@@ -32,6 +32,7 @@ Actions:
   -i                    Print instruction table entries to stdout
   -p                    Print reconstructed ObjectPool PP value
   -R                    Print radare2 script for snapshot analysis
+  -S                    Print best-effort recovered SBOM/components
   -T                    Print string-based type names
   -x                    Print metadata/data-image xrefs; with -z, include string refs/ax in -r
   -z                    Print reliable ObjectPool-referenced strings (-q prints values only)
@@ -41,7 +42,7 @@ Options:
   -m <file>             Load Flutter obfuscation map JSON
 ===
 Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
-| r2flutter          show this help
+| r2flutter          show same -h help message
 | r2flutter -j <act> output JSON for dump actions
 | r2flutter -q <act> compact output; quiet analysis logs
 | r2flutter -r <act> output r2 commands for dump actions
@@ -62,6 +63,7 @@ Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter -i       dump instruction table entries
 | r2flutter -p       print reconstructed ObjectPool PP value
 | r2flutter -R       dump full radare2 script (like standalone -R)
+| r2flutter -S       dump best-effort recovered SBOM/components
 | r2flutter -T       dump string-based type names
 | r2flutter -V       show version
 | r2flutter -x       dump metadata/data-image xrefs; with -z, include string refs/ax in -r
@@ -71,7 +73,7 @@ Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 Usage: ../bin/r2flutter [options] <libapp_path_or_dir>
 ===
 Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
-| r2flutter          show this help
+| r2flutter          show same -h help message
 | r2flutter -j <act> output JSON for dump actions
 | r2flutter -q <act> compact output; quiet analysis logs
 | r2flutter -r <act> output r2 commands for dump actions
@@ -92,6 +94,7 @@ Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>
 | r2flutter -i       dump instruction table entries
 | r2flutter -p       print reconstructed ObjectPool PP value
 | r2flutter -R       dump full radare2 script (like standalone -R)
+| r2flutter -S       dump best-effort recovered SBOM/components
 | r2flutter -T       dump string-based type names
 | r2flutter -V       show version
 | r2flutter -x       dump metadata/data-image xrefs; with -z, include string refs/ax in -r

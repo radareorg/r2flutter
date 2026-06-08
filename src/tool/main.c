@@ -32,6 +32,7 @@ static const char usage_text[] =
 	"  -i                    Print instruction table entries to stdout\n"
 	"  -p                    Print reconstructed ObjectPool PP value\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
+	"  -S                    Print best-effort recovered SBOM/components\n"
 	"  -T                    Print string-based type names\n"
 	"  -x                    Print metadata/data-image xrefs; with -z, include string refs/ax in -r\n"
 	"  -z                    Print reliable ObjectPool-referenced strings (-q prints values only)\n"
@@ -114,7 +115,7 @@ int main(int argc, char **argv) {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijnm:pqrRzTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijnm:pqrRSzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -161,6 +162,9 @@ int main(int argc, char **argv) {
 			fmt = c;
 			break;
 		case 'R':
+			action = c;
+			break;
+		case 'S':
 			action = c;
 			break;
 		case 'z':
@@ -315,6 +319,9 @@ int main(int argc, char **argv) {
 		char *s = dart_dumper_dump4radare2 (app);
 		printf ("%s\n", s);
 		free (s);
+		break;
+	case 'S':
+		output = dart_pool_dump_sbom (&app->dctx, libapp_path_in, fmt);
 		break;
 	case 0:
 	default:

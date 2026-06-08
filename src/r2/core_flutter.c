@@ -50,7 +50,7 @@ static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
 		"Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>\n"
-		"| r2flutter          show this help\n"
+		"| r2flutter          show same -h help message\n"
 		"| r2flutter -j <act> output JSON for dump actions\n"
 		"| r2flutter -q <act> compact output; quiet analysis logs\n"
 		"| r2flutter -r <act> output r2 commands for dump actions\n"
@@ -71,6 +71,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -i       dump instruction table entries\n"
 		"| r2flutter -p       print reconstructed ObjectPool PP value\n"
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
+		"| r2flutter -S       dump best-effort recovered SBOM/components\n"
 		"| r2flutter -T       dump string-based type names\n"
 		"| r2flutter -V       show version\n"
 		"| r2flutter -x       dump metadata/data-image xrefs; with -z, include string refs/ax in -r\n"
@@ -252,6 +253,9 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 			case 'R':
 				cmd->action = flag;
 				break;
+			case 'S':
+				cmd->action = flag;
+				break;
 			case 'T':
 				cmd->action = flag;
 				break;
@@ -337,6 +341,9 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 	case 'R':
 		r2flutter_dump_r2script (core, dctx);
 		return true;
+	case 'S':
+		out = dart_pool_dump_sbom (dctx, NULL, cmd->fmt);
+		break;
 	case 'z':
 		out = cmd->string_depth >= 2? dart_pool_dump_strings_fuzzy (dctx, cmd->fmt): dart_pool_dump_strings (dctx, cmd->fmt);
 		break;
@@ -386,13 +393,13 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	}
 
 	if (ch0 == '-') {
-		R2FlutterCmd cmd;
+		bool ret = true;
+		R2FlutterCmd cmd = { 0 };
 		if (!r2flutter_parse_cmd (args, &dctx, &cmd) || cmd.help) {
-			free (cmd.obf_map_path);
 			r2flutter_help (core);
-			return true;
+		} else {
+			ret = r2flutter_run_cmd (core, &dctx, &cmd);
 		}
-		bool ret = r2flutter_run_cmd (core, &dctx, &cmd);
 		free (cmd.obf_map_path);
 		return ret;
 	}
