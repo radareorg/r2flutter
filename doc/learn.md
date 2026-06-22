@@ -979,3 +979,60 @@ are zero placeholders because the serialized cluster stores reference IDs, not
 live object pointers. The inspector therefore also walks the first decoded
 ObjectPool cluster entry at that PP offset and reports entry bits, ref ID,
 resolved kind/name/CID, and code index when available.
+
+## InstructionsTable, Code Entries, And FFI Boundaries
+
+Modern AOT bare-instructions snapshots store `InstructionsTable::Data` in
+read-only data. The payload is a 16-byte header with
+`canonical_stack_map_entries_offset`, `length`, `first_entry_with_code`, and
+`padding`, followed by `length` 8-byte rows of `{ pc_offset,
+stack_map_offset }`. The remaining bytes are compressed stack maps, with
+optional canonical stack maps at the header offset. Rows do not carry names,
+Code references, sizes, or native/FFI status.
+
+The VM interprets `pc_offset` relative to the isolate instructions image start:
+`payload_start = iso_instr + pc_offset`. `InstructionsTable::EntryPointAt ()`
+returns that same address. For the real precompiled `Code.EntryPoint ()`, the
+Code fill stream adds another layer: `payload_info = (unchecked_offset << 1) |
+has_monomorphic_entry`. Deserialization takes `payload_start` from row
+`first_entry_with_code + instructions_index`, then derives normal,
+monomorphic, and unchecked entrypoints from the architecture offsets. On ARM64
+AOT, a Code object with a monomorphic entry uses `payload_start + 24` for the
+normal/polymorphic entry and `payload_start + 8` for the monomorphic entry.
+The current `-i` output therefore reports the table payload address; exact
+normal and unchecked entrypoints require the Code payload info.
+
+Serialized Function `code_index` is biased by one because `0` is reserved for
+LazyCompile. For root AOT snapshots, `cluster_slot = code_index - 1 -
+first_entry_with_code`. Rows before `first_entry_with_code` are pseudo-code or
+unknown rows. Rows from `first_entry_with_code` onward have the same order as
+the Code cluster. The `mafia` fixture shows the simple case:
+`first_entry_with_code=0`, IT `length=37258`, and Code cluster `count=37258`,
+so the row index equals the Code cluster slot.
+
+The IT table alone does not say whether a function is external. It only maps
+Dart code payload ranges to stack maps. External-call evidence must come from
+other data:
+
+- Function kind `FfiTrampoline` identifies native-to-Dart FFI callback
+  trampolines; `FfiTrampolineData` carries callback target, callback id, and
+  callback kind metadata.
+- ObjectPool entry type `native_function` marks a VM native-call slot. The
+  snapshot serializes only entry bits; deserialization initializes the slot
+  with `NativeEntry::LinkNativeCallEntry ()`, and runtime patching installs the
+  final target. Treat this as a native-call candidate with a PP offset, not as a
+  resolved C symbol address.
+- `@Native` functions call the FFI resolver with constant `asset_id`, `symbol`,
+  and argument count when those values survive as constants.
+- `DynamicLibrary.open` and `lookup` calls can expose library and symbol
+  strings, but they still need call-use correlation and, ideally, a matching
+  export in a packaged native library.
+
+For static reporting, keep Dart wrapper vaddrs (`method.*_FfiNative*`,
+`method.IsarCoreBindings.*`, and similar names) separate from external C
+targets. A high-confidence external function needs wrapper/function metadata,
+library or symbol evidence, and a matching loader export/import or native asset
+mapping. On the `mafia` fixture, `-f` recovers many
+`method.IsarCoreBindings.isar_*` Dart wrappers and `-z` recovers `libisar.so`
+plus `isar_*` strings, but the fixture does not ship `libisar.so`, so no final
+native vaddr is available statically.

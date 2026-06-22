@@ -1997,11 +1997,12 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 		return;
 	}
 	char *class_name = class_export_name (ci->name);
+	const char *class_ref = R_STR_ISNOTEMPTY (class_name)? class_name: "dart_unknown";
 	if (!quiet) {
-		r_strbuf_appendf (sb, "# r2 class %s original=%s\n", class_name, ci->name);
+		r_strbuf_appendf (sb, "# r2 class %s original=%s\n", class_ref, ci->name);
 	}
-	r_strbuf_appendf (sb, "ic+%s @ 0\n", class_name);
-	r_strbuf_appendf (sb, "ac %s\n", class_name);
+	r_strbuf_appendf (sb, "ic+%s @ 0\n", class_ref);
+	r_strbuf_appendf (sb, "ac %s\n", class_ref);
 #if 0
 	// TOO SLOW
 	r_strbuf_appendf (sb, "af @ 0x%" PFMT64x "\n", addr);
@@ -2009,9 +2010,10 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 #endif
 	if (R_STR_ISNOTEMPTY (ci->super_class_name)) {
 		char *super_name = class_export_name (ci->super_class_name);
-		append_ic_inheritance_cmd (sb, class_name, super_name);
-		r_strbuf_appendf (sb, "ac %s\n", super_name);
-		r_strbuf_appendf (sb, "acb %s %s 0\n", class_name, super_name);
+		const char *super_ref = R_STR_ISNOTEMPTY (super_name)? super_name: "dart_unknown";
+		append_ic_inheritance_cmd (sb, class_ref, super_ref);
+		r_strbuf_appendf (sb, "ac %s\n", super_ref);
+		r_strbuf_appendf (sb, "acb %s %s 0\n", class_ref, super_ref);
 		free (super_name);
 	}
 	if (ci->interfaces) {
@@ -2022,12 +2024,13 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 				continue;
 			}
 			char *iface_name = class_export_name (ii->name);
+			const char *iface_ref = R_STR_ISNOTEMPTY (iface_name)? iface_name: "dart_unknown";
 			if (!quiet) {
-				r_strbuf_appendf (sb, "# interface %s implements %s\n", class_name, ii->name);
+				r_strbuf_appendf (sb, "# interface %s implements %s\n", class_ref, ii->name);
 			}
-			append_ic_inheritance_cmd (sb, class_name, iface_name);
-			r_strbuf_appendf (sb, "ac %s\n", iface_name);
-			r_strbuf_appendf (sb, "acb %s %s 0\n", class_name, iface_name);
+			append_ic_inheritance_cmd (sb, class_ref, iface_ref);
+			r_strbuf_appendf (sb, "ac %s\n", iface_ref);
+			r_strbuf_appendf (sb, "acb %s %s 0\n", class_ref, iface_ref);
 			free (iface_name);
 		}
 	}
@@ -2039,9 +2042,9 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 				continue;
 			}
 			if (!quiet) {
-				r_strbuf_appendf (sb, "# field %s.%s +0x%x type=%s %s%s%s%s\n", class_name, fi->name, fi->offset, R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic", (fi->flags & DART_FIELD_STATIC)? "static": "instance", (fi->flags & DART_FIELD_FINAL)? " final": "", (fi->flags & DART_FIELD_CONST)? " const": "", (fi->flags & DART_FIELD_LATE)? " late": "");
+				r_strbuf_appendf (sb, "# field %s.%s +0x%x type=%s %s%s%s%s\n", class_ref, fi->name, fi->offset, R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic", (fi->flags & DART_FIELD_STATIC)? "static": "instance", (fi->flags & DART_FIELD_FINAL)? " final": "", (fi->flags & DART_FIELD_CONST)? " const": "", (fi->flags & DART_FIELD_LATE)? " late": "");
 			}
-			append_ic_field_cmd (sb, class_name, fi);
+			append_ic_field_cmd (sb, class_ref, fi);
 		}
 	}
 	if (ci->methods) {
@@ -2052,18 +2055,19 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 				continue;
 			}
 			char *method_name = member_export_name (mi->name, "method");
+			const char *method_ref = R_STR_ISNOTEMPTY (method_name)? method_name: "method";
 			char *cc = method_dyncc (ci, mi);
 			ut64 addr = method_export_addr (mi);
-			append_ic_method_cmd (sb, class_name, method_name, addr);
+			append_ic_method_cmd (sb, class_ref, method_ref, addr);
 			if (!quiet) {
-				r_strbuf_appendf (sb, "# method %s.%s kind=%s mode=%s cc=%s", class_name, method_name, method_kind_name (mi->kind_tag), method_mode_name (mi), cc);
+				r_strbuf_appendf (sb, "# method %s.%s kind=%s mode=%s cc=%s", class_ref, method_ref, method_kind_name (mi->kind_tag), method_mode_name (mi), cc);
 				if (R_STR_ISNOTEMPTY (mi->signature)) {
 					r_strbuf_appendf (sb, " signature=%s", mi->signature);
 				}
 				r_strbuf_append (sb, "\n");
 			}
 			if (addr) {
-				r_strbuf_appendf (sb, "acm %s %s 0x%" PFMT64x "\n", class_name, method_name, addr);
+				r_strbuf_appendf (sb, "acm %s %s 0x%" PFMT64x "\n", class_ref, method_ref, addr);
 				if (!quiet) {
 					char *msg = r_str_newf ("dart: method %s.%s kind=%s mode=%s cc=%s%s%s",
 						ci->name,
