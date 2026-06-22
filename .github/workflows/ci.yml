@@ -12,7 +12,7 @@ jobs:
   build-linux24:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Installing radare2 ${{ env.R2V }}
       uses: radareorg/github-actions@v2
       with:
