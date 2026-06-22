@@ -230,10 +230,7 @@ char *dart_app_extract_embedded_payload(const char *path, const DartAppEmbeddedP
 }
 
 void dart_function_fini(DartFunction *fn) {
-	if (!fn) {
-		return;
-	}
-	R_FREE (fn->name);
+	free (fn->name);
 }
 
 static ut64 dart_normalize_code_addr(ut64 addr) {
@@ -329,9 +326,7 @@ static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr,
 	if (filtered) {
 		newfn->name = filtered;
 	} else {
-		char buf[64];
-		snprintf (buf, sizeof (buf), "func_%" PFMT64x, (ut64)addr);
-		newfn->name = strdup (buf);
+		newfn->name = r_str_newf ("func_%" PFMT64x, (ut64)addr);
 		newfn->quality = 0;
 	}
 }

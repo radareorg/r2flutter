@@ -122,12 +122,12 @@ static void collect_field_scan_xrefs(DartCtx *ctx, DartRecoveryModel *model, RLi
 		if (!read_data_image_field (ctx, pos, data_start, data_end, 0, false, false, &field)) {
 			continue;
 		}
-		char keybuf[320];
-		snprintf (keybuf, sizeof (keybuf), "%s.%s@0x%x", field.owner_name, field.name, field.offset);
-		if (r_list_find (seen_fields, keybuf, (RListComparator)strcmp)) {
+		char *key = r_str_newf ("%s.%s@0x%x", field.owner_name, field.name, field.offset);
+		if (r_list_find (seen_fields, key, (RListComparator)strcmp)) {
+			free (key);
 			continue;
 		}
-		r_list_append (seen_fields, strdup (keybuf));
+		r_list_append (seen_fields, key);
 		char *field_label = xref_join_names (field.owner_name, field.name);
 		append_xref_info (xrefs, count, limit, "data-image", "field.owner", "field", field_label, 0, 0, "class", field.owner_name, 0, 0);
 		DartStringInfo *field_si = dart_recovery_model_string_by_value (model, field.name);
