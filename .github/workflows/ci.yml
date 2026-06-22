@@ -25,3 +25,27 @@ jobs:
       run: r2r test/db/cmd
     - name: Radare Extras Testing
       run: r2r test/db/extras
+
+  r2-xps:
+    name: Build radare2 with r2flutter XPS
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+    - name: Install build dependencies
+      run: sudo apt-get update -y && sudo apt-get install -y build-essential pkg-config
+    - name: Build radare2 from source with r2flutter
+      run: |
+        git clone --depth=1 https://github.com/radareorg/radare2.git
+        cd radare2
+        cp -f ../r2plugin/config.mk libr/xps/config.mk
+        git clone .. libr/xps/p/r2flutter
+        make -C libr/xps
+        ./configure --prefix=/usr
+        make -j$(nproc)
+        sudo make install
+    - name: Test embedded r2flutter plugin
+      run: |
+        r2 -q -c 'Lc~r2flutter' -- | grep r2flutter
+        r2 -q -c 'r2flutter -V' -- | grep 'r2flutter '

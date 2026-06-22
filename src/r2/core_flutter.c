@@ -427,7 +427,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 	return true;
 }
 
-RCorePlugin r_core_plugin_flutter = {
+RCorePlugin r_core_plugin_r2flutter = {
 	.meta = {
 		.name = "r2flutter",
 		.desc = "Dart/Flutter AOT snapshot analyzer",
@@ -443,7 +443,7 @@ RCorePlugin r_core_plugin_flutter = {
 #ifndef R2_PLUGIN_INCORE
 R_API RLibStruct radare_plugin = {
 	.type = R_LIB_TYPE_CORE,
-	.data = &r_core_plugin_flutter,
+	.data = &r_core_plugin_r2flutter,
 	.version = R2_VERSION,
 	.abiversion = R2_ABIVERSION
 };
