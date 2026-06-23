@@ -8,6 +8,8 @@ Build
 - Build with `make` (uses pkg-config to resolve r2 includes/libs).
 - Do not build with gcc oneliners, always use `make`
 - Run `make fmt` to format/indent the source code
+- To update the version change it in configure.acr and then run autogen.sh
+- running meson or configure will generate the version.h from the version.h.in
 
 Usage
 - Use bin/r2flutter cli program to test the changes and implementation of the dart aot snapshots

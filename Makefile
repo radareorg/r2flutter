@@ -2,12 +2,16 @@ CC ?= gcc
 R2_CFLAGS  ?= $(shell r2 -H R2_CFLAGS)
 R2_LDFLAGS ?= $(shell r2 -H R2_LDFLAGS)
 CFLAGS ?= -Wall -Wextra -O2 -fPIC
-CFLAGS += -Iinclude
+CFLAGS += -Iinclude -Iinclude/r2flutter
 CFLAGS += $(R2_CFLAGS)
 LDFLAGS += $(R2_LDFLAGS)
 DEPFLAGS = -MMD -MP
 R2R_JOBS ?= 1
 R2R_TIMEOUT ?= 30
+R2_LIBR_PLUGINS=$(shell r2 -H R2_LIBR_PLUGINS 2> /dev/null)
+R2_LIBEXT=$(shell r2 -H R2_LIBEXT 2> /dev/null)
+-include config.mk
+PREFIX?=/usr/local
 
 # Directories
 SRC_DIR = src/lib
@@ -28,14 +32,18 @@ DEP_FILES = $(LIB_OBJ:.o=.d) $(MAIN_OBJ:.o=.d) $(ANALYSIS_OBJ:.o=.d)
 # Artifacts
 BIN_FILE = $(BIN_DIR)/r2flutter
 STATIC_LIB = $(BUILD_DIR)/libr2flutter.a
+INC_VER = $(SRC_DIR)/../include/r2flutter/r2flutter_version.h
 
-all: $(BIN_FILE)
+all: $(BIN_FILE) $(INC_VER)
+
+$(INC_VER):
+	./configure
 
 $(STATIC_LIB): $(LIB_OBJ)
 	ar rcs $@ $^
 
 $(BIN_FILE): $(STATIC_LIB) $(MAIN_OBJ) $(ANALYSIS_OBJ) | $(shell mkdir -p $(BIN_DIR))
-	$(CC) $(CFLAGS) -o $@ $(MAIN_OBJ) $(ANALYSIS_OBJ) -L$(BUILD_DIR) -lr2flutter $(LDFLAGS) -Wl,-rpath,/usr/local/lib -g
+	$(CC) $(CFLAGS) -o $@ $(MAIN_OBJ) $(ANALYSIS_OBJ) -L$(BUILD_DIR) -lr2flutter $(LDFLAGS) -Wl,-rpath,$(PREFIX)/lib -g
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
@@ -58,6 +66,22 @@ user-install user-uninstall:
 	$(MAKE) $(STATIC_LIB)
 	$(MAKE) -C src/r2
 	$(MAKE) -C src/r2 $@
+
+install: uninstall
+	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
+	cp -f bin/r2flutter "$(DESTDIR)$(PREFIX)/bin/r2flutter"
+	mkdir -p "$(DESTDIR)$(R2_LIBR_PLUGINS)"
+	cp -f src/r2/core_flutter.$(R2_LIBEXT) "$(DESTDIR)$(R2_LIBR_PLUGINS)"/core_flutter.$(R2_LIBEXT)
+
+symstall: uninstall
+	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
+	ln -fs $(shell pwd)/bin/r2flutter "$(DESTDIR)$(PREFIX)/bin/r2flutter"
+	mkdir -p "$(DESTDIR)$(R2_LIBR_PLUGINS)"
+	ln -fs $(shell pwd)/src/r2/core_flutter.$(R2_LIBEXT) "$(DESTDIR)$(R2_LIBR_PLUGINS)"/core_flutter.$(R2_LIBEXT)
+
+uninstall:
+	rm -f "$(DESTDIR)$(PREFIX)/bin/r2flutter"
+	rm -f $(DESTDIR)$(R2_LIBR_PLUGINS)/core_flutter.$(R2_LIBEXT)
 
 fmt indent format:
 	clang-format-radare2 $(shell find src include -name '*.[ch]')

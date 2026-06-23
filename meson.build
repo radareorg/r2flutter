@@ -1,10 +1,9 @@
-project('r2flutter', 'c',
-  version: '0.1.0',
-  meson_version: '>=0.53.0',
-  default_options: [
-    'warning_level=2',
-    'werror=false',
-  ],
+project(
+  'r2flutter',
+  'c',
+version : '0.2.0',
+  meson_version : '>=0.53.0',
+  default_options : ['warning_level=2', 'werror=false']
 )
 
 r_core_dep = dependency('r_core', method: 'pkg-config')

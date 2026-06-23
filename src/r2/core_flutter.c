@@ -2,7 +2,7 @@
 
 #include <ctype.h>
 #include <r_core.h>
-#include "../../include/r2flutter/version.h"
+#include "../../include/r2flutter/r2flutter_version.h"
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_obf.h"

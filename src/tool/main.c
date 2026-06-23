@@ -2,11 +2,11 @@
 
 #include <r_core.h>
 #include <r_getopt.h>
+#include "../../include/r2flutter/r2flutter_version.h"
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
 #include "../../include/r2flutter/dart_obf.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
-#include "../../include/r2flutter/version.h"
 #include "../r2/flutter_analysis.h"
 
 static const char usage_text[] =
