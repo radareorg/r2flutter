@@ -27,6 +27,25 @@ jobs:
     - name: Radare Extras Testing
       run: r2r test/db/extras
 
+  meson-linux24:
+    name: Meson build on Linux
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install build dependencies
+      run: sudo apt-get update -y && sudo apt-get install -y build-essential meson ninja-build pkg-config
+    - name: Installing radare2 ${{ env.R2V }}
+      uses: radareorg/github-actions@v2
+      with:
+        version: ${{ env.R2V }}
+        from-git: false
+    - name: Configure Meson
+      run: meson setup build-meson
+    - name: Build with Meson
+      run: meson compile -C build-meson
+    - name: Test Meson build
+      run: meson test -C build-meson --print-errorlogs
+
   build-macos:
     runs-on: macos-latest
     steps:

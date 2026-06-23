@@ -1,4 +1,5 @@
 build/
+build-meson/
 bin
 *.o
 *.d

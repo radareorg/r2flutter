@@ -1,0 +1,17 @@
+PKGNAME r2flutter
+VERSION 1.0.0
+CONTACT pancake ; pancake@nopcode.org
+
+USE_PKGCONFIG!
+
+LANG_C!
+
+EXEC! R2_VERSION r2 -v ;
+
+ARG_WITH PRECOMPILED_AGENT precompiled-agent do not require node/npm ;
+
+PKGCFG! R2_CFLAGS R2_LDFLAGS r_core
+
+REPORT R2_VERSION ;
+
+SUBDIRS ./config.mk ./config.h ;
