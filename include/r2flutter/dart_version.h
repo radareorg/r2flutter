@@ -57,8 +57,6 @@ DartVerLayout *dart_pick_layout_by_hash(const char *hash);
 // Free a DartVerLayout allocated by dart_pick_layout_by_hash
 void dart_ver_layout_free(DartVerLayout *layout);
 
-// Get verbose level for diagnostics
-int dart_version_get_verbose(void);
 void dart_version_set_verbose(int level);
 
 #ifdef __cplusplus

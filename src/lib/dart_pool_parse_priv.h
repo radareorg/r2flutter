@@ -260,11 +260,7 @@ bool cs_read_tagged64(ClusterStream *s, int64_t *out);
 bool cs_read_bytes(ClusterStream *s, ut8 *buf, int len);
 
 void free_dart_string(void *p);
-void free_dart_class(void *p);
-void free_dart_func(void *p);
 int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool is_canonical);
-int decode_class_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool is_canonical);
-int decode_function_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, ut64 iso_instr, bool is_canonical);
 void skip_generic_cluster(ClusterStream *stream);
 int deserialize_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 iso_instr);
 void resolve_names(DartCtx *ctx);

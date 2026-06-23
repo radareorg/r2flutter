@@ -10,10 +10,6 @@
 
 static int G_VERBOSE = 0;
 
-int dart_version_get_verbose(void) {
-	return G_VERBOSE;
-}
-
 void dart_version_set_verbose(int level) {
 	G_VERBOSE = level;
 }

@@ -16,7 +16,7 @@ void free_dart_string(void *p) {
 	}
 }
 
-void free_dart_class(void *p) {
+static void free_dart_class(void *p) {
 	DartClass *dc = (DartClass *)p;
 	if (dc) {
 		free (dc->name);
@@ -24,7 +24,7 @@ void free_dart_class(void *p) {
 	}
 }
 
-void free_dart_func(void *p) {
+static void free_dart_func(void *p) {
 	DartPoolFunction *df = (DartPoolFunction *)p;
 	if (df) {
 		free (df->name);
@@ -98,7 +98,7 @@ int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, boo
 	return 0;
 }
 
-int decode_class_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool is_canonical) {
+static int decode_class_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool is_canonical) {
 	(void)is_canonical;
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {
@@ -137,7 +137,7 @@ int decode_class_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool
 	return 0;
 }
 
-int decode_function_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, ut64 iso_instr, bool is_canonical) {
+static int decode_function_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, ut64 iso_instr, bool is_canonical) {
 	(void)is_canonical;
 	ut64 count = 0;
 	if (!cs_read_unsigned (s, &count)) {

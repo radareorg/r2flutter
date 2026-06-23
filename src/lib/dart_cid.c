@@ -1667,18 +1667,6 @@ bool dart_cid_is(const DartVerLayout *layout, int cid, DartCidKind kind) {
 	return value >= 0 && cid == value;
 }
 
-bool dart_cid_is_string(const DartVerLayout *layout, int cid) {
-	return dart_cid_is (layout, cid, DART_CID_STRING) ||
-		dart_cid_is (layout, cid, DART_CID_ONE_BYTE_STRING) ||
-		dart_cid_is (layout, cid, DART_CID_TWO_BYTE_STRING);
-}
-
-bool dart_cid_is_array(const DartVerLayout *layout, int cid) {
-	return dart_cid_is (layout, cid, DART_CID_ARRAY) ||
-		dart_cid_is (layout, cid, DART_CID_IMMUTABLE_ARRAY) ||
-		dart_cid_is (layout, cid, DART_CID_GROWABLE_OBJECT_ARRAY);
-}
-
 int dart_cid_typed_data_internal_base(const DartVerLayout *layout) {
 	const DartCidTable *table = cid_table_for_layout (layout);
 	if (table && table->typed_data_internal_base > 0) {
@@ -1710,18 +1698,4 @@ int dart_cid_typed_data_stride(const DartVerLayout *layout) {
 		return table->typed_data_stride;
 	}
 	return dart_cid_get (layout, DART_CID_NUM_PREDEFINED_CIDS) > 170? 4: 3;
-}
-
-bool dart_cid_typed_data_internal_kind(const DartVerLayout *layout, int cid, int *out_rem) {
-	const int base = dart_cid_typed_data_internal_base (layout);
-	const int limit = dart_cid_typed_data_internal_limit (layout);
-	const int stride = dart_cid_typed_data_stride (layout);
-	if (stride <= 0 || cid < base || cid >= limit) {
-		return false;
-	}
-	const int rem = (cid - base) % stride;
-	if (out_rem) {
-		*out_rem = rem;
-	}
-	return true;
 }
