@@ -1035,4 +1035,4 @@ library or symbol evidence, and a matching loader export/import or native asset
 mapping. On the `mafia` fixture, `-f` recovers many
 `method.IsarCoreBindings.isar_*` Dart wrappers and `-z` recovers `libisar.so`
 plus `isar_*` strings, but the fixture does not ship `libisar.so`, so no final
-native vaddr is available statically.
+native vaddr is available statically; keep obfuscation-expanded semantic names heap-owned (`char *`) so lookup keys are not truncated.

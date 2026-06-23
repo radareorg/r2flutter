@@ -290,9 +290,7 @@ static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr,
 	}
 	char *filtered = dart_strdup_filtered (name);
 	if (filtered) {
-		char *resolved = dart_obf_resolve (&app->dctx, filtered);
-		free (filtered);
-		filtered = resolved;
+		dart_obf_apply (&app->dctx, &filtered);
 	}
 	DartFunction *fn;
 	R_VEC_FOREACH (app->functions, fn) {

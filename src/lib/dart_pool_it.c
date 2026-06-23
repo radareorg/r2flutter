@@ -9,15 +9,26 @@ typedef struct {
 	ut32 first_entry_with_code;
 } DartInstructionTableHeader;
 
-static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_image_base, const DartInstructionTableEntry *entry, char *out, size_t outsz) {
-	if (!out || outsz < 2) {
-		return;
+static char *read_it_name(DartCtx *ctx, ut64 addr) {
+	char *name = try_read_dart_string_dup (ctx, addr);
+	if (!name) {
+		return NULL;
 	}
-	out[0] = '\0';
+	size_t len = strlen (name);
+	if (strstr (name, "package:") || strstr (name, "dart:") ||
+		(len >= 4 && (strchr (name, '.') || strchr (name, '/') || strchr (name, ':')))) {
+		return name;
+	}
+	free (name);
+	return NULL;
+}
+
+static char *resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_image_base, const DartInstructionTableEntry *entry) {
+	char *out = NULL;
 	if (ctx && ctx->name_by_code_index && entry->has_code && entry->code_index < ctx->name_by_code_index_count) {
 		const char *ns = ctx->name_by_code_index[entry->code_index];
 		if (R_STR_ISNOTEMPTY (ns)) {
-			snprintf (out, outsz, "%s", ns);
+			out = strdup (ns);
 		}
 	}
 	if (sym_by_addr) {
@@ -25,49 +36,33 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 		if (bs && bs->name) {
 			const char *resolved = r_bin_name_tostring (bs->name);
 			if (resolved && *resolved) {
-				snprintf (out, outsz, "%s", resolved);
+				free (out);
+				out = strdup (resolved);
 			}
 		}
 	}
-	if (!*out && ctx->name_by_ep) {
+	if (!out && ctx->name_by_ep) {
 		char *ns = (char *)ht_up_find (ctx->name_by_ep, entry->address, NULL);
 		if (ns && *ns) {
-			snprintf (out, outsz, "%s", ns);
+			out = strdup (ns);
 		}
 	}
 	if (!entry->has_code) {
-		if (!*out) {
-			snprintf (out, outsz, "stub.it_%" PRIu64, (uint64_t)entry->index);
+		if (out) {
+			return out;
 		}
-		return;
+		return r_str_newf ("stub.it_%" PRIu64, (uint64_t)entry->index);
 	}
-	if (!*out && entry->stack_map_offset > 0 && entry->stack_map_offset < (1U << 31)) {
+	if (!out && entry->stack_map_offset > 0 && entry->stack_map_offset < (1U << 31)) {
 		ut64 saddr = data_image_base + (ut64)entry->stack_map_offset;
-		char sname[128];
-		if (try_read_dart_string (ctx, saddr, sname, sizeof (sname))) {
-			r_str_filter_zeroline (sname, sizeof (sname));
-			size_t slen = strlen (sname);
-			bool looks_ok = strstr (sname, "package:") || strstr (sname, "dart:");
-			if (!looks_ok && slen >= 4 && (strchr (sname, '.') || strchr (sname, '/') || strchr (sname, ':'))) {
-				looks_ok = true;
-			}
-			if (looks_ok) {
-				snprintf (out, outsz, "%s", sname);
-			}
-		}
-		if (!*out) {
+		out = read_it_name (ctx, saddr);
+		if (!out) {
 			int win = 128;
 			for (int delta = -win; delta <= win; delta += 8) {
 				ut64 cand = saddr + (ut64)delta;
-				char s2[128];
-				if (try_read_dart_string (ctx, cand, s2, sizeof (s2))) {
-					r_str_filter_zeroline (s2, sizeof (s2));
-					size_t s2len = strlen (s2);
-					if ((strstr (s2, "package:") || strstr (s2, "dart:")) ||
-						(s2len >= 4 && (strchr (s2, '/') || strchr (s2, '.') || strchr (s2, ':')))) {
-						snprintf (out, outsz, "%s", s2);
-						break;
-					}
+				out = read_it_name (ctx, cand);
+				if (out) {
+					break;
 				}
 			}
 		}
@@ -82,29 +77,30 @@ static void resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_ima
 		owner_kind = ctx->owner_kind_by_code_index[entry->code_index];
 	}
 	bool pool_allowed = owner_kind == DART_OWNER_FUNCTION || owner_kind == DART_OWNER_UNKNOWN;
-	if (!*out && pool_allowed && ctx->use_name_pool && ctx->name_pool && entry->has_code && ctx->name_pool_idx < r_list_length (ctx->name_pool)) {
+	if (!out && pool_allowed && ctx->use_name_pool && ctx->name_pool && entry->has_code && ctx->name_pool_idx < r_list_length (ctx->name_pool)) {
 		const char *pooln = (const char *)r_list_get_n (ctx->name_pool, ctx->name_pool_idx++);
 		if (pooln && *pooln) {
-			snprintf (out, outsz, "%s", pooln);
+			out = strdup (pooln);
 		}
 	}
-	if (!*out) {
+	if (!out) {
 		switch (owner_kind) {
 		case DART_OWNER_VM_STUB:
-			snprintf (out, outsz, "stub.vm_%" PRIu64, (uint64_t)entry->code_index);
+			out = r_str_newf ("stub.vm_%" PRIu64, (uint64_t)entry->code_index);
 			break;
 		case DART_OWNER_CLASS:
-			snprintf (out, outsz, "stub.allocate_%" PRIu64, (uint64_t)entry->code_index);
+			out = r_str_newf ("stub.allocate_%" PRIu64, (uint64_t)entry->code_index);
 			break;
 		case DART_OWNER_TYPE:
-			snprintf (out, outsz, "stub.typetest_%" PRIu64, (uint64_t)entry->code_index);
+			out = r_str_newf ("stub.typetest_%" PRIu64, (uint64_t)entry->code_index);
 			break;
 		default:
-			snprintf (out, outsz, "method.fn_%" PRIu64, (uint64_t)entry->code_index);
+			out = r_str_newf ("method.fn_%" PRIu64, (uint64_t)entry->code_index);
 			break;
 		}
 	}
-	dart_obf_apply_buf (ctx, out, outsz);
+	dart_obf_apply (ctx, &out);
+	return out;
 }
 
 static void emit_it_entry_record(const DartInstructionTableEntry *entry, const DartItEmitRequest *req) {
@@ -345,7 +341,8 @@ int dart_it_emit_linear(const DartItEmitRequest *req) {
 	ctx->it_first_with_code = 0;
 	ctx->it_canonical_stack_map_offset = 0;
 	for (ut64 i = 0; i < limit; i++) {
-		char name[64];
+		char *name = r_str_newf ("method.fn_%" PRIu64, (uint64_t)i);
+		dart_obf_apply (ctx, &name);
 		DartInstructionTableEntry entry = {
 			.index = i,
 			.code_index = i,
@@ -355,9 +352,8 @@ int dart_it_emit_linear(const DartItEmitRequest *req) {
 			.has_code = true,
 			.name = name,
 };
-		snprintf (name, sizeof (name), "method.fn_%" PRIu64, (uint64_t)i);
-		dart_obf_apply_buf (ctx, name, sizeof (name));
 		emit_it_entry_record (&entry, req);
+		free (name);
 	}
 	return 0;
 }
@@ -397,7 +393,6 @@ int dart_it_emit_fixed(const DartItEmitRequest *req) {
 		if (!req->include_stubs && !has_code) {
 			continue;
 		}
-		char name[128];
 		DartInstructionTableEntry entry = {
 			.index = idx,
 			.code_index = has_code? idx - hdr.first_entry_with_code: UT64_MAX,
@@ -405,10 +400,10 @@ int dart_it_emit_fixed(const DartItEmitRequest *req) {
 			.pc_offset = r_read_le32 (ebuf),
 			.stack_map_offset = r_read_le32 (ebuf + 4),
 			.has_code = has_code,
-			.name = name,
 };
-		resolve_it_entry_name (ctx, req->sym_by_addr, req->data_image_base, &entry, name, sizeof (name));
+		entry.name = resolve_it_entry_name (ctx, req->sym_by_addr, req->data_image_base, &entry);
 		emit_it_entry_record (&entry, req);
+		free (entry.name);
 		emitted++;
 	}
 	return 0;
@@ -458,7 +453,6 @@ int dart_it_emit_varint(const DartItEmitRequest *req) {
 		if (req->max_entries && emitted >= req->max_entries) {
 			break;
 		}
-		char name[128];
 		DartInstructionTableEntry entry = {
 			.index = idx,
 			.code_index = has_code? idx - first_with_code: UT64_MAX,
@@ -466,10 +460,10 @@ int dart_it_emit_varint(const DartItEmitRequest *req) {
 			.pc_offset = (ut32)pc_acc,
 			.stack_map_offset = (ut32)sm_acc,
 			.has_code = has_code,
-			.name = name,
 };
-		resolve_it_entry_name (ctx, req->sym_by_addr, req->data_image_base, &entry, name, sizeof (name));
+		entry.name = resolve_it_entry_name (ctx, req->sym_by_addr, req->data_image_base, &entry);
 		emit_it_entry_record (&entry, req);
+		free (entry.name);
 		emitted++;
 	}
 	return 0;

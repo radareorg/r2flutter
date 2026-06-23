@@ -124,6 +124,9 @@ void dart_obf_apply(DartCtx *ctx, char **name) {
 	if (!name || R_STR_ISEMPTY (*name)) {
 		return;
 	}
+	if (!ctx || !dart_obf_load (ctx) || !ctx->obf_by_obfuscated) {
+		return;
+	}
 	char *resolved = dart_obf_resolve (ctx, *name);
 	if (!resolved) {
 		return;
@@ -133,17 +136,5 @@ void dart_obf_apply(DartCtx *ctx, char **name) {
 		*name = resolved;
 		return;
 	}
-	free (resolved);
-}
-
-void dart_obf_apply_buf(DartCtx *ctx, char *buf, size_t buf_len) {
-	if (!buf || buf_len < 2 || R_STR_ISEMPTY (buf)) {
-		return;
-	}
-	char *resolved = dart_obf_resolve (ctx, buf);
-	if (!resolved) {
-		return;
-	}
-	snprintf (buf, buf_len, "%s", resolved);
 	free (resolved);
 }

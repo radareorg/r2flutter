@@ -125,6 +125,7 @@ static void collect_field_scan_xrefs(DartCtx *ctx, DartRecoveryModel *model, RLi
 		char *key = r_str_newf ("%s.%s@0x%x", field.owner_name, field.name, field.offset);
 		if (r_list_find (seen_fields, key, (RListComparator)strcmp)) {
 			free (key);
+			dart_scanned_field_fini (&field);
 			continue;
 		}
 		r_list_append (seen_fields, key);
@@ -133,6 +134,7 @@ static void collect_field_scan_xrefs(DartCtx *ctx, DartRecoveryModel *model, RLi
 		DartStringInfo *field_si = dart_recovery_model_string_by_value (model, field.name);
 		append_xref_info (xrefs, count, limit, "data-image", "field.name", "field", field_label, 0, 0, "string", field.name, 0, field_si? field_si->address: 0);
 		free (field_label);
+		dart_scanned_field_fini (&field);
 		field_count++;
 	}
 }
@@ -144,9 +146,6 @@ static void collect_method_scan_xrefs(DartCtx *ctx, DartRecoveryModel *model, RL
 	DartFunctionLayout fl;
 	init_function_layout (ctx, &fl);
 	ut64 align = ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 8;
-	if (!align) {
-		align = 8;
-	}
 	ut64 methods_found = 0;
 	const ut64 max_methods = 30000;
 	for (ut64 pos = data_start; pos + fl.kind_tag_off + 8 < data_end && methods_found < max_methods && !xref_limit_reached (*count, limit); pos += align) {
@@ -155,6 +154,7 @@ static void collect_method_scan_xrefs(DartCtx *ctx, DartRecoveryModel *model, RL
 			continue;
 		}
 		if (ht_up_find (seen_ep, method.entry, NULL)) {
+			dart_scanned_method_fini (&method);
 			continue;
 		}
 		char *method_label = xref_join_names (method.owner_name, method.name);
@@ -164,6 +164,7 @@ static void collect_method_scan_xrefs(DartCtx *ctx, DartRecoveryModel *model, RL
 		append_xref_info (xrefs, count, limit, "data-image", "method.entry", "method", method_label, 0, 0, "code", method_label, 0, method.entry);
 		ht_up_insert (seen_ep, method.entry, (void *)1);
 		free (method_label);
+		dart_scanned_method_fini (&method);
 		methods_found++;
 	}
 }

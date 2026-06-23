@@ -170,6 +170,11 @@ bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz) {
 	return false;
 }
 
+char *try_read_dart_string_dup(DartCtx *ctx, ut64 addr) {
+	char buf[1025];
+	return try_read_dart_string (ctx, addr, buf, sizeof (buf))? strdup (buf): NULL;
+}
+
 HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
 	if (!ctx || !ctx->core) {
 		return NULL;

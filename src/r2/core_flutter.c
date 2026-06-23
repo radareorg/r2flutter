@@ -5,6 +5,7 @@
 #include "../../include/r2flutter/version.h"
 #include "../../include/r2flutter/dart_app.h"
 #include "../../include/r2flutter/dart_dumper.h"
+#include "../../include/r2flutter/dart_obf.h"
 #include "../../include/r2flutter/dart_pool_parse.h"
 #include "flutter_analysis.h"
 
@@ -419,6 +420,7 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		} else {
 			ret = r2flutter_run_cmd (core, &dctx, &cmd);
 		}
+		dart_obf_fini (&dctx);
 		free (cmd.obf_map_path);
 		free (cmd.object_spec);
 		return ret;

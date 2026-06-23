@@ -60,12 +60,14 @@ static bool read_object_pointer(DartCtx *ctx, const ut8 *buf, ut32 off, bool use
 	return true;
 }
 
-static bool read_string_safe(DartCtx *ctx, ut64 addr, char *out, int outsz) {
-	if (!addr || !try_read_dart_string (ctx, addr, out, outsz)) {
-		return false;
-	}
-	r_str_filter_zeroline (out, outsz);
-	return true;
+void dart_scanned_field_fini(DartScannedField *field) {
+	free (field->name);
+	free (field->owner_name);
+}
+
+void dart_scanned_method_fini(DartScannedMethod *method) {
+	free (method->name);
+	free (method->owner_name);
 }
 
 bool read_data_image_field(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_end, int fallback_index, bool allow_fallback_name, bool apply_obf, DartScannedField *field) {
@@ -93,30 +95,30 @@ bool read_data_image_field(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_en
 	if (name_addr < data_start || name_addr >= data_end) {
 		return false;
 	}
-	if (!try_read_dart_string (ctx, name_addr, field->name, sizeof (field->name))) {
-		if (!allow_fallback_name) {
-			return false;
-		}
-		snprintf (field->name, sizeof (field->name), "field_%d", fallback_index);
+	field->name = try_read_dart_string_dup (ctx, name_addr);
+	if (!field->name && allow_fallback_name) {
+		field->name = r_str_newf ("field_%d", fallback_index);
 	}
 	ut64 owner_addr = use_compressed? data_start + (owner_ptr & ~3ULL): owner_ptr;
-	if (owner_addr < data_start || owner_addr >= data_end) {
-		return false;
-	}
-	ut8 owner_hdr[32];
-	if (!read_mem (ctx, owner_addr, owner_hdr, sizeof (owner_hdr))) {
-		return false;
-	}
-	ut64 owner_name_ptr = use_compressed? r_read_le32 (owner_hdr + 8): r_read_le64 (owner_hdr + 8);
-	ut64 owner_name_addr = use_compressed? data_start + (owner_name_ptr & ~3ULL): owner_name_ptr;
-	if (owner_name_addr < data_start || owner_name_addr >= data_end || !try_read_dart_string (ctx, owner_name_addr, field->owner_name, sizeof (field->owner_name))) {
-		return false;
+	if (owner_addr >= data_start && owner_addr < data_end) {
+		ut8 owner_hdr[32];
+		if (read_mem (ctx, owner_addr, owner_hdr, sizeof (owner_hdr))) {
+			ut64 owner_name_ptr = use_compressed? r_read_le32 (owner_hdr + 8): r_read_le64 (owner_hdr + 8);
+			ut64 owner_name_addr = use_compressed? data_start + (owner_name_ptr & ~3ULL): owner_name_ptr;
+			if (owner_name_addr >= data_start && owner_name_addr < data_end) {
+				field->owner_name = try_read_dart_string_dup (ctx, owner_name_addr);
+			}
+		}
 	}
 	if (apply_obf) {
-		dart_obf_apply_buf (ctx, field->name, sizeof (field->name));
-		dart_obf_apply_buf (ctx, field->owner_name, sizeof (field->owner_name));
+		dart_obf_apply (ctx, &field->name);
+		dart_obf_apply (ctx, &field->owner_name);
 	}
-	return field->name[0] && field->owner_name[0];
+	if (R_STR_ISNOTEMPTY (field->name) && R_STR_ISNOTEMPTY (field->owner_name)) {
+		return true;
+	}
+	dart_scanned_field_fini (field);
+	return false;
 }
 
 void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_start, ut64 data_end) {
@@ -143,16 +145,18 @@ void scan_fields_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_star
 		DartClassInfo *owner_ci = (DartClassInfo *)ht_pp_find (class_by_name, field.owner_name, NULL);
 		if (owner_ci && owner_ci->fields) {
 			DartFieldInfo *fi = R_NEW0 (DartFieldInfo);
-			fi->name = strdup (field.name);
+			fi->name = field.name;
+			field.name = NULL;
 			fi->offset = field.offset;
 			fi->flags = field.flags;
 			r_list_append (owner_ci->fields, fi);
 			if (ctx->verbose > 1) {
-				fprintf (stderr, "[r2flutter] Found field: %s.%s offset=0x%x\n", field.owner_name, field.name, field.offset);
+				fprintf (stderr, "[r2flutter] Found field: %s.%s offset=0x%x\n", field.owner_name, fi->name, field.offset);
 			}
 		} else if (ctx->verbose > 1 && field_count < 64) {
 			fprintf (stderr, "[r2flutter] field owner miss: %s.%s\n", field.owner_name, field.name);
 		}
+		dart_scanned_field_fini (&field);
 	}
 	ht_pp_free (class_by_name);
 	if (ctx->verbose > 0) {
@@ -182,30 +186,29 @@ bool read_data_image_method(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_e
 	method->entry = entry;
 	method->kind_tag = r_read_le32 (buf + fl->kind_tag_off);
 	ut64 name_addr = 0;
-	if (!read_object_pointer (ctx, buf, fl->name_off, use_compressed, data_start, data_end, true, &name_addr) || !read_string_safe (ctx, name_addr, method->name, sizeof (method->name))) {
+	if (!read_object_pointer (ctx, buf, fl->name_off, use_compressed, data_start, data_end, true, &name_addr)) {
 		return false;
 	}
+	method->name = try_read_dart_string_dup (ctx, name_addr);
 	ut64 owner_addr = 0;
-	if (!read_object_pointer (ctx, buf, fl->owner_off, use_compressed, data_start, data_end, false, &owner_addr)) {
-		return false;
-	}
-	if (owner_addr) {
+	if (read_object_pointer (ctx, buf, fl->owner_off, use_compressed, data_start, data_end, false, &owner_addr) && owner_addr) {
 		ut8 owner_buf[32];
 		if (read_mem (ctx, owner_addr, owner_buf, sizeof (owner_buf))) {
 			ut64 owner_name_ptr = 0;
 			if (read_object_pointer (ctx, owner_buf, fl->class_name_off, use_compressed, data_start, data_end, true, &owner_name_ptr)) {
-				read_string_safe (ctx, owner_name_ptr, method->owner_name, sizeof (method->owner_name));
+				method->owner_name = try_read_dart_string_dup (ctx, owner_name_ptr);
 			}
 		}
 	}
-	if (!method->owner_name[0]) {
-		return false;
-	}
 	if (apply_obf) {
-		dart_obf_apply_buf (ctx, method->name, sizeof (method->name));
-		dart_obf_apply_buf (ctx, method->owner_name, sizeof (method->owner_name));
+		dart_obf_apply (ctx, &method->name);
+		dart_obf_apply (ctx, &method->owner_name);
 	}
-	return true;
+	if (R_STR_ISNOTEMPTY (method->name) && R_STR_ISNOTEMPTY (method->owner_name)) {
+		return true;
+	}
+	dart_scanned_method_fini (method);
+	return false;
 }
 
 const char *method_kind_name(uint32_t kind_tag) {
@@ -262,10 +265,7 @@ void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_sta
 		ht_pp_free (class_by_name);
 		return;
 	}
-	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 8;
-	if (!align) {
-		align = 8;
-	}
+	ut64 align = ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 8;
 	ut64 methods_found = 0;
 	const ut64 max_methods = 30000;
 	for (ut64 pos = data_start; pos + fl.kind_tag_off + 8 < data_end; pos += align) {
@@ -274,6 +274,7 @@ void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_sta
 			continue;
 		}
 		if (ht_up_find (seen_ep, method.entry, NULL)) {
+			dart_scanned_method_fini (&method);
 			continue;
 		}
 		if (ctx->verbose > 1 && methods_found < 64) {
@@ -281,18 +282,22 @@ void scan_methods_from_data_image(DartCtx *ctx, RList *class_list, ut64 data_sta
 		}
 		DartClassInfo *owner_ci = ht_pp_find (class_by_name, method.owner_name, NULL);
 		if (!owner_ci || !owner_ci->methods) {
+			dart_scanned_method_fini (&method);
 			continue;
 		}
 		DartMethodInfo *mi = R_NEW0 (DartMethodInfo);
 		mi->entry_point = method.entry;
-		mi->name = strdup (method.name);
-		mi->owner_name = strdup (method.owner_name);
+		mi->name = method.name;
+		mi->owner_name = method.owner_name;
+		method.name = NULL;
+		method.owner_name = NULL;
 		mi->kind_tag = method.kind_tag;
 		ht_up_insert (seen_ep, method.entry, mi);
 		r_list_append (owner_ci->methods, mi);
 		if (ctx->verbose > 1) {
-			fprintf (stderr, "[r2flutter] method %s.%s @0x%" PFMT64x "\n", method.owner_name, method.name, method.entry);
+			fprintf (stderr, "[r2flutter] method %s.%s @0x%" PFMT64x "\n", mi->owner_name, mi->name, method.entry);
 		}
+		dart_scanned_method_fini (&method);
 		methods_found++;
 		if (methods_found >= max_methods) {
 			break;

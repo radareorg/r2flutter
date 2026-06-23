@@ -99,15 +99,15 @@ typedef struct {
 } DartFunctionLayout;
 
 typedef struct {
-	char name[128];
-	char owner_name[128];
+	char *name;
+	char *owner_name;
 	ut32 flags;
 	ut32 offset;
 } DartScannedField;
 
 typedef struct {
-	char name[128];
-	char owner_name[128];
+	char *name;
+	char *owner_name;
 	ut64 entry;
 	ut32 kind_tag;
 } DartScannedMethod;
@@ -237,6 +237,9 @@ DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp);
 void dart_ctx_fini_layout(DartCtx *ctx, DartVerLayout *owned);
 int find_snapshots(DartCtx *ctx);
 bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz);
+char *try_read_dart_string_dup(DartCtx *ctx, ut64 addr);
+void dart_scanned_field_fini(DartScannedField *field);
+void dart_scanned_method_fini(DartScannedMethod *method);
 HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
 RList *collect_data_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
 void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end);
