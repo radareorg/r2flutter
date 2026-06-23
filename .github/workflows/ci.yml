@@ -16,6 +16,25 @@ jobs:
     - name: Installing radare2 ${{ env.R2V }}
       uses: radareorg/github-actions@v2
       with:
+        version: ${{ env.R2V }}
+        from-git: false
+    - name: Building r2flutter
+      run: make && make user-install
+    - name: Basic Testing
+      run: make test
+    - name: Radare Testing
+      run: r2r test/db/cmd
+    - name: Radare Extras Testing
+      run: r2r test/db/extras
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Installing radare2 ${{ env.R2V }}
+      uses: radareorg/github-actions@v2
+      with:
+        version: ${{ env.R2V }}
         from-git: false
     - name: Building r2flutter
       run: make && make user-install
