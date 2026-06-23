@@ -159,8 +159,7 @@ DartVerLayout *dart_pick_layout_by_hash(const char *hash) {
 	if (profile) {
 		memcpy (dvl, profile, sizeof (DartVerLayout));
 		if (hash && *hash) {
-			strncpy (dvl->hash, hash, 32);
-			dvl->hash[32] = '\0';
+			r_str_ncpy (dvl->hash, hash, sizeof (dvl->hash));
 		}
 		if (G_VERBOSE > 0) {
 			fprintf (stderr, "[r2flutter] Detected Dart version: %s (hash=%s)\n", profile->dart_version, hash? hash: "(null)");

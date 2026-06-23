@@ -70,12 +70,7 @@ static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayou
 		out->num_predefined_cids = 175;
 	}
 	const char *h = r_json_get_str (item, "hash");
-	if (h && *h) {
-		strncpy (out->hash, h, 32);
-	} else {
-		strncpy (out->hash, hash, 32);
-	}
-	out->hash[32] = '\0';
+	r_str_ncpy (out->hash, R_STR_ISNOTEMPTY (h)? h: hash, sizeof (out->hash));
 	int cws = (int)r_json_get_num (item, "compressed_word_size");
 	if (cws > 0) {
 		out->compressed_word_size = cws;
@@ -246,11 +241,9 @@ static int decode_pool_and_emit(DartItEmitRequest *req) {
 					if (!df || df->entry_point == 0) {
 						continue;
 					}
-					const char *fname = df->name? df->name: "method.unknown";
-					char clean_name[256];
-					snprintf (clean_name, sizeof (clean_name), "%s", fname);
-					r_name_filter (clean_name, 0);
+					char *clean_name = r_name_filter_dup (R_STR_ISEMPTY (df->name)? "method.unknown": df->name);
 					req->on_fn (clean_name, df->entry_point, 0, req->fn_user);
+					free (clean_name);
 				}
 			}
 			if (ctx->verbose > 1 && ctx->strings) {
@@ -397,14 +390,9 @@ static void emit_stub_symbols(DartCtx *ctx,
 		if (!nm) {
 			nm = "sym.func";
 		}
-		char tmp[512];
-		snprintf (tmp, sizeof (tmp), "%s", nm);
-		for (char *p = tmp; *p; p++) {
-			if (*p == ' ') {
-				*p = '.';
-			}
-		}
+		char *tmp = r_str_replace (strdup (nm), " ", ".", true);
 		on_fn (tmp, addr, size, user);
+		free (tmp);
 	}
 }
 

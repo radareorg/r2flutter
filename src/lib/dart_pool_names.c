@@ -159,11 +159,7 @@ bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz) {
 		}
 		if (start >= 0 && end >= start) {
 			int n = end - start + 1;
-			if (n >= outsz) {
-				n = outsz - 1;
-			}
-			memcpy (out, tmp + start, n);
-			out[n] = '\0';
+			r_str_ncpy (out, (const char *)tmp + start, R_MIN (n + 1, outsz));
 			return true;
 		}
 	}

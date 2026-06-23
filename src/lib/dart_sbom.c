@@ -272,10 +272,8 @@ static void sbom_add_native_path(RList *components, const char *path) {
 		if (dot) {
 			*dot = '\0';
 		}
-		if (r_str_startswith (name, "lib") && name[3]) {
-			memmove (name, name + 3, strlen (name + 3) + 1);
-		}
-		sbom_add_component (components, "native-library", name, NULL, "bundle_file", 75, path);
+		const char *component_name = r_str_startswith (name, "lib") && name[3]? name + 3: name;
+		sbom_add_component (components, "native-library", component_name, NULL, "bundle_file", 75, path);
 		free (name);
 	}
 }

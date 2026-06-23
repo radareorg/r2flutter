@@ -217,42 +217,26 @@ static bool xref_parse_pp_offset(const char *opstr, ut64 *out) {
 	while (*p == ' ' || *p == '\t' || *p == '#') {
 		p++;
 	}
-	if (r_str_startswith (p, "0x") || r_str_startswith (p, "0X")) {
-		p += 2;
-		const char *q = p;
+	const char *q = p;
+	bool is_hex = r_str_startswith (p, "0x") || r_str_startswith (p, "0X");
+	if (is_hex) {
+		q = p + 2;
 		while (isxdigit ((ut8)*q)) {
 			q++;
 		}
-		if (q == p) {
+		if (q == p + 2) {
 			return false;
 		}
-		char numbuf[32];
-		size_t len = q - p;
-		if (len > sizeof (numbuf) - 3) {
-			len = sizeof (numbuf) - 3;
-		}
-		numbuf[0] = '0';
-		numbuf[1] = 'x';
-		memcpy (numbuf + 2, p, len);
-		numbuf[len + 2] = '\0';
-		*out = r_num_get (NULL, numbuf);
+		*out = strtoull (p, NULL, 16);
 		return true;
 	}
-	const char *q = p;
 	while (isdigit ((ut8)*q)) {
 		q++;
 	}
 	if (q == p) {
 		return false;
 	}
-	char numbuf[32];
-	size_t len = q - p;
-	if (len >= sizeof (numbuf)) {
-		len = sizeof (numbuf) - 1;
-	}
-	memcpy (numbuf, p, len);
-	numbuf[len] = '\0';
-	*out = r_num_get (NULL, numbuf);
+	*out = strtoull (p, NULL, 10);
 	return true;
 }
 
