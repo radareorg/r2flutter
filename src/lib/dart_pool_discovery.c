@@ -56,13 +56,10 @@ static int collect_snapshot_magics_in_range(DartCtx *ctx, ut64 start, ut64 size,
 	for (ut64 off = 0; off + 4 <= size; off += (sizeof (buf) - 16)) {
 		ut64 addr = start + off;
 		int toread = (int) ((off + sizeof (buf) <= size)? sizeof (buf): (size - off));
-		if (toread <= 0) {
-			break;
-		}
 		if (!read_mem (ctx, addr, buf, toread)) {
 			break;
 		}
-		for (int j = 0; j + 4 <= toread; j += 4) {
+		for (int j = 0; j <= toread - 4; j += 4) {
 			uint32_t val = r_read_le32 (buf + j);
 			if (val == DART_SNAPSHOT_MAGIC) {
 				found_addrs[found_cnt++] = addr + j;

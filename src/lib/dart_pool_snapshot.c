@@ -22,20 +22,21 @@ bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len) {
 READ_LE_AT(32, ut32)
 READ_LE_AT(64, ut64)
 
-typedef bool(*DartReadByteCb)(void *user, ut8 *out);
-
-static bool dart_read_unsigned_cb(DartReadByteCb read_byte, void *user, ut64 *out_val) {
+bool dart_read_unsigned_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_next) {
 	ut64 v = 0;
 	int shift = 0;
 	for (int i = 0; i < 10; i++) {
 		ut8 b = 0;
-		if (!read_byte (user, &b)) {
+		if (!read_mem (ctx, addr + i, &b, 1)) {
 			return false;
 		}
 		if (b > 0x7f) {
 			v |= ((ut64) (b - 0x80)) << shift;
 			if (out_val) {
 				*out_val = v;
+			}
+			if (out_next) {
+				*out_next = addr + i + 1;
 			}
 			return true;
 		}
@@ -45,70 +46,28 @@ static bool dart_read_unsigned_cb(DartReadByteCb read_byte, void *user, ut64 *ou
 	return false;
 }
 
-typedef struct {
-	DartCtx *ctx;
-	ut64 addr;
-	int nread;
-} DartAddrReader;
-
-static bool dart_read_byte_at_cb(void *user, ut8 *out) {
-	DartAddrReader *reader = (DartAddrReader *)user;
-	if (!reader || !out) {
-		return false;
-	}
-	if (!read_mem (reader->ctx, reader->addr + reader->nread, out, 1)) {
-		return false;
-	}
-	reader->nread++;
-	return true;
-}
-
-bool dart_read_unsigned_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_next) {
-	DartAddrReader reader = {
-		.ctx = ctx,
-		.addr = addr,
-		.nread = 0
-	};
-	if (!dart_read_unsigned_cb (dart_read_byte_at_cb, &reader, out_val)) {
-		return false;
-	}
-	if (out_next) {
-		*out_next = addr + reader.nread;
-	}
-	return true;
-}
-
-typedef struct {
-	const ut8 *buf;
-	ut64 size;
-	ut64 pos;
-} DartBufReader;
-
-static bool dart_read_byte_buf_cb(void *user, ut8 *out) {
-	DartBufReader *reader = (DartBufReader *)user;
-	if (!reader || !out || reader->pos >= reader->size) {
-		return false;
-	}
-	*out = reader->buf[reader->pos++];
-	return true;
-}
-
 bool dart_read_unsigned_buf(const ut8 *buf, ut64 size, ut64 pos, ut64 *out_val, ut64 *out_next) {
 	if (!buf || pos >= size) {
 		return false;
 	}
-	DartBufReader reader = {
-		.buf = buf,
-		.size = size,
-		.pos = pos
-	};
-	if (!dart_read_unsigned_cb (dart_read_byte_buf_cb, &reader, out_val)) {
-		return false;
+	ut64 v = 0;
+	int shift = 0;
+	ut64 end = pos + R_MIN (size - pos, 10);
+	for (; pos < end; pos++, shift += 7) {
+		ut8 b = buf[pos];
+		if (b > 0x7f) {
+			v |= ((ut64) (b - 0x80)) << shift;
+			if (out_val) {
+				*out_val = v;
+			}
+			if (out_next) {
+				*out_next = pos + 1;
+			}
+			return true;
+		}
+		v |= ((ut64)b) << shift;
 	}
-	if (out_next) {
-		*out_next = reader.pos;
-	}
-	return true;
+	return false;
 }
 
 char *dart_utf16le_to_utf8(const ut8 *buf, ut64 size) {
@@ -283,12 +242,18 @@ bool cs_read_u32(ClusterStream *s, uint32_t *out) {
 	return ok;
 }
 
-static bool dart_read_byte_stream_cb(void *user, ut8 *out) {
-	return cs_read_u8 ((ClusterStream *)user, out);
-}
-
 bool cs_read_unsigned(ClusterStream *s, ut64 *out) {
-	return dart_read_unsigned_cb (dart_read_byte_stream_cb, s, out);
+	if (!s || s->cursor >= s->end) {
+		return false;
+	}
+	ut8 buf[10];
+	ut64 next = 0;
+	int len = (int)R_MIN (s->end - s->cursor, sizeof (buf));
+	if (!read_mem (s->ctx, s->cursor, buf, len) || !dart_read_unsigned_buf (buf, len, 0, out, &next)) {
+		return false;
+	}
+	s->cursor += next;
+	return true;
 }
 
 bool cs_read_ref_id(ClusterStream *s, ut64 *out) {

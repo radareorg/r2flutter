@@ -198,23 +198,11 @@ static void scan_ascii_strings(const ut8 *buf, ut64 base, ut64 size, RList *list
 	}
 }
 
-static bool decode_utf16le_unit(const ut8 *buf, ut64 size, ut64 idx, ut32 *out) {
-	if (idx + 1 >= size) {
-		return false;
-	}
-	ut32 code = r_read_le16 (buf + idx);
-	if (!code) {
-		return false;
-	}
-	*out = code;
-	return true;
-}
-
 static int emit_utf16le(const ut8 *buf, ut64 start, ut64 end, RStrBuf *sb) {
 	ut64 pos = start;
 	while (pos + 1 < end) {
-		ut32 code = 0;
-		if (!decode_utf16le_unit (buf, end, pos, &code)) {
+		ut32 code = r_read_le16 (buf + pos);
+		if (!code) {
 			break;
 		}
 		if (code < 0x20 && code != '\t' && code != '\n' && code != '\r') {
@@ -249,8 +237,8 @@ static bool utf16le_has_ascii_profile(const ut8 *buf, ut64 start, ut64 end) {
 	int asciiish = 0;
 	int alpha = 0;
 	for (ut64 pos = start; pos + 1 < end; pos += 2) {
-		ut32 code = 0;
-		if (!decode_utf16le_unit (buf, end, pos, &code)) {
+		ut32 code = r_read_le16 (buf + pos);
+		if (!code) {
 			return false;
 		}
 		if (code >= 0xD800 && code <= 0xDFFF) {
@@ -526,8 +514,8 @@ static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, RList *list
 	}
 	ut64 pos = 0;
 	while (pos + 1 < size) {
-		ut32 code = 0;
-		if (!decode_utf16le_unit (buf, size, pos, &code)) {
+		ut32 code = r_read_le16 (buf + pos);
+		if (!code) {
 			pos++;
 			continue;
 		}
