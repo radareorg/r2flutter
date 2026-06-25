@@ -1036,3 +1036,11 @@ mapping. On the `mafia` fixture, `-f` recovers many
 `method.IsarCoreBindings.isar_*` Dart wrappers and `-z` recovers `libisar.so`
 plus `isar_*` strings, but the fixture does not ship `libisar.so`, so no final
 native vaddr is available statically; keep obfuscation-expanded semantic names heap-owned (`char *`) so lookup keys are not truncated.
+
+## Snapshot Profile Overrides
+
+The snapshot hash embedded in a binary normally selects the Dart layout profile,
+but patched samples can carry a misleading hash. `-D <hash|version>` overrides
+the profile used by r2flutter analysis without modifying the input binary. A
+32-byte hash is treated as the effective snapshot hash; a Dart version string
+such as `3.8.1` selects the static profile for that version.

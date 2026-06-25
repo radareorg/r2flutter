@@ -41,7 +41,10 @@ typedef struct {
 	ut64 container_payload_offset;
 	ut64 container_payload_size;
 	ut64 container_macho_offset;
+	char snapshot_hash_actual[33];
 	char snapshot_hash[33];
+	char snapshot_hash_override[33];
+	char dart_version_override[32];
 	const DartVerLayout *layout;
 	int compressed_word_size;
 	HtUP *name_by_ep;

@@ -1,6 +1,73 @@
 /* r2flutter - MIT - Copyright 2026 - pancake */
 
+#include <ctype.h>
 #include "dart_pool_parse_priv.h"
+
+static bool dart_is_snapshot_hash(const char *s) {
+	if (R_STR_ISEMPTY (s) || strlen (s) != DART_SNAPSHOT_HASH_SIZE) {
+		return false;
+	}
+	for (int i = 0; i < DART_SNAPSHOT_HASH_SIZE; i++) {
+		if (!isxdigit ((ut8)s[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static void dart_copy_snapshot_hash_lower(char *dst, size_t dstsz, const char *src) {
+	if (!dst || !dstsz) {
+		return;
+	}
+	for (int i = 0; i < DART_SNAPSHOT_HASH_SIZE && (size_t)i + 1 < dstsz; i++) {
+		dst[i] = tolower ((ut8)src[i]);
+	}
+	dst[R_MIN ((size_t)DART_SNAPSHOT_HASH_SIZE, dstsz - 1)] = '\0';
+}
+
+bool dart_ctx_set_profile_override(DartCtx *ctx, const char *spec) {
+	if (!ctx) {
+		return false;
+	}
+	ctx->snapshot_hash_override[0] = '\0';
+	ctx->dart_version_override[0] = '\0';
+	if (R_STR_ISEMPTY (spec)) {
+		return true;
+	}
+	if (dart_is_snapshot_hash (spec)) {
+		dart_copy_snapshot_hash_lower (ctx->snapshot_hash_override, sizeof (ctx->snapshot_hash_override), spec);
+		return true;
+	}
+	const DartVerLayout *profile = dart_profile_from_version (spec);
+	if (!profile) {
+		return false;
+	}
+	r_str_ncpy (ctx->dart_version_override, spec, sizeof (ctx->dart_version_override));
+	return true;
+}
+
+const char *dart_ctx_effective_hash(DartCtx *ctx) {
+	if (!ctx) {
+		return NULL;
+	}
+	if (R_STR_ISNOTEMPTY (ctx->snapshot_hash)) {
+		return ctx->snapshot_hash;
+	}
+	if (R_STR_ISNOTEMPTY (ctx->snapshot_hash_override)) {
+		return ctx->snapshot_hash_override;
+	}
+	return R_STR_ISNOTEMPTY (ctx->snapshot_hash_actual)? ctx->snapshot_hash_actual: NULL;
+}
+
+const char *dart_ctx_effective_version(DartCtx *ctx) {
+	if (!ctx) {
+		return NULL;
+	}
+	if (R_STR_ISNOTEMPTY (ctx->dart_version_override)) {
+		return ctx->dart_version_override;
+	}
+	return dart_version_from_hash (dart_ctx_effective_hash (ctx));
+}
 
 static const char *dart_tag_style_names[] = {
 	"CID_INT32", // DART_TAG_STYLE_CID_INT32 = 0
@@ -92,19 +159,51 @@ static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayou
 	return out;
 }
 
+static DartVerLayout *dart_layout_new_from_profile(DartCtx *ctx, const DartVerLayout *profile) {
+	if (!profile) {
+		return NULL;
+	}
+	DartVerLayout *dvl = calloc (1, sizeof (DartVerLayout));
+	if (!dvl) {
+		return NULL;
+	}
+	memcpy (dvl, profile, sizeof (DartVerLayout));
+	const char *hash = dart_ctx_effective_hash (ctx);
+	if (R_STR_ISNOTEMPTY (hash)) {
+		r_str_ncpy (dvl->hash, hash, sizeof (dvl->hash));
+	}
+	return dvl;
+}
+
+static DartVerLayout *dart_pick_layout_owned_for_ctx(DartCtx *ctx) {
+	if (!ctx) {
+		return NULL;
+	}
+	if (R_STR_ISNOTEMPTY (ctx->dart_version_override)) {
+		return dart_layout_new_from_profile (ctx, dart_profile_from_version (ctx->dart_version_override));
+	}
+	return dart_pick_layout_by_hash (dart_ctx_effective_hash (ctx));
+}
+
 static void extract_snapshot_hash_flags(DartCtx *ctx, ut64 vm_data) {
 	if (!ctx || !vm_data) {
 		return;
 	}
 	ctx->snapshot_hash[0] = '\0';
+	ctx->snapshot_hash_actual[0] = '\0';
 	DartSnapshotHeader hdr;
 	if (!dart_snapshot_header_read (ctx, vm_data, &hdr)) {
 		return;
 	}
-	memcpy (ctx->snapshot_hash, hdr.hash, 32);
-	ctx->snapshot_hash[32] = '\0';
+	memcpy (ctx->snapshot_hash_actual, hdr.hash, DART_SNAPSHOT_HASH_SIZE);
+	ctx->snapshot_hash_actual[DART_SNAPSHOT_HASH_SIZE] = '\0';
+	if (R_STR_ISNOTEMPTY (ctx->snapshot_hash_override)) {
+		r_str_ncpy (ctx->snapshot_hash, ctx->snapshot_hash_override, sizeof (ctx->snapshot_hash));
+	} else {
+		r_str_ncpy (ctx->snapshot_hash, ctx->snapshot_hash_actual, sizeof (ctx->snapshot_hash));
+	}
 	if (ctx->verbose > 0) {
-		fprintf (stderr, "[r2flutter] snapshot_hash=%.*s flags=%.128s\n", 32, hdr.hash, hdr.flags);
+		fprintf (stderr, "[r2flutter] snapshot_hash=%s flags=%.128s\n", ctx->snapshot_hash, hdr.flags);
 	}
 }
 
@@ -128,7 +227,7 @@ static void derive_layout_from_flags(DartCtx *ctx) {
 	if (ctx->layout && ctx->compressed_word_size == 4) {
 		int major = 0;
 		int minor = 0;
-		const char *version = dart_version_from_hash (ctx->snapshot_hash);
+		const char *version = dart_ctx_effective_version (ctx);
 		bool use_64_alignment = ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER;
 		if (!use_64_alignment && version && sscanf (version, "%d.%d", &major, &minor) == 2) {
 			use_64_alignment = major > 2 || (major == 2 && minor >= 19);
@@ -143,10 +242,10 @@ static void derive_layout_from_flags(DartCtx *ctx) {
 
 DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp) {
 	extract_snapshot_hash_flags (ctx, ctx->vm_data);
-	ctx->layout = load_layout_from_json (ctx->snapshot_hash, tmp);
+	ctx->layout = R_STR_ISEMPTY (ctx->dart_version_override)? load_layout_from_json (dart_ctx_effective_hash (ctx), tmp): NULL;
 	DartVerLayout *owned = NULL;
 	if (!ctx->layout) {
-		owned = dart_pick_layout_by_hash (ctx->snapshot_hash);
+		owned = dart_pick_layout_owned_for_ctx (ctx);
 		ctx->layout = owned;
 	}
 	derive_layout_from_flags (ctx);
@@ -525,7 +624,7 @@ static int prepare_header_data(DartCtx *ctx) {
 		return -1;
 	}
 	extract_snapshot_hash_flags (ctx, ctx->vm_data);
-	ctx->layout = dart_pick_layout_by_hash (ctx->snapshot_hash);
+	ctx->layout = dart_pick_layout_owned_for_ctx (ctx);
 	derive_layout_from_flags (ctx);
 	return 0;
 }
@@ -538,7 +637,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		return fmt == 'r'? strdup ("# Error: Dart snapshots not found\n"): strdup ("Error: Dart snapshots not found\n");
 	}
 	const bool quiet = ctx && ctx->quiet;
-	const char *version = dart_version_from_hash (ctx->snapshot_hash);
+	const char *version = dart_ctx_effective_version (ctx);
 	if (fmt == 'j') {
 		ut64 header_addr = ctx->iso_data? ctx->iso_data: ctx->vm_data;
 		DartSnapshotHeader sh = { 0 };
@@ -755,7 +854,7 @@ static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, u
 }
 
 static char *dump_header_ext_json(DartCtx *ctx, int detail) {
-	const char *version = dart_version_from_hash (ctx->snapshot_hash);
+	const char *version = dart_ctx_effective_version (ctx);
 	DartSnapshotHeader iso = { 0 };
 	if (ctx->iso_data) {
 		dart_snapshot_header_read (ctx, ctx->iso_data, &iso);

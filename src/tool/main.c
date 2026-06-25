@@ -40,7 +40,8 @@ static const char usage_text[] =
 	"  -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs/ax in -r)\n"
 	"Options:\n"
 	"  -l <N>                Limit output to N items\n"
-	"  -m <file>             Load Flutter obfuscation map JSON\n";
+	"  -m <file>             Load Flutter obfuscation map JSON\n"
+	"  -D <hash|version>     Override Dart snapshot profile for analysis\n";
 
 static void print_usage(const char *argv0) {
 	printf (usage_text, argv0);
@@ -117,7 +118,7 @@ int main(int argc, char **argv) {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "AcfhHijnm:O:pqrRSzTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "AcD:fhHijnm:O:pqrRSzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -148,6 +149,12 @@ int main(int argc, char **argv) {
 			break;
 		case 'p':
 			action = c;
+			break;
+		case 'D':
+			if (!dart_ctx_set_profile_override (&dctx, opt.arg)) {
+				R_LOG_ERROR ("Unsupported Dart snapshot profile override: %s", opt.arg);
+				return 1;
+			}
 			break;
 		case 'j':
 			fmt = c;

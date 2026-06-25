@@ -81,6 +81,7 @@ Actions:
 Options:
   -l <N>                Limit output to N items
   -m <file>             Load Flutter obfuscation map JSON
+  -D <hash|version>     Override Dart snapshot profile for analysis
 ```
 
 `bin/r2flutter` runs one action per invocation. Directory inputs resolve Android
@@ -91,6 +92,10 @@ first (`libapp.so`), then iOS (`Frameworks/App.framework/App`).
 `-m` consumes the JSON array emitted by Flutter/Dart `--save-obfuscation-map`. r2flutter inverts that mapping and applies it to recovered functions, instruction-table names, classes, fields, and method owners.
 
 `-n` is intentionally opt-in. It consumes `package:` and `dart:` strings from the data image as a sequential fallback for otherwise unnamed functions, so it can produce plausible but incorrect names when the string order does not match the instruction table.
+
+`-D` forces the Dart profile used for layout/CID decoding without patching the
+input binary. Pass either a known 32-byte snapshot hash or a supported Dart
+version such as `3.8.1`.
 
 `-S` emits a best-effort recovered component report, not a complete dependency
 inventory. JSON output uses `format: "r2flutter-recovered-sbom"` and
@@ -130,6 +135,7 @@ Plugin config keys:
 
 - `r2flutter.mapfile`: Flutter obfuscation map JSON path
 - `r2flutter.namepool`: enable heuristic name-pool fallback
+- `r2flutter.profile`: override Dart profile by snapshot hash or Dart version
 
 ## Dependencies
 

@@ -11,6 +11,7 @@
 
 #define R2FLUTTER_CFG_MAPFILE "r2flutter.mapfile"
 #define R2FLUTTER_CFG_NAMEPOOL "r2flutter.namepool"
+#define R2FLUTTER_CFG_PROFILE "r2flutter.profile"
 
 typedef struct {
 	char action;
@@ -31,6 +32,8 @@ static bool r2flutter_core_init(RCorePluginSession *cps) {
 	r_config_node_desc (node, "Flutter obfuscation map JSON path");
 	node = r_config_set_b (cfg, R2FLUTTER_CFG_NAMEPOOL, false);
 	r_config_node_desc (node, "Enable heuristic name-pool fallback resolution");
+	node = r_config_set (cfg, R2FLUTTER_CFG_PROFILE, "");
+	r_config_node_desc (node, "Override Dart snapshot profile by 32-byte hash or Dart version");
 	r_config_lock (cfg, true);
 	return true;
 }
@@ -40,6 +43,7 @@ static bool r2flutter_core_fini(RCorePluginSession *cps) {
 	r_config_lock (cfg, false);
 	r_config_rm (cfg, R2FLUTTER_CFG_MAPFILE);
 	r_config_rm (cfg, R2FLUTTER_CFG_NAMEPOOL);
+	r_config_rm (cfg, R2FLUTTER_CFG_PROFILE);
 	r_config_lock (cfg, true);
 	return true;
 }
@@ -47,11 +51,15 @@ static bool r2flutter_core_fini(RCorePluginSession *cps) {
 static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 	dctx->obf_map_path = r_config_get (core->config, R2FLUTTER_CFG_MAPFILE);
 	dctx->use_name_pool = r_config_get_b (core->config, R2FLUTTER_CFG_NAMEPOOL);
+	const char *profile = r_config_get (core->config, R2FLUTTER_CFG_PROFILE);
+	if (R_STR_ISNOTEMPTY (profile) && !dart_ctx_set_profile_override (dctx, profile)) {
+		R_LOG_WARN ("Ignoring unsupported Dart snapshot profile override: %s", profile);
+	}
 }
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [-jqrnv] [-l N] [-m file] <action>\n"
+		"Usage: r2flutter [-jqrnv] [-l N] [-m file] [-D hash|version] <action>\n"
 		"| r2flutter          show same -h help message\n"
 		"| r2flutter -j <act> output JSON for dump actions\n"
 		"| r2flutter -q <act> compact output; quiet analysis logs\n"
@@ -60,6 +68,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -v       increase parser verbosity\n"
 		"| r2flutter -l N     limit function/instruction-table/xref output\n"
 		"| r2flutter -m file  load Flutter obfuscation map JSON\n"
+		"| r2flutter -D prof  override Dart snapshot profile by hash or version\n"
 		"| r2flutter -A       analyze dart snapshot and apply flags/comments\n"
 		"| r2flutter -AA      analyze with field extraction enabled\n"
 		"| r2flutter -AAA     run Dart-aware code analysis and recover code refs\n"
@@ -231,6 +240,16 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 			case 'p':
 				cmd->action = flag;
 				break;
+			case 'D':
+				{
+					const char *arg = r2flutter_opt_arg (tail, words, nwords, &i);
+					if (!arg || !dart_ctx_set_profile_override (dctx, arg)) {
+						cmd->help = true;
+						break;
+					}
+					j += strlen (tail);
+					break;
+				}
 			case 'j':
 				cmd->fmt = 'j';
 				break;
@@ -301,7 +320,7 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				cmd->help = true;
 				break;
 			}
-			if (cmd->help || (R_STR_ISNOTEMPTY (tail) && (flag == 'l' || flag == 'm' || flag == 'O'))) {
+			if (cmd->help || (R_STR_ISNOTEMPTY (tail) && (flag == 'l' || flag == 'm' || flag == 'O' || flag == 'D'))) {
 				break;
 			}
 		}
