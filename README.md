@@ -54,9 +54,9 @@ Usage: bin/r2flutter [options] <libapp_path_or_dir>
 Modifiers:
   -h                    Show help
   -j                    Output in JSON format
+  -n                    Heuristic fallback for unknown functions; may assign wrong names
   -q                    Compact output; suppress non-essential detail
   -r                    Output r2 commands for the selected action
-  -n                    Heuristic fallback for unknown functions; may assign wrong names
   -v                    Verbose (stderr debug info)
   -vv                   More verbose (dump headers)
   -V                    Show version
@@ -79,9 +79,9 @@ Actions:
   -z                    Print reliable ObjectPool-referenced strings (-q prints values only)
   -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs/ax in -r)
 Options:
+  -D <hash|version>     Override Dart snapshot profile for analysis
   -l <N>                Limit output to N items
   -m <file>             Load Flutter obfuscation map JSON
-  -D <hash|version>     Override Dart snapshot profile for analysis
 ```
 
 `bin/r2flutter` runs one action per invocation. Directory inputs resolve Android
@@ -127,6 +127,7 @@ r2flutter -A       analyze and apply flags/comments
 r2flutter -AA      analyze with field extraction enabled
 r2flutter -AAA     run Dart-aware code analysis and recover refs/comments
 r2flutter -C       apply Dart classes, fields, methods and types
+r2flutter -D 3.8.1  override Dart snapshot profile for analysis
 r2flutter -jS      print recovered components/SBOM as JSON
 r2flutter -r -p    map a synthetic ObjectPool and set anal.gp/x27
 ```

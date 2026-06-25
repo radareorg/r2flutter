@@ -14,9 +14,9 @@ static const char usage_text[] =
 	"Modifiers:\n"
 	"  -h                    Show help\n"
 	"  -j                    Output in JSON format\n"
+	"  -n                    Heuristic fallback for unknown functions; may assign wrong names\n"
 	"  -q                    Compact output; suppress non-essential detail\n"
 	"  -r                    Output r2 commands for the selected action\n"
-	"  -n                    Heuristic fallback for unknown functions; may assign wrong names\n"
 	"  -v                    Verbose (stderr debug info)\n"
 	"  -vv                   More verbose (dump headers)\n"
 	"  -V                    Show version\n"
@@ -39,9 +39,9 @@ static const char usage_text[] =
 	"  -z                    Print reliable ObjectPool-referenced strings (-q prints values only)\n"
 	"  -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs/ax in -r)\n"
 	"Options:\n"
+	"  -D <hash|version>     Override Dart snapshot profile for analysis\n"
 	"  -l <N>                Limit output to N items\n"
-	"  -m <file>             Load Flutter obfuscation map JSON\n"
-	"  -D <hash|version>     Override Dart snapshot profile for analysis\n";
+	"  -m <file>             Load Flutter obfuscation map JSON\n";
 
 static void print_usage(const char *argv0) {
 	printf (usage_text, argv0);
