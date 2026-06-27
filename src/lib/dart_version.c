@@ -55,6 +55,7 @@ static const struct {
 	{ "16ad76edd19b537bf6ea64fdd31977a7", "3.0.5" },
 	// Dart 3.1.x (Flutter 3.13.x)
 	{ "7dbbeeb8ef7b91338640dca3927636de", "3.1.0" },
+	{ "78da37fed6bf1489361a312568249f3f", "3.1.3" },
 	// Dart 3.2.x (Flutter 3.16.x)
 	{ "f71c76320d35b65f1164dbaa6d95fe09", "3.2.5" },
 	// Dart 3.3.x (Flutter 3.19.x)
