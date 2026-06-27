@@ -163,10 +163,7 @@ static DartVerLayout *dart_layout_new_from_profile(DartCtx *ctx, const DartVerLa
 	if (!profile) {
 		return NULL;
 	}
-	DartVerLayout *dvl = calloc (1, sizeof (DartVerLayout));
-	if (!dvl) {
-		return NULL;
-	}
+	DartVerLayout *dvl = R_NEW0 (DartVerLayout);
 	memcpy (dvl, profile, sizeof (DartVerLayout));
 	const char *hash = dart_ctx_effective_hash (ctx);
 	if (R_STR_ISNOTEMPTY (hash)) {

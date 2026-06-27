@@ -528,10 +528,7 @@ static void dart_app_merge_class_methods(DartApp *app) {
 }
 
 DartApp *dart_app_new(const char *path) {
-	DartApp *app = (DartApp *)calloc (1, sizeof (DartApp));
-	if (!app) {
-		return NULL;
-	}
+	DartApp *app = R_NEW0 (DartApp);
 	app->file_path = path? strdup (path): NULL;
 	app->functions = RVecDartFunction_new ();
 	return app;

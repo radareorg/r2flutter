@@ -146,10 +146,7 @@ const DartVerLayout *dart_profile_from_version(const char *version) {
 }
 
 DartVerLayout *dart_pick_layout_by_hash(const char *hash) {
-	DartVerLayout *dvl = calloc (1, sizeof (DartVerLayout));
-	if (!dvl) {
-		return NULL;
-	}
+	DartVerLayout *dvl = R_NEW0 (DartVerLayout);
 	const char *version = dart_version_from_hash (hash);
 	const DartVerLayout *profile = version? dart_profile_from_version (version): NULL;
 	if (profile) {
