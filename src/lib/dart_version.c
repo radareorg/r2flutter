@@ -2,7 +2,7 @@
 
 // Dart SDK version detection and layout profiles
 //
-// Supported Dart SDK versions: 2.10.0 - 3.10.7
+// Supported Dart SDK versions: 2.10.0 - 3.12.1
 // Based on unflutter's version profiles and CID tables.
 
 #include <r_core.h>
@@ -53,9 +53,8 @@ static const struct {
 	{ "aa64af18e7d086041ac127cc4bc50c5e", "3.0.5" },
 	{ "36b0375d284ee2af0d0fffc6e6e48fde", "3.0.5" },
 	{ "16ad76edd19b537bf6ea64fdd31977a7", "3.0.5" },
-	// Dart 3.1.x (Flutter 3.13.x)
-	{ "7dbbeeb8ef7b91338640dca3927636de", "3.1.0" },
-	{ "78da37fed6bf1489361a312568249f3f", "3.1.3" },
+	// Dart 3.1.x (Flutter 3.13.x) - all 3.1.0-3.1.5 share this hash
+	{ "7dbbeeb8ef7b91338640dca3927636de", "3.1.3" },
 	// Dart 3.2.x (Flutter 3.16.x)
 	{ "f71c76320d35b65f1164dbaa6d95fe09", "3.2.5" },
 	// Dart 3.3.x (Flutter 3.19.x)
@@ -76,6 +75,11 @@ static const struct {
 	{ "97ff04a728735e6b6b098bdf983faaba", "3.9.2" },
 	// Dart 3.10.x (Flutter 3.38.x)
 	{ "1ce86630892e2dca9a8543fdb8ed8e22", "3.10.7" },
+	// Dart 3.11.x (Flutter 3.39.x)
+	{ "78da37fed6bf1489361a312568249f3f", "3.11.5" },
+	// Dart 3.12.x (Flutter 3.41.x)
+	{ "41be3daaabd524b8aa7423bc24584957", "3.12.0" },
+	{ "ace654289f5abc240509fc941453ebc5", "3.12.1" },
 	{ NULL, NULL }
 };
 
@@ -99,8 +103,8 @@ static const DartVerLayout version_profiles[] = {
 	{ "", "2.19.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, 5, 7, 17, 92, 93, 94, 89, 60, 21, 176 },
 	// Dart 3.0.5 - shift1 tag, 5 header fields, adds WeakArray
 	{ "", "3.0.5", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, 5, 7, 18, 93, 94, 95, 90, 61, 22, 177 },
-	// Dart 3.1.0 - shift1 tag, 5 header fields
-	{ "", "3.1.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, 5, 7, 18, 92, 93, 94, 89, 60, 22, 176 },
+	// Dart 3.1.3 - shift1 tag, 5 header fields
+	{ "", "3.1.3", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, 5, 7, 18, 92, 93, 94, 89, 60, 22, 176 },
 	// Dart 3.2.5 - shift1 tag, 5 header fields, PoolType swapped
 	{ "", "3.2.5", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, 5, 7, 18, 92, 93, 94, 89, 60, 22, 176 },
 	// Dart 3.3.0 - shift1 tag, 5 header fields
@@ -119,6 +123,12 @@ static const DartVerLayout version_profiles[] = {
 	{ "", "3.9.2", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, 5, 7, 18, 93, 94, 95, 90, 61, 23, 175 },
 	// Dart 3.10.7 - ObjectHeader tag, 5 header fields
 	{ "", "3.10.7", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, 5, 7, 18, 93, 94, 95, 90, 61, 23, 175 },
+	// Dart 3.11.5 - ObjectHeader tag, 5 header fields
+	{ "", "3.11.5", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, 5, 7, 18, 93, 94, 95, 90, 61, 23, 175 },
+	// Dart 3.12.0 - ObjectHeader tag, 5 header fields
+	{ "", "3.12.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, 5, 7, 18, 93, 94, 95, 90, 61, 23, 175 },
+	// Dart 3.12.1 - ObjectHeader tag, 5 header fields
+	{ "", "3.12.1", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, 5, 7, 18, 93, 94, 95, 90, 61, 23, 175 },
 	{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 };
 

@@ -741,6 +741,66 @@
         24,
         8
       ]
+    },
+    "78da37fed6bf1489361a312568249f3f": {
+      "hash": "78da37fed6bf1489361a312568249f3f",
+      "compressed_word_size": 4,
+      "heap_object_tag": 1,
+      "max_alignment": 16,
+      "it_cap": 20000,
+      "code_entry_point_offsets": [
+        8,
+        24,
+        16,
+        32
+      ],
+      "code_owner_offsets": [
+        56
+      ],
+      "function_name_offsets": [
+        24,
+        8
+      ]
+    },
+    "41be3daaabd524b8aa7423bc24584957": {
+      "hash": "41be3daaabd524b8aa7423bc24584957",
+      "compressed_word_size": 4,
+      "heap_object_tag": 1,
+      "max_alignment": 16,
+      "it_cap": 20000,
+      "code_entry_point_offsets": [
+        8,
+        24,
+        16,
+        32
+      ],
+      "code_owner_offsets": [
+        56
+      ],
+      "function_name_offsets": [
+        24,
+        8
+      ]
+    },
+    "ace654289f5abc240509fc941453ebc5": {
+      "hash": "ace654289f5abc240509fc941453ebc5",
+      "compressed_word_size": 4,
+      "heap_object_tag": 1,
+      "max_alignment": 16,
+      "it_cap": 20000,
+      "code_entry_point_offsets": [
+        8,
+        24,
+        16,
+        32
+      ],
+      "code_owner_offsets": [
+        56
+      ],
+      "function_name_offsets": [
+        24,
+        8
+      ]
     }
   }
 }

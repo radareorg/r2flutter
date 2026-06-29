@@ -573,7 +573,7 @@ The `instruction_table_data_offset` field points into the Data Image.
 
 The 32-byte ASCII MD5 hash at offset 0x14 identifies the exact Dart VM version and snapshot format. This hash maps to a finite set of constraint profiles that can be statically defined.
 
-r2flutter maintains 40+ known snapshot hashes from Flutter 1.22.x (Dart 2.10.0) to Flutter 3.38.x (Dart 3.10.7).
+r2flutter maintains 40+ known snapshot hashes from Flutter 1.22.x (Dart 2.10.0) to Flutter 3.41.x (Dart 3.12.1).
 
 ### Version Profiles Include:
 - Tag encoding style (CID-Int32, CID-Shift1, ObjectHeader)

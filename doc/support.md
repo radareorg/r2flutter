@@ -17,7 +17,7 @@ instruction tables, and strings directly.
 | Mach-O details | Thin Mach-O64 and fat Mach-O/fat64; arm64 slice is preferred. LC_NOTE owner `__dart_app_snap` is detected and the embedded Dart Mach-O payload is extracted to a temporary file. |
 | Architecture | ARM64/AArch64 is the real target. Instruction-table entrypoints are based on ARM64 code offsets, PP tracking uses `x27`, and the radare2 analysis pass understands AArch64 registers/op metadata. |
 | Snapshot kind | Clustered Dart AOT snapshots with magic `0xdcdcf5f5`, 32-byte snapshot hashes, feature strings, and unsigned varint header fields. |
-| Dart layouts | In-tree profiles cover Dart `2.10.0` through `3.10.7`, roughly Flutter `1.22.x` through `3.38.x`. |
+| Dart layouts | In-tree profiles cover Dart `2.10.0` through `3.12.1`, roughly Flutter `1.22.x` through `3.41.x`. |
 | Unknown hashes | First tries `r2flutter/offsets.json` or `offsets.json`; otherwise uses v3.9.2-shaped ObjectHeader defaults while reporting the Dart version as `unknown`. |
 | Obfuscation maps | Flutter/Dart `--save-obfuscation-map` JSON arrays are supported with `-m <file>` or `e r2flutter.mapfile=<file>` in the plugin. |
 
@@ -44,7 +44,7 @@ The CID column is compacted as:
 | 2.18.0 | 3.3.x | `CID_SHIFT1` | 4 | 5 | 159 | `5/7/17/90/91/92/87/59/21` | SuspendState added. |
 | 2.19.0 | 3.7.x | `CID_SHIFT1` | 4 | 5 | 176 | `5/7/17/92/93/94/89/60/21` | RecordType/Record added. |
 | 3.0.5 | 3.10.x - 3.12.x | `CID_SHIFT1` | 4 | 5 | 177 | `5/7/18/93/94/95/90/61/22` | WeakArray added. |
-| 3.1.0 | 3.13.x | `CID_SHIFT1` | 4 | 5 | 176 | `5/7/18/92/93/94/89/60/22` | TypeRef removed. |
+| 3.1.3 | 3.13.x | `CID_SHIFT1` | 4 | 5 | 176 | `5/7/18/92/93/94/89/60/22` | TypeRef removed. |
 | 3.2.5 | 3.16.x | `CID_SHIFT1` | 4 | 5 | 176 | `5/7/18/92/93/94/89/60/22` | PoolType swapped. |
 | 3.3.0 | 3.19.x | `CID_SHIFT1` | 4 | 5 | 176 | `5/7/18/92/93/94/89/60/22` | Last Shift1 profile in-tree. |
 | 3.4.3 | 3.22.x | `OBJECT_HEADER` | 4 | 5 | 174 | `5/7/18/92/93/94/89/60/22` | ObjectHeader tag encoding begins. |
@@ -54,6 +54,9 @@ The CID column is compacted as:
 | 3.8.1 | 3.32.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
 | 3.9.2 | 3.35.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Unknown-hash fallback baseline. |
 | 3.10.7 | 3.38.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Newest in-tree profile. |
+| 3.11.5 | 3.39.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
+| 3.12.0 | 3.41.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
+| 3.12.1 | 3.41.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
 
 All profiles use heap object tag `1`, default alignment `16`, and instruction
 table capacity `20000` before feature-flag or `offsets.json` adjustments.
@@ -73,7 +76,7 @@ These hashes are mapped directly by `src/lib/dart_version.c`.
 | 2.18.0 | `b0e899ec5a90e4661501f0b69e9dd70f`, `b6d0a1f034d158b0d37b51d559379697`, `8e50e448b241be23b9e990094f4dca39`, `6a9b5a03a7e784a4558b10c769f188d9` |
 | 2.19.0 | `adb4292f3ec25074ca70abcd2d5c7251`, `501ef5cbd64ca70b6b42672346af6a8a` |
 | 3.0.5 | `90b56a561f70cd55e972cb49b79b3d8b`, `aa64af18e7d086041ac127cc4bc50c5e`, `36b0375d284ee2af0d0fffc6e6e48fde`, `16ad76edd19b537bf6ea64fdd31977a7` |
-| 3.1.0 | `7dbbeeb8ef7b91338640dca3927636de` |
+| 3.1.3 | `7dbbeeb8ef7b91338640dca3927636de` |
 | 3.2.5 | `f71c76320d35b65f1164dbaa6d95fe09` |
 | 3.3.0 | `ee1eb666c76a5cb7746faf39d0b97547` |
 | 3.4.3 | `d20a1be77c3d3c41b2a5accaee1ce549` |
@@ -83,6 +86,9 @@ These hashes are mapped directly by `src/lib/dart_version.c`.
 | 3.8.1 | `830f4f59e7969c70b595182826435c19` |
 | 3.9.2 | `97ff04a728735e6b6b098bdf983faaba` |
 | 3.10.7 | `1ce86630892e2dca9a8543fdb8ed8e22` |
+| 3.11.5 | `78da37fed6bf1489361a312568249f3f` |
+| 3.12.0 | `41be3daaabd524b8aa7423bc24584957` |
+| 3.12.1 | `ace654289f5abc240509fc941453ebc5` |
 
 `offsets.json` can enrich or override a hash with `compressed_word_size`,
 `heap_object_tag`, `max_alignment`, `it_cap`, `code_entry_point_offsets`,

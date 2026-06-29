@@ -125,7 +125,7 @@ If you need to extract version-specific logic from the Dart SDK source :
 
 ## Summary
 
-**You do NOT need to download anything at runtime.** The version hash in the snapshot header (32-byte ASCII at offset 0x04) maps to a finite set of constraint profiles that can be statically defined. unflutter proves this works for all Dart versions from 2.10.0 to 3.10.7 without any runtime SDK compilation or network downloads .
+**You do NOT need to download anything at runtime.** The version hash in the snapshot header (32-byte ASCII at offset 0x04) maps to a finite set of constraint profiles that can be statically defined. unflutter proves this works for all Dart versions from 2.10.0 to 3.12.1 without any runtime SDK compilation or network downloads .
 
 The only time you'd need dynamic updates is when Flutter releases a new version with breaking snapshot format changes - which happens infrequently and follows a predictable release cycle (stable, beta, dev channels) .
 
@@ -136,7 +136,7 @@ The only time you'd need dynamic updates is when Flutter releases a new version 
 r2flutter implements Option 1 (Static Constraint Tables) from this document. The implementation in `src/lib/dart_pool_parse.c` includes:
 
 ### Hash-to-Version Mapping
-- 40+ known snapshot hashes from Flutter 1.22.x (Dart 2.10.0) to Flutter 3.38.x (Dart 3.10.7)
+- 40+ known snapshot hashes from Flutter 1.22.x (Dart 2.10.0) to Flutter 3.41.x (Dart 3.12.1)
 - Sources: unflutter version.go, reFlutter enginehash.csv, blutter precompiled SDKs
 
 ### Version Profiles
@@ -154,7 +154,18 @@ Each supported Dart version has a profile with:
 | 2.13.0 | Int32 CID | Split canonical/non-canonical clusters |
 | 2.14.0-2.17.6 | CID Shift1 | `(cid << 1) \| canonical` |
 | 2.18.0-3.3.0 | CID Shift1 | Various CID changes |
-| 3.4.3-3.10.7 | ObjectHeader | CID at bits 12-31 |
+| 3.4.3-3.12.1 | ObjectHeader | CID at bits 12-31 |
 
 Unknown hashes fall back to v3.9.2 profile with ObjectHeader encoding.
+
+## Snapshot Hashes Are Shared Within Patch-Groups
+
+A snapshot hash typically covers a group of patch releases within a minor line,
+but not necessarily the entire minor version. For example, Dart 3.0.0-3.0.2 share
+one hash while 3.0.3-3.0.7 use a different one; Dart 3.11.0-3.11.1 share a hash
+separate from 3.11.3-3.11.5; Dart 3.12.0 and 3.12.1 each have distinct hashes.
+The version string in the mapping table uses the latest known patch in the group
+(e.g., `3.1.3` for the 3.1.x group, `3.11.5` for the 3.11.3-3.11.5 group).
+The snapshot format (CID table, tag encoding, layout) is identical across all
+patch versions sharing the same hash.
 
