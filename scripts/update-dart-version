@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""
+Unified Dart version table generator for r2flutter.
+
+Reads/writes offsets.json (the single source of truth) and generates
+dart_offsets.h + dart_version.c from it.
+
+Usage:
+  # Add a new Dart version (pulls SDK, computes hash)
+  ./scripts/update-dart-version 3.13.0
+
+  # Add from a local SDK checkout
+  ./scripts/update-dart-version --sdk-dir /path/to/dart-sdk 3.13.0
+
+  # Add a hash manually (no SDK pull)
+  ./scripts/update-dart-version --hash <md5> 3.13.0
+
+  # Regenerate C files from offsets.json
+  ./scripts/update-dart-version --generate
+
+  # Show current known versions
+  ./scripts/update-dart-version --list
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+# ── Files that contribute to the snapshot hash ──────────────────────────
+VM_SNAPSHOT_FILES = [
+    'app_snapshot.cc', 'app_snapshot.h',
+    'dart.cc', 'dart_api_impl.cc',
+    'datastream.h',
+    'image_snapshot.cc', 'image_snapshot.h',
+    'object.cc', 'object.h',
+    'raw_object.cc', 'raw_object.h',
+    'snapshot.cc', 'snapshot.h',
+    'symbols.cc', 'symbols.h',
+]
+
+TAG_STYLE_NAMES = {
+    "CID_INT32": "DART_TAG_STYLE_CID_INT32",
+    "CID_SHIFT1": "DART_TAG_STYLE_CID_SHIFT1",
+    "OBJECT_HEADER": "DART_TAG_STYLE_OBJECT_HEADER",
+}
+
+TAG_STYLE_VALUES = {v: k for k, v in TAG_STYLE_NAMES.items()}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# JSON I/O
+# ═══════════════════════════════════════════════════════════════════════
+
+def load_offsets(filepath):
+    with open(filepath) as f:
+        return json.load(f)
+
+
+def save_offsets(filepath, data):
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f"  Updated {filepath}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════════════
+
+def parse_version(ver_str):
+    return tuple(int(p) for p in ver_str.split("."))
+
+
+def compute_snapshot_hash(sdk_vm_dir):
+    """Compute the snapshot hash the same way Dart's make_version.py does."""
+    h = hashlib.md5()
+    for fname in VM_SNAPSHOT_FILES:
+        fpath = os.path.join(sdk_vm_dir, fname)
+        if os.path.exists(fpath):
+            with open(fpath, 'rb') as f:
+                h.update(f.read())
+        else:
+            print(f"  Warning: {fname} not found in {sdk_vm_dir}", file=sys.stderr)
+    return h.hexdigest()
+
+
+def parse_class_id_h(filepath):
+    """Parse a Dart SDK class_id.h and extract CID values."""
+    with open(filepath) as f:
+        content = f.read()
+    enum_match = re.search(r'enum ClassId : intptr_t \{(.*?)\};', content, re.DOTALL)
+    if not enum_match:
+        raise ValueError("Could not find ClassId enum in class_id.h")
+    enum_body = enum_match.group(1)
+    cids = {}
+    current_value = 0
+    for line in enum_body.split('\n'):
+        line = line.strip()
+        if not line or line.startswith('//') or line.startswith('/*'):
+            continue
+        line = re.sub(r'//.*', '', line)
+        line = re.sub(r'/\*.*?\*/', '', line, flags=re.DOTALL)
+        line = line.rstrip(',').strip()
+        if not line:
+            continue
+        assign_match = re.match(r'k(\w+)Cid\s*=\s*(\d+)', line)
+        if assign_match:
+            cids[assign_match.group(1)] = int(assign_match.group(2))
+            current_value = int(assign_match.group(2)) + 1
+            continue
+        implicit_match = re.match(r'k(\w+)Cid', line)
+        if implicit_match:
+            cids[implicit_match.group(1)] = current_value
+            current_value += 1
+            continue
+        other_match = re.match(r'k(\w+),', line)
+        if other_match and not other_match.group(1).endswith('Cid'):
+            cids[other_match.group(1)] = current_value
+            current_value += 1
+    return cids
+
+
+def pull_sdk_tag(sdk_repo, tag, work_dir):
+    """Checkout a Dart SDK tag into work_dir and return the runtime/vm path."""
+    result = subprocess.run(
+        ["git", "clone", "--depth", "1", "--branch", tag, sdk_repo, work_dir],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", f"tags/{tag}", sdk_repo, work_dir],
+            capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Error cloning {sdk_repo} tag {tag}: {result.stderr}", file=sys.stderr)
+        return None
+    vm_dir = os.path.join(work_dir, "runtime", "vm")
+    if not os.path.isdir(vm_dir):
+        print(f"Error: runtime/vm not found in cloned repo", file=sys.stderr)
+        return None
+    return vm_dir
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# C code generation from offsets.json
+# ═══════════════════════════════════════════════════════════════════════
+
+def gen_hash_entries(offsets):
+    """Generate just the entries for known_hashes[] (no declaration wrapper)."""
+    hashes = offsets.get("hashes", {})
+    lines = []
+    by_minor = {}
+    for h, ver in sorted(hashes.items()):
+        v = parse_version(ver)
+        key = (v[0], v[1])
+        by_minor.setdefault(key, []).append((h, ver))
+    for minor_key in sorted(by_minor.keys()):
+        lines.append(f"\t// Dart {minor_key[0]}.{minor_key[1]}.x")
+        for h, ver in by_minor[minor_key]:
+            lines.append(f'\t{{ "{h}", "{ver}" }},')
+    lines.append("\t{ NULL, NULL }")
+    lines.append("};")
+    return "\n".join(lines)
+
+
+def gen_profile_entries(offsets):
+    """Generate just the entries for version_profiles[] (no declaration wrapper)."""
+    versions = offsets.get("versions", {})
+    lines = []
+    for ver in sorted(versions.keys(), key=parse_version):
+        v = versions[ver]
+        tag_name = TAG_STYLE_NAMES.get(v["tag_style"], "0")
+        lines.append(f'\t{{ "", "{ver}", {v["cws"]}, {v["heap_object_tag"]}, '
+                     f'{v["max_alignment"]}, {v["it_cap"]}, {tag_name}, '
+                     f'{v["header_fields"]} }}, // Dart {ver}')
+    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0 }")
+    lines.append("};")
+    return "\n".join(lines)
+
+
+def gen_dart_offsets_h(offsets):
+    """Generate the dart_offsets.h content from offsets.json."""
+    hashes = offsets.get("hashes", {})
+    defaults = offsets.get("defaults", {})
+    ep = defaults.get("code_entry_point_offsets", [8, 24, 16, 32])
+    owner = defaults.get("code_owner_offsets", [56])
+    name = defaults.get("function_name_offsets", [24, 8])
+    versions = offsets.get("versions", {})
+
+    lines = [
+        "// Auto-generated from offsets.json by scripts/update-dart-version",
+        "// Hash to compressed_word_size lookup table",
+        "#ifndef R2C_DART_OFFSETS_H",
+        "#define R2C_DART_OFFSETS_H",
+        "",
+        "#include <stdint.h>",
+        "",
+        "// Hash entry: snapshot MD5 hash (32 hex chars) + compressed_word_size",
+        "typedef struct {",
+        "\tconst char hash[33];",
+        "\tint compressed_word_size;",
+        "} DartHashEntry;",
+        "",
+        "static const DartHashEntry dart_hash_entries[] = {",
+    ]
+    for h, ver in sorted(hashes.items()):
+        cws = versions.get(ver, {}).get("cws", 4)
+        lines.append(f'\t{{ "{h}", {cws} }},  // Dart {ver}')
+    lines.append("};")
+    lines.append("")
+    lines.append(f"#define DART_HASH_ENTRIES_COUNT {len(hashes)}")
+    lines.append("")
+    lines.append("// Default offset arrays (identical across all known Dart versions)")
+    lines.append(f"#define DART_DEFAULT_EP_OFFSETS {{ {', '.join(str(x) for x in ep)} }}")
+    lines.append(f"#define DART_DEFAULT_EP_OFFSETS_COUNT {len(ep)}")
+    lines.append(f"#define DART_DEFAULT_OWNER_OFFSETS {{ {', '.join(str(x) for x in owner)} }}")
+    lines.append(f"#define DART_DEFAULT_OWNER_OFFSETS_COUNT {len(owner)}")
+    lines.append(f"#define DART_DEFAULT_NAME_OFFSETS {{ {', '.join(str(x) for x in name)} }}")
+    lines.append(f"#define DART_DEFAULT_NAME_OFFSETS_COUNT {len(name)}")
+    lines.append("")
+    lines.append("#endif // R2C_DART_OFFSETS_H")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_dart_version_c(filepath, offsets):
+    """Rewrite known_hashes[] and version_profiles[] in dart_version.c."""
+    hash_entries = gen_hash_entries(offsets)
+    profile_entries = gen_profile_entries(offsets)
+
+    with open(filepath) as f:
+        content = f.read()
+
+    # Find version_profiles[] bounds (comes later in the file)
+    vp_pos = content.find("version_profiles[]")
+    if vp_pos < 0:
+        print("Error: could not find 'version_profiles[]' in file", file=sys.stderr)
+        sys.exit(1)
+    vp_eq = content.find("=", vp_pos)
+    vp_open = content.find("{", vp_eq)
+    vp_depth = 0
+    vp_close = -1
+    for i in range(vp_open, len(content)):
+        if content[i] == '{':
+            vp_depth += 1
+        elif content[i] == '}':
+            vp_depth -= 1
+            if vp_depth == 0 and i + 1 < len(content) and content[i + 1] == ';':
+                vp_close = i + 2
+                break
+    if vp_close < 0:
+        print("Error: could not find closing '};' for version_profiles[]", file=sys.stderr)
+        sys.exit(1)
+
+    # Replace version_profiles[] first (it's later in the file)
+    content = content[:vp_open + 1] + "\n" + profile_entries + "\n" + content[vp_close:]
+
+    # Now find known_hashes[] bounds in the MODIFIED content
+    kh_pos = content.find("known_hashes[]")
+    if kh_pos < 0:
+        print("Error: could not find 'known_hashes[]' in file", file=sys.stderr)
+        sys.exit(1)
+    kh_eq = content.find("=", kh_pos)
+    kh_open = content.find("{", kh_eq)
+    kh_depth = 0
+    kh_close = -1
+    for i in range(kh_open, len(content)):
+        if content[i] == '{':
+            kh_depth += 1
+        elif content[i] == '}':
+            kh_depth -= 1
+            if kh_depth == 0 and i + 1 < len(content) and content[i + 1] == ';':
+                kh_close = i + 2
+                break
+    if kh_close < 0:
+        print("Error: could not find closing '};' for known_hashes[]", file=sys.stderr)
+        sys.exit(1)
+
+    # Replace known_hashes[]
+    content = content[:kh_open + 1] + "\n" + hash_entries + "\n" + content[kh_close:]
+
+    with open(filepath, 'w') as f:
+        f.write(content)
+    print(f"  Updated {filepath}")
+
+
+def write_dart_offsets_h(filepath, offsets):
+    """Rewrite include/r2flutter/dart_offsets.h from offsets.json."""
+    content = gen_dart_offsets_h(offsets)
+    with open(filepath, 'w') as f:
+        f.write(content)
+    print(f"  Generated {filepath}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Main
+# ═══════════════════════════════════════════════════════════════════════
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Unified Dart version table generator for r2flutter")
+    parser.add_argument("version", nargs="?", help="Dart SDK version (e.g. 3.13.0)")
+    parser.add_argument("--sdk-dir", help="Path to local Dart SDK checkout")
+    parser.add_argument("--sdk-repo", default="https://github.com/dart-lang/sdk.git",
+                        help="Dart SDK git repo URL (default: %(default)s)")
+    parser.add_argument("--hash", help="Snapshot hash (skip SDK pull)")
+    parser.add_argument("--generate", action="store_true",
+                        help="Regenerate C files from offsets.json (no SDK pull)")
+    parser.add_argument("--list", action="store_true",
+                        help="List known versions and exit")
+    args = parser.parse_args()
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    offsets_path = os.path.join(repo_root, "offsets.json")
+    dart_version_path = os.path.join(repo_root, "src", "lib", "dart_version.c")
+    dart_offsets_h_path = os.path.join(repo_root, "include", "r2flutter", "dart_offsets.h")
+
+    # ── --list mode ──────────────────────────────────────────────────
+    if args.list:
+        offsets = load_offsets(offsets_path)
+        hashes = offsets.get("hashes", {})
+        print("Known Dart versions and snapshot hashes:")
+        for h, v in sorted(hashes.items(), key=lambda x: (parse_version(x[1]), x[0])):
+            print(f"  {v:10s}  {h}")
+        return
+
+    # ── --generate mode ───────────────────────────────────────────────
+    if args.generate:
+        print("Regenerating C files from offsets.json...")
+        offsets = load_offsets(offsets_path)
+        write_dart_version_c(dart_version_path, offsets)
+        write_dart_offsets_h(dart_offsets_h_path, offsets)
+        print("Done. Run 'make && make test' to verify.")
+        return
+
+    # ── Need a version argument ───────────────────────────────────────
+    if not args.version:
+        parser.print_help()
+        sys.exit(1)
+
+    version = args.version
+    ver_tuple = parse_version(version)
+
+    # ── Get or compute the snapshot hash ──────────────────────────────
+    if args.hash:
+        snapshot_hash = args.hash
+        print(f"Using provided hash: {snapshot_hash}")
+    elif args.sdk_dir:
+        vm_dir = os.path.join(args.sdk_dir, "runtime", "vm")
+        if not os.path.isdir(vm_dir):
+            print(f"Error: runtime/vm not found in {args.sdk_dir}", file=sys.stderr)
+            sys.exit(1)
+        snapshot_hash = compute_snapshot_hash(vm_dir)
+        print(f"Computed snapshot hash from {vm_dir}: {snapshot_hash}")
+    else:
+        print(f"Cloning Dart SDK tag {version}...")
+        with tempfile.TemporaryDirectory(prefix=f"dart-sdk-{version}-") as tmpdir:
+            vm_dir = pull_sdk_tag(args.sdk_repo, version, tmpdir)
+            if not vm_dir:
+                print(f"Error: could not fetch SDK tag {version}", file=sys.stderr)
+                sys.exit(1)
+            snapshot_hash = compute_snapshot_hash(vm_dir)
+            print(f"Computed snapshot hash: {snapshot_hash}")
+
+            class_id_path = os.path.join(vm_dir, "class_id.h")
+            if os.path.exists(class_id_path):
+                cids = parse_class_id_h(class_id_path)
+                print(f"Extracted CIDs from class_id.h ({len(cids)} entries)")
+                print(f"  Class={cids.get('Class', '?')}, Function={cids.get('Function', '?')}, "
+                      f"Code={cids.get('Code', '?')}, String={cids.get('String', '?')}")
+            else:
+                print("Warning: class_id.h not found")
+
+    # ── Update offsets.json ──────────────────────────────────────────
+    offsets = load_offsets(offsets_path)
+    hashes = offsets.setdefault("hashes", {})
+    versions = offsets.setdefault("versions", {})
+
+    if snapshot_hash in hashes:
+        print(f"  Hash {snapshot_hash} already known (version {hashes[snapshot_hash]})")
+    else:
+        hashes[snapshot_hash] = version
+        print(f"  Added hash {snapshot_hash} -> {version}")
+
+    # Add version profile if not present
+    if version not in versions:
+        if ver_tuple >= (3, 4):
+            tag_style = "OBJECT_HEADER"
+        elif ver_tuple >= (2, 14):
+            tag_style = "CID_SHIFT1"
+        else:
+            tag_style = "CID_INT32"
+        if (2, 16) <= ver_tuple < (2, 18):
+            hdr = 6
+        elif ver_tuple >= (2, 13):
+            hdr = 5
+        else:
+            hdr = 4
+        if ver_tuple < (2, 17) or ver_tuple in ((3, 2), (3, 4)):
+            cws = 8
+        else:
+            cws = 4
+        versions[version] = {
+            "cws": cws,
+            "heap_object_tag": 1,
+            "max_alignment": 16,
+            "it_cap": 20000,
+            "tag_style": tag_style,
+            "header_fields": hdr,
+        }
+        print(f"  Added version profile: {version} (cws={cws}, tag={tag_style}, hdr={hdr})")
+
+    save_offsets(offsets_path, offsets)
+
+    # ── Regenerate C files ──────────────────────────────────────────
+    write_dart_version_c(dart_version_path, offsets)
+    write_dart_offsets_h(dart_offsets_h_path, offsets)
+
+    print("\nDone. Run 'make && make test' to verify.")
+
+
+if __name__ == "__main__":
+    main()

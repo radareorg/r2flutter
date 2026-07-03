@@ -13,55 +13,13 @@ typedef struct {
 
 static void init_layout_hints(LayoutHints *lh) {
 	memset (lh, 0, sizeof (*lh));
-	lh->ep_offs[lh->ep_offs_n++] = 0x10;
-	lh->ep_offs[lh->ep_offs_n++] = 0x18;
-	lh->ep_offs[lh->ep_offs_n++] = 0x20;
-	lh->owner_offs[lh->owner_offs_n++] = 0x10;
-	lh->owner_offs[lh->owner_offs_n++] = 0x18;
-	lh->owner_offs[lh->owner_offs_n++] = 0x20;
-	lh->name_offs[lh->name_offs_n++] = 0x10;
-	lh->name_offs[lh->name_offs_n++] = 0x18;
-	lh->name_offs[lh->name_offs_n++] = 0x20;
-}
-
-static void read_json_u64_array(const RJson *parent, const char *key, ut64 *out, int *out_n, int max) {
-	const RJson *arr = r_json_get (parent, key);
-	if (arr && arr->type == R_JSON_ARRAY) {
-		*out_n = 0;
-		size_t n = arr->children.count;
-		for (size_t i = 0; i < n && *out_n < max; i++) {
-			const RJson *el = r_json_item (arr, i);
-			if (el && el->type == R_JSON_INTEGER) {
-				out[(*out_n)++] = (ut64)el->num.u_value;
-			}
-		}
-	}
-}
-
-static void enrich_layout_hints_from_json(LayoutHints *lh, const char *hash) {
-	if (!lh || !hash) {
-		return;
-	}
-	char *s = r_file_slurp ("r2flutter/offsets.json", NULL);
-	if (!s) {
-		s = r_file_slurp ("offsets.json", NULL);
-	}
-	if (!s) {
-		return;
-	}
-	RJson *j = r_json_parse (s);
-	if (!j) {
-		free (s);
-		return;
-	}
-	const RJson *item = r_json_get (r_json_get (j, "hashes"), hash);
-	if (item) {
-		read_json_u64_array (item, "code_entry_point_offsets", lh->ep_offs, &lh->ep_offs_n, 8);
-		read_json_u64_array (item, "code_owner_offsets", lh->owner_offs, &lh->owner_offs_n, 8);
-		read_json_u64_array (item, "function_name_offsets", lh->name_offs, &lh->name_offs_n, 8);
-	}
-	r_json_free (j);
-	free (s);
+	lh->ep_offs[lh->ep_offs_n++] = 8;
+	lh->ep_offs[lh->ep_offs_n++] = 24;
+	lh->ep_offs[lh->ep_offs_n++] = 16;
+	lh->ep_offs[lh->ep_offs_n++] = 32;
+	lh->owner_offs[lh->owner_offs_n++] = 56;
+	lh->name_offs[lh->name_offs_n++] = 24;
+	lh->name_offs[lh->name_offs_n++] = 8;
 }
 
 static bool read_heap_ptr(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 *out_abs) {
@@ -177,7 +135,6 @@ HtUP *scan_code_names(DartCtx *ctx, ut64 data_image_base, ut64 data_image_end) {
 	}
 	LayoutHints lh;
 	init_layout_hints (&lh);
-	enrich_layout_hints_from_json (&lh, ctx->snapshot_hash);
 	HtUP *name_by_ep = ht_up_new0 ();
 	if (!name_by_ep) {
 		return NULL;

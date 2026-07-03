@@ -1044,3 +1044,47 @@ but patched samples can carry a misleading hash. `-D <hash|version>` overrides
 the profile used by r2flutter analysis without modifying the input binary. A
 32-byte hash is treated as the effective snapshot hash; a Dart version string
 such as `3.8.1` selects the static profile for that version.
+
+## Offset Table Management
+
+**Finding**: The offset arrays (`code_entry_point_offsets`, `code_owner_offsets`,
+`function_name_offsets`) are **identical across all 40 known Dart versions**
+(2.10.0–3.12.1). They are stored once under a top-level `defaults` key in
+`offsets.json` and hardcoded as fallback in `init_layout_hints()` in
+`dart_pool_names.c`.
+
+**Maintenance workflow**:
+
+1. **Adding a new Dart version** (pulls SDK, computes hash, extracts CIDs):
+   `./scripts/update-dart-version 3.13.0`
+
+2. **Adding from a local SDK checkout**:
+   `./scripts/update-dart-version --sdk-dir /path/to/dart-sdk 3.13.0`
+
+3. **Adding a hash manually** (no SDK pull):
+   `./scripts/update-dart-version --hash <md5> 3.13.0`
+
+4. **Regenerating all tables** from known data:
+   `./scripts/update-dart-version --regenerate`
+
+5. **Preview without writing**:
+   `./scripts/update-dart-version --dry-run 3.13.0`
+
+6. **List known versions**:
+   `./scripts/update-dart-version --list`
+
+**Data sources**:
+- `offsets.json` — per-hash metadata (compressed_word_size, heap_object_tag,
+  max_alignment, it_cap) + top-level defaults for offset arrays
+- `src/lib/dart_version.c` — `known_hashes[]` (hash→version mapping) and
+  `version_profiles[]` (version→CID table)
+- `third_party/unflutter/internal/snapshot/version.go` — Go reference
+  implementation (most complete CID table)
+- `third_party/sdk/runtime/vm/class_id.h` — Dart SDK source defining CID enum
+  values
+
+**Key insight**: The offset arrays have never changed across any known Dart
+version. The only per-version variables are `compressed_word_size` (4 or 8),
+the CID numbers, and the tag encoding style. This means the fallback path
+(unknown hash → default offsets + v3.9.2 CID table) is now correct and
+functional.

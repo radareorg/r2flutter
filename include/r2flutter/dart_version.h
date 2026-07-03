@@ -20,6 +20,7 @@ typedef enum {
 } DartTagStyle;
 
 // Version layout information for Dart snapshots
+// CID values are stored in dart_cid.c's cid_tables[] and accessed via dart_cid_get()
 typedef struct {
 	char hash[33];
 	const char *dart_version;
@@ -29,16 +30,6 @@ typedef struct {
 	ut64 it_cap;
 	DartTagStyle tag_style;
 	int header_fields;
-	int cid_class;
-	int cid_function;
-	int cid_code;
-	int cid_string;
-	int cid_one_byte_string;
-	int cid_two_byte_string;
-	int cid_array;
-	int cid_mint;
-	int cid_object_pool;
-	int num_predefined_cids;
 } DartVerLayout;
 
 // Lookup Dart version from a snapshot hash (MD5)

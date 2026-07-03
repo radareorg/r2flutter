@@ -1809,18 +1809,6 @@ static const DartCidTable *cid_table_for_layout(const DartVerLayout *layout) {
 	if (table) {
 		return table;
 	}
-	if (layout) {
-		for (int i = 0; cid_tables[i].version; i++) {
-			const DartCidTable *t = &cid_tables[i];
-			if (layout->cid_class == t->cids[DART_CID_CLASS] &&
-				layout->cid_function == t->cids[DART_CID_FUNCTION] &&
-				layout->cid_code == t->cids[DART_CID_CODE] &&
-				layout->cid_string == t->cids[DART_CID_STRING] &&
-				layout->num_predefined_cids == t->cids[DART_CID_NUM_PREDEFINED_CIDS]) {
-				return t;
-			}
-		}
-	}
 	return cid_table_for_version ("3.9.2");
 }
 
@@ -1834,62 +1822,6 @@ const char *dart_cid_kind_name(DartCidKind kind) {
 int dart_cid_get(const DartVerLayout *layout, DartCidKind kind) {
 	if (kind < 0 || kind >= DART_CID_KIND_COUNT) {
 		return -1;
-	}
-	if (layout) {
-		switch (kind) {
-		case DART_CID_CLASS:
-			if (layout->cid_class > 0) {
-				return layout->cid_class;
-			}
-			break;
-		case DART_CID_FUNCTION:
-			if (layout->cid_function > 0) {
-				return layout->cid_function;
-			}
-			break;
-		case DART_CID_CODE:
-			if (layout->cid_code > 0) {
-				return layout->cid_code;
-			}
-			break;
-		case DART_CID_STRING:
-			if (layout->cid_string > 0) {
-				return layout->cid_string;
-			}
-			break;
-		case DART_CID_ONE_BYTE_STRING:
-			if (layout->cid_one_byte_string > 0) {
-				return layout->cid_one_byte_string;
-			}
-			break;
-		case DART_CID_TWO_BYTE_STRING:
-			if (layout->cid_two_byte_string > 0) {
-				return layout->cid_two_byte_string;
-			}
-			break;
-		case DART_CID_ARRAY:
-			if (layout->cid_array > 0) {
-				return layout->cid_array;
-			}
-			break;
-		case DART_CID_MINT:
-			if (layout->cid_mint > 0) {
-				return layout->cid_mint;
-			}
-			break;
-		case DART_CID_OBJECT_POOL:
-			if (layout->cid_object_pool > 0) {
-				return layout->cid_object_pool;
-			}
-			break;
-		case DART_CID_NUM_PREDEFINED_CIDS:
-			if (layout->num_predefined_cids > 0) {
-				return layout->num_predefined_cids;
-			}
-			break;
-		default:
-			break;
-		}
 	}
 	const DartCidTable *table = cid_table_for_layout (layout);
 	const int value = table? table->cids[kind]: 0;
