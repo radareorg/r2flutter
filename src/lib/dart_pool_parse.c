@@ -95,27 +95,10 @@ static inline const char *dart_tag_style_to_string_verbose(DartTagStyle style) {
 	}
 }
 
+#include <r2flutter/dart_offsets.h>
+
 static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayout *out) {
 	if (!hash || !out) {
-		return NULL;
-	}
-	char *s = r_file_slurp ("r2flutter/offsets.json", NULL);
-	if (!s) {
-		s = r_file_slurp ("offsets.json", NULL);
-	}
-	if (!s) {
-		return NULL;
-	}
-	RJson *j = r_json_parse (s);
-	if (!j) {
-		free (s);
-		return NULL;
-	}
-	const RJson *hashes = r_json_get (j, "hashes");
-	const RJson *item = r_json_get (hashes, hash);
-	if (!item) {
-		r_json_free (j);
-		free (s);
 		return NULL;
 	}
 	const char *version = dart_version_from_hash (hash);
@@ -125,37 +108,14 @@ static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayou
 	} else {
 		memset (out, 0, sizeof (*out));
 		out->tag_style = DART_TAG_STYLE_OBJECT_HEADER;
-		out->cid_class = 5;
-		out->cid_function = 7;
-		out->cid_code = 18;
-		out->cid_string = 93;
-		out->cid_one_byte_string = 94;
-		out->cid_two_byte_string = 95;
-		out->cid_array = 90;
-		out->cid_mint = 61;
-		out->cid_object_pool = 23;
-		out->num_predefined_cids = 175;
 	}
-	const char *h = r_json_get_str (item, "hash");
-	r_str_ncpy (out->hash, R_STR_ISNOTEMPTY (h)? h: hash, sizeof (out->hash));
-	int cws = (int)r_json_get_num (item, "compressed_word_size");
-	if (cws > 0) {
-		out->compressed_word_size = cws;
+	r_str_ncpy (out->hash, hash, sizeof (out->hash));
+	for (int i = 0; i < DART_HASH_ENTRIES_COUNT; i++) {
+		if (!strcmp (dart_hash_entries[i].hash, hash)) {
+			out->compressed_word_size = dart_hash_entries[i].compressed_word_size;
+			break;
+		}
 	}
-	int hot = (int)r_json_get_num (item, "heap_object_tag");
-	if (hot > 0) {
-		out->heap_object_tag = hot;
-	}
-	int mal = (int)r_json_get_num (item, "max_alignment");
-	if (mal > 0) {
-		out->max_alignment = mal;
-	}
-	ut64 cap = (ut64)r_json_get_num (item, "it_cap");
-	if (cap > 0) {
-		out->it_cap = cap;
-	}
-	r_json_free (j);
-	free (s);
 	return out;
 }
 
@@ -679,16 +639,16 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 			pj_kn (pj, "it_capacity", l->it_cap);
 			pj_k (pj, "cid_table");
 			pj_o (pj);
-			pj_ki (pj, "cid_class", l->cid_class);
-			pj_ki (pj, "cid_function", l->cid_function);
-			pj_ki (pj, "cid_code", l->cid_code);
-			pj_ki (pj, "cid_string", l->cid_string);
-			pj_ki (pj, "cid_one_byte_string", l->cid_one_byte_string);
-			pj_ki (pj, "cid_two_byte_string", l->cid_two_byte_string);
-			pj_ki (pj, "cid_array", l->cid_array);
-			pj_ki (pj, "cid_mint", l->cid_mint);
-			pj_ki (pj, "cid_object_pool", l->cid_object_pool);
-			pj_ki (pj, "num_predefined", l->num_predefined_cids);
+			pj_ki (pj, "cid_class", dart_cid_get (l, DART_CID_CLASS));
+			pj_ki (pj, "cid_function", dart_cid_get (l, DART_CID_FUNCTION));
+			pj_ki (pj, "cid_code", dart_cid_get (l, DART_CID_CODE));
+			pj_ki (pj, "cid_string", dart_cid_get (l, DART_CID_STRING));
+			pj_ki (pj, "cid_one_byte_string", dart_cid_get (l, DART_CID_ONE_BYTE_STRING));
+			pj_ki (pj, "cid_two_byte_string", dart_cid_get (l, DART_CID_TWO_BYTE_STRING));
+			pj_ki (pj, "cid_array", dart_cid_get (l, DART_CID_ARRAY));
+			pj_ki (pj, "cid_mint", dart_cid_get (l, DART_CID_MINT));
+			pj_ki (pj, "cid_object_pool", dart_cid_get (l, DART_CID_OBJECT_POOL));
+			pj_ki (pj, "num_predefined", dart_cid_get (l, DART_CID_NUM_PREDEFINED_CIDS));
 			pj_end (pj);
 		}
 		pj_end (pj);
@@ -782,16 +742,16 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	if (ctx->layout) {
 		const DartVerLayout *l = ctx->layout;
 		r_strbuf_appendf (sb, "\n## Class IDs (CID Table)\n");
-		r_strbuf_appendf (sb, "  cid_class:          %d\n", l->cid_class);
-		r_strbuf_appendf (sb, "  cid_function:       %d\n", l->cid_function);
-		r_strbuf_appendf (sb, "  cid_code:           %d\n", l->cid_code);
-		r_strbuf_appendf (sb, "  cid_string:         %d\n", l->cid_string);
-		r_strbuf_appendf (sb, "  cid_one_byte_string: %d\n", l->cid_one_byte_string);
-		r_strbuf_appendf (sb, "  cid_two_byte_string: %d\n", l->cid_two_byte_string);
-		r_strbuf_appendf (sb, "  cid_array:          %d\n", l->cid_array);
-		r_strbuf_appendf (sb, "  cid_mint:           %d\n", l->cid_mint);
-		r_strbuf_appendf (sb, "  cid_object_pool:    %d\n", l->cid_object_pool);
-		r_strbuf_appendf (sb, "  num_predefined:     %d\n", l->num_predefined_cids);
+		r_strbuf_appendf (sb, "  cid_class:          %d\n", dart_cid_get (l, DART_CID_CLASS));
+		r_strbuf_appendf (sb, "  cid_function:       %d\n", dart_cid_get (l, DART_CID_FUNCTION));
+		r_strbuf_appendf (sb, "  cid_code:           %d\n", dart_cid_get (l, DART_CID_CODE));
+		r_strbuf_appendf (sb, "  cid_string:         %d\n", dart_cid_get (l, DART_CID_STRING));
+		r_strbuf_appendf (sb, "  cid_one_byte_string: %d\n", dart_cid_get (l, DART_CID_ONE_BYTE_STRING));
+		r_strbuf_appendf (sb, "  cid_two_byte_string: %d\n", dart_cid_get (l, DART_CID_TWO_BYTE_STRING));
+		r_strbuf_appendf (sb, "  cid_array:          %d\n", dart_cid_get (l, DART_CID_ARRAY));
+		r_strbuf_appendf (sb, "  cid_mint:           %d\n", dart_cid_get (l, DART_CID_MINT));
+		r_strbuf_appendf (sb, "  cid_object_pool:    %d\n", dart_cid_get (l, DART_CID_OBJECT_POOL));
+		r_strbuf_appendf (sb, "  num_predefined:     %d\n", dart_cid_get (l, DART_CID_NUM_PREDEFINED_CIDS));
 	}
 
 	return r_strbuf_drain (sb);
@@ -888,16 +848,16 @@ static char *dump_header_ext_json(DartCtx *ctx, int detail) {
 		pj_kn (pj, "it_capacity", l->it_cap);
 		pj_k (pj, "cid_table");
 		pj_o (pj);
-		pj_ki (pj, "cid_class", l->cid_class);
-		pj_ki (pj, "cid_function", l->cid_function);
-		pj_ki (pj, "cid_code", l->cid_code);
-		pj_ki (pj, "cid_string", l->cid_string);
-		pj_ki (pj, "cid_one_byte_string", l->cid_one_byte_string);
-		pj_ki (pj, "cid_two_byte_string", l->cid_two_byte_string);
-		pj_ki (pj, "cid_array", l->cid_array);
-		pj_ki (pj, "cid_mint", l->cid_mint);
-		pj_ki (pj, "cid_object_pool", l->cid_object_pool);
-		pj_ki (pj, "num_predefined", l->num_predefined_cids);
+		pj_ki (pj, "cid_class", dart_cid_get (l, DART_CID_CLASS));
+		pj_ki (pj, "cid_function", dart_cid_get (l, DART_CID_FUNCTION));
+		pj_ki (pj, "cid_code", dart_cid_get (l, DART_CID_CODE));
+		pj_ki (pj, "cid_string", dart_cid_get (l, DART_CID_STRING));
+		pj_ki (pj, "cid_one_byte_string", dart_cid_get (l, DART_CID_ONE_BYTE_STRING));
+		pj_ki (pj, "cid_two_byte_string", dart_cid_get (l, DART_CID_TWO_BYTE_STRING));
+		pj_ki (pj, "cid_array", dart_cid_get (l, DART_CID_ARRAY));
+		pj_ki (pj, "cid_mint", dart_cid_get (l, DART_CID_MINT));
+		pj_ki (pj, "cid_object_pool", dart_cid_get (l, DART_CID_OBJECT_POOL));
+		pj_ki (pj, "num_predefined", dart_cid_get (l, DART_CID_NUM_PREDEFINED_CIDS));
 		pj_end (pj);
 	}
 	pj_ka (pj, "snapshots");

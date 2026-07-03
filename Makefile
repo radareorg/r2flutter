@@ -36,6 +36,10 @@ INC_VER = $(SRC_DIR)/../include/r2flutter/r2flutter_version.h
 
 all: $(BIN_FILE) $(INC_VER)
 
+# Regenerate C files from offsets.json (the single source of truth)
+gen:
+	python3 scripts/update-dart-version --generate
+
 $(INC_VER):
 	./configure
 

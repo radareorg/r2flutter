@@ -4,7 +4,7 @@ Overview
 - Goal: Extract real Dart function names and entrypoints from Flutter/Dart AOT snapshots (libapp.so) without relying on afl/aflj or the Dart VM.
 - Tools:
   - r2flutter: Small C utility that loads `libapp.so` with radare2, locates AOT snapshots, and decodes the ObjectPool to emit names + addresses.
-  - scripts/gen_offsets.sh: Generates a per-snapshot-hash offsets file (`r2flutter/offsets.json`) to keep the decoder stable across Dart versions.
+  - scripts/update-dart-version: Unified script that pulls the Dart SDK, computes the snapshot hash, extracts CID values, and updates all tables.
 - Key property: r2flutter builds standalone (no Dart VM headers/libs) and does not parse afl output.
 
 Repo Layout (relevant parts)
@@ -17,14 +17,14 @@ Repo Layout (relevant parts)
   - third_party/dartvm/: Vendored VM sources (headers only) to document snapshot/cluster formats used by the decoder (no linking).
   - arm64-v8a/: Example directory with libapp.so/libflutter.so for testing.
 - scripts/
-  - gen_offsets.sh: Generates `r2flutter/offsets.json` keyed by snapshot hash using only local binaries + curl (when needed for future enhancement).
+  - update-dart-version: Unified script to add new Dart versions (pulls SDK, computes hash, extracts CIDs, updates all tables).
 - blutter/: Standalone C++ reference implementation (with VM linkage) used as conceptual reference. r2flutter must not depend on it.
 
 Quick Start
 - Requirements: radare2 development headers (pkg-config), make, a libapp.so and libflutter.so pair.
 - Generate offsets for your libapp:
-  - `./scripts/gen_offsets.sh r2flutter/arm64-v8a`
-  - This produces `r2flutter/offsets.json` keyed by snapshot hash (read from VM snapshot data in libapp.so).
+  - `./scripts/update-dart-version --hash <snapshot-hash> <dart-version>`
+  - This produces `r2flutter/offsets.json` keyed by snapshot hash.
 - Build and run r2flutter:
   - `make -C r2flutter`
   - `./bin/r2flutter r2flutter/arm64-v8a r2flutter/out`
@@ -59,13 +59,14 @@ Usage in radare2 sessions (Android ELF and iOS Mach-O)
 - You’ll see `method.*` flags and comments across the binary.
 
 Maintaining for New Dart Versions
-1) Generate/Update offsets.json:
-   - Run: `./scripts/gen_offsets.sh <dir-with-libapp+libflutter>`
-   - This produces a new `hash → { compressed_word_size, heap_object_tag }` entry in `r2flutter/offsets.json`.
-   - For deeper stability (field offsets), enhance `gen_offsets.sh` to:
-     - `curl` the VM sources for the detected Dart version/commit (e.g., class_id.h, object.h, app_snapshot.cc).
-     - Parse constants and offsets to compute a richer layout JSON.
-   - Commit the updated offsets.json.
+1) Add a new Dart version:
+   - Run: `./scripts/update-dart-version <dart-version>`
+   - This pulls the Dart SDK from GitHub, computes the snapshot hash (MD5 of VM source files),
+     extracts CID values from class_id.h, and updates both `offsets.json` and `src/lib/dart_version.c`.
+   - For a local SDK checkout: `./scripts/update-dart-version --sdk-dir /path/to/dart-sdk <version>`
+   - To add a hash manually (no SDK pull): `./scripts/update-dart-version --hash <md5> <version>`
+   - To regenerate all tables from known data: `./scripts/update-dart-version --regenerate`
+   - Commit the updated offsets.json and dart_version.c.
 2) Decoder tuning:
    - If the clustered snapshot changes (e.g., new EntryType or field order), adjust the decoder logic in `dart_pool_parse.c` referencing `third_party/dartvm/` sources.
    - Avoid adding a runtime dependency: keep vendored snapshots sources only as references (no linking).
