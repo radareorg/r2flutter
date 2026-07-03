@@ -1088,3 +1088,13 @@ version. The only per-version variables are `compressed_word_size` (4 or 8),
 the CID numbers, and the tag encoding style. This means the fallback path
 (unknown hash → default offsets + v3.9.2 CID table) is now correct and
 functional.
+
+## The `first` Android Fixture Uses ObjectHeader Tags
+
+The `test/bins/android/first` snapshot hash `f91b8b03bf7f30a5e983fd19b23d978d`
+maps to Dart `2.18.2`, but its serialized heap objects use ObjectHeader CID
+bits. For example, the tagged object `0x1651` points at `0x1650`, whose header
+decodes CID `93` only via `(header >> 12) & 0xfffff`; interpreting it as
+`CID_SHIFT1` makes `-O` report an unresolved raw value. Keep the `2.18.2`
+profile as `OBJECT_HEADER` unless another fixture proves a hash-specific split
+is needed.

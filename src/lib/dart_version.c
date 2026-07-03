@@ -84,8 +84,6 @@ static const struct {
 	{ NULL, NULL }
 };
 
-
-
 // Version profiles with CID tables - based on unflutter's version.go
 static const DartVerLayout version_profiles[] = {
 	{ "", "2.10.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_INT32, 4 }, // Dart 2.10.0
@@ -95,7 +93,7 @@ static const DartVerLayout version_profiles[] = {
 	{ "", "2.16.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 6 }, // Dart 2.16.0
 	{ "", "2.17.6", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 6 }, // Dart 2.17.6
 	{ "", "2.18.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 2.18.0
-	{ "", "2.18.2", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 2.18.2
+	{ "", "2.18.2", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 2.18.2
 	{ "", "2.19.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 2.19.0
 	{ "", "3.0.5", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 3.0.5
 	{ "", "3.1.3", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 3.1.3
@@ -113,8 +111,6 @@ static const DartVerLayout version_profiles[] = {
 	{ "", "3.12.1", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.12.1
 	{ { 0 }, NULL, 0, 0, 0, 0, 0, 0 }
 };
-
-
 
 const char *dart_version_from_hash(const char *hash) {
 	if (!hash) {
