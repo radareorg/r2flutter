@@ -1065,10 +1065,10 @@ such as `3.8.1` selects the static profile for that version.
    `./scripts/update-dart-version --hash <md5> 3.13.0`
 
 4. **Regenerating all tables** from known data:
-   `./scripts/update-dart-version --regenerate`
+   `./scripts/update-dart-version --generate`
 
-5. **Preview without writing**:
-   `./scripts/update-dart-version --dry-run 3.13.0`
+5. **Syncing stable Dart SDK tags**:
+   `./scripts/update-dart-version --sync-stable-tags --min-version 2.10.0`
 
 6. **List known versions**:
    `./scripts/update-dart-version --list`
@@ -1097,4 +1097,29 @@ bits. For example, the tagged object `0x1651` points at `0x1650`, whose header
 decodes CID `93` only via `(header >> 12) & 0xfffff`; interpreting it as
 `CID_SHIFT1` makes `-O` report an unresolved raw value. Keep the `2.18.2`
 profile as `OBJECT_HEADER` unless another fixture proves a hash-specific split
-is needed.
+is needed. The standalone `dart-lang/sdk` `2.18.2` tag also has a different CID
+table (`String=90`, `NumPredefinedCids=159`) from this Flutter-engine fixture,
+so the generator aliases `2.18.2` to the `3.9.2`-shaped CID table used by the
+sample.
+
+## Dart SDK Stable Tag Refresh
+
+Running `scripts/update-dart-version --sync-stable-tags --min-version 2.10.0`
+against `dart-lang/sdk` found 118 stable numeric tags from `2.10.0` through
+`3.12.2`. The refresh generated exact CID tables for every tag, added 95
+version profiles, and grew the snapshot hash table to 61 distinct hashes. The
+92 duplicate-hash aliases all had matching CID signatures, so a hash can still
+map to one representative version without losing CID correctness for explicit
+version overrides.
+
+The only profile mismatch against the current inference rules is still
+`2.18.2`: the source-derived default would be `CID_SHIFT1`, but the in-tree
+Android fixture needs `OBJECT_HEADER`. Keep preserving existing profiles during
+batch syncs unless a fixture proves the inferred profile is better. The same
+fixture also needs a CID-table alias because the standalone SDK tag's CID table
+does not match the Flutter-engine snapshot.
+
+Older tags `2.10.0` through `2.14.4` do not contain `runtime/vm/app_snapshot.cc`
+or `runtime/vm/app_snapshot.h`. The generator reports those missing hash inputs
+and computes the MD5 from the files present in that tag, matching the existing
+script behavior for local SDK checkouts.
