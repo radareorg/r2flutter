@@ -39,12 +39,16 @@ static bool r2flutter_core_init(RCorePluginSession *cps) {
 }
 
 static bool r2flutter_core_fini(RCorePluginSession *cps) {
+#if R2_PLUGIN_INCORE
+	// removing config vars causes an UAF. this is a temporal workaround
+#else
 	RConfig *cfg = cps->core->config;
 	r_config_lock (cfg, false);
 	r_config_rm (cfg, R2FLUTTER_CFG_MAPFILE);
 	r_config_rm (cfg, R2FLUTTER_CFG_NAMEPOOL);
 	r_config_rm (cfg, R2FLUTTER_CFG_PROFILE);
 	r_config_lock (cfg, true);
+#endif
 	return true;
 }
 
