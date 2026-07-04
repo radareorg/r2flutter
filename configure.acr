@@ -2,15 +2,13 @@ PKGNAME r2flutter
 VERSION 0.2.0
 CONTACT pancake ; pancake@nopcode.org
 
-USE_PKGCONFIG!
-
 LANG_C!
 
 EXEC! R2_VERSION r2 -v ;
+EXEC! R2_CFLAGS r2 -H R2_CFLAGS ;
+EXEC! R2_LDFLAGS r2 -H R2_LDFLAGS ;
 
 ARG_WITH PRECOMPILED_AGENT precompiled-agent do not require node/npm ;
-
-PKGCFG! R2_CFLAGS R2_LDFLAGS r_core
 
 REPORT R2_VERSION ;
 

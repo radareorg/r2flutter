@@ -140,8 +140,7 @@ Plugin config keys:
 
 ## Dependencies
 
-- radare2 (with development headers)
-- pkg-config
+- radare2 (with development headers; uses `r2 -H` to resolve flags, no pkg-config needed)
 
 ## Other Projects
 

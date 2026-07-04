@@ -250,7 +250,8 @@ echo "VERSION:     0.2.0"
 echo "AUTHOR:      pancake"
 echo "EMAIL:       pancake@nopcode.org"
 echo "LANGS:       c"
-echo "PKGCONFIG:   r_core"
+echo "R2_CFLAGS:   $(r2 -H R2_CFLAGS 2>/dev/null || echo '(r2 not found)')"
+echo "R2_LDFLAGS:  $(r2 -H R2_LDFLAGS 2>/dev/null || echo '(r2 not found)')"
 echo "FLAGS:       --with-precompiled-agent"
 	exit 0
 	;;
@@ -321,7 +322,7 @@ parse_options "$1"
 shift
 done
 
-ENVWORDS="MANDIR DESCRIPTION INFODIR LIBDIR INCLUDEDIR LOCALSTATEDIR ETCDIR SYSCONFDIR DATADIR DOCDIR LIBEXECDIR SBINDIR BINDIR EPREFIX PREFIX SPREFIX TARGET HOST BUILD INSTALL INSTALL_LIB INSTALL_MAN INSTALL_PROGRAM INSTALL_PROGRAM_STRIP INSTALL_DIR INSTALL_SCRIPT INSTALL_DATA HOST_OS HOST_CPU BUILD_OS BUILD_CPU TARGET_OS TARGET_CPU VERSION VERSION_MAJOR VERSION_MINOR VERSION_PATCH VERSION_NUMBER PKGCFG_LIBDIR PKGCFG_INCDIR PKGNAME VPATH CONTACT CONTACT_NAME CONTACT_MAIL PKGCONFIG CC CFLAGS CPPFLAGS LDFLAGS HAVE_LANG_C R2_VERSION PRECOMPILED_AGENT R2_CFLAGS R2_LDFLAGS HAVE_PKGCFG_R_CORE"
+ENVWORDS="MANDIR DESCRIPTION INFODIR LIBDIR INCLUDEDIR LOCALSTATEDIR ETCDIR SYSCONFDIR DATADIR DOCDIR LIBEXECDIR SBINDIR BINDIR EPREFIX PREFIX SPREFIX TARGET HOST BUILD INSTALL INSTALL_LIB INSTALL_MAN INSTALL_PROGRAM INSTALL_PROGRAM_STRIP INSTALL_DIR INSTALL_SCRIPT INSTALL_DATA HOST_OS HOST_CPU BUILD_OS BUILD_CPU TARGET_OS TARGET_CPU VERSION VERSION_MAJOR VERSION_MINOR VERSION_PATCH VERSION_NUMBER PKGCFG_LIBDIR PKGCFG_INCDIR PKGNAME VPATH CONTACT CONTACT_NAME CONTACT_MAIL CC CFLAGS CPPFLAGS LDFLAGS HAVE_LANG_C R2_VERSION PRECOMPILED_AGENT R2_CFLAGS R2_LDFLAGS HAVE_PKGCFG_R_CORE"
 
 create_environ
 
@@ -336,37 +337,7 @@ ocho "checking for working directories... ${WODIS}"
 ocho "using prefix '${PREFIX}'"
 ACR_RMFILES=" test.c a.out a.exe"
 
-ochof "checking for pkg-config... "
-ENVWORDS="${ENVWORDS} HAVE_PKGCONFIG"
-if [ -n "$PKGCONFIG" ]; then
-	if [ -x "$PKGCONFIG" ]; then
-		_HAVE_PKGCONFIG="${PKGCONFIG}"
-	else
-		ocho "PKGCONFIG env is not executable"
-		PKGCONFIG=""
-	fi
-else
-	IFS=:
-	for A in ${PATH} ; do
-		if [ -x "${A}/pkg-config" ]; then
-			PKGCONFIG="${A}/pkg-config"
-		elif [ -x "${A}/pkgconf" ]; then
-			PKGCONFIG="${A}/pkgconf"
-		else
-			continue
-		fi
-		break
-	done
-	unset IFS
-fi
-if [ -n "${PKGCONFIG}" ]; then
-	ocho ${PKGCONFIG}
-	HAVE_PKGCONFIG=1
-else
-	HAVE_PKGCONFIG=0
-	echo "Cannot find pkg-config or pkgconf in PATH" >&2
-	exit 1
-ocho no; fi
+ocho "pkg-config is not required (using r2 -H instead)"
 COMPILER=CC
 ochof "checking for c compiler... "
 HAVE_LANG_C=1
@@ -390,21 +361,28 @@ else
 	echo "not found"
 echo 'required'; exit 1
 fi
-if [ -z "${PKGCONFIG}" ]; then pkg-config --version >/dev/null 2>&1 ; if [ 0 = 0 ]; then PKGCONFIG=pkg-config ; else PKGCONFIG=pkgconf ; fi; fi
-type ${PKGCONFIG} > /dev/null 2>&1 || echo "ERROR: Cannot find valid PKGCONFIG, pkg-config or pkgconf in PATH"
-echo 'Using PKGCONFIG: '${PKGCONFIG}
-printf 'checking pkg-config flags for r_core... '
-tmp=`${PKGCONFIG} --cflags r_core 2>/dev/null`
-if [ $? != 0 ]; then echo no ; HAVE_PKGCFG_R_CORE=0;
-R2_CFLAGS='';R2_LDFLAGS='';
-echo 'This package is required'
-exit 1
-else
-R2_CFLAGS=$tmp;
-tmp=`${PKGCONFIG} --libs r_core 2>/dev/null`
+printf 'checking exec r2 -H R2_CFLAGS... '
+R2_CFLAGS="`r2 -H R2_CFLAGS 2>/dev/null`"
 if [ $? = 0 ]; then
-echo yes; HAVE_PKGCFG_R_CORE=1;
-R2_LDFLAGS=$tmp; fi; fi
+	echo "ok"
+	HAVE_PKGCFG_R_CORE=1
+else
+	R2_CFLAGS=""
+	echo "not found"
+	HAVE_PKGCFG_R_CORE=0
+	echo "ERROR: radare2 not found, r2 -H R2_CFLAGS failed"
+	exit 1
+fi
+printf 'checking exec r2 -H R2_LDFLAGS... '
+R2_LDFLAGS="`r2 -H R2_LDFLAGS 2>/dev/null`"
+if [ $? = 0 ]; then
+	echo "ok"
+else
+	R2_LDFLAGS=""
+	echo "not found"
+	echo "ERROR: radare2 not found, r2 -H R2_LDFLAGS failed"
+	exit 1
+fi
 SEDFLAGS=" -e '"
 COUNT=0
 for A in ${ENVWORDS} ; do

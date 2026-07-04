@@ -4,8 +4,9 @@ Scope
 - This document is for agents working in this repo to implement and iterate on the Dart AOT snapshot/ObjectPool parser and CLI.
 
 Build
-- Requires radare2 dev headers (`r_core`) and `pkg-config`.
-- Build with `make` (uses pkg-config to resolve r2 includes/libs).
+- Requires radare2 (`r2` binary in PATH) to resolve include/link flags via `r2 -H`.
+- Do NOT use `pkg-config` — the build system uses `r2 -H R2_CFLAGS` and `r2 -H R2_LDFLAGS` instead.
+- Build with `make` (uses `r2 -H` to resolve r2 includes/libs).
 - Do not build with gcc oneliners, always use `make`
 - Run `make fmt` to format/indent the source code
 - To update the version change it in configure.acr and then run autogen.sh

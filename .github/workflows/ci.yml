@@ -33,7 +33,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: Install build dependencies
-      run: sudo apt-get update -y && sudo apt-get install -y build-essential meson ninja-build pkg-config
+      run: sudo apt-get update -y && sudo apt-get install -y build-essential meson ninja-build
     - name: Installing radare2 ${{ env.R2V }}
       uses: radareorg/github-actions@v2
       with:
@@ -72,7 +72,7 @@ jobs:
       with:
         fetch-depth: 0
     - name: Install build dependencies
-      run: sudo apt-get update -y && sudo apt-get install -y build-essential pkg-config
+      run: sudo apt-get update -y && sudo apt-get install -y build-essential
     - name: Build radare2 from source with r2flutter
       run: |
         git clone --depth=1 https://github.com/radareorg/radare2.git

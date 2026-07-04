@@ -13,7 +13,7 @@ Repo Layout (relevant parts)
   - dart_app.[ch]: Minimal app model; wires callback for extracted functions; emits addNames.r2/r2_dart_struct.h.
   - dart_pool_parse.c: Snapshot discovery (via r2), offsets loading (offsets.json), and clustered snapshot/ObjectPool decoder (constant pool → names).
   - dart_dumper.[ch]: Emits radare2 flags/comments, PP (x27) helper flags, and a basic struct header.
-  - Makefile: Pure-C build; links against libr2 via pkg-config; no Dart VM linkage.
+  - Makefile: Pure-C build; links against libr2 via `r2 -H`; no Dart VM linkage.
   - third_party/dartvm/: Vendored VM sources (headers only) to document snapshot/cluster formats used by the decoder (no linking).
   - arm64-v8a/: Example directory with libapp.so/libflutter.so for testing.
 - scripts/
@@ -21,7 +21,7 @@ Repo Layout (relevant parts)
 - blutter/: Standalone C++ reference implementation (with VM linkage) used as conceptual reference. r2flutter must not depend on it.
 
 Quick Start
-- Requirements: radare2 development headers (pkg-config), make, a libapp.so and libflutter.so pair.
+- Requirements: radare2 (`r2` in PATH for `r2 -H` flag resolution), make, a libapp.so and libflutter.so pair.
 - Generate offsets for your libapp:
   - `./scripts/update-dart-version --hash <snapshot-hash> <dart-version>`
   - This produces `r2flutter/offsets.json` keyed by snapshot hash.
