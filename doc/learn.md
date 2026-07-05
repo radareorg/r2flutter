@@ -1048,9 +1048,9 @@ such as `3.8.1` selects the static profile for that version.
 ## Offset Table Management
 
 **Finding**: The offset arrays (`code_entry_point_offsets`, `code_owner_offsets`,
-`function_name_offsets`) are **identical across all 40 known Dart versions**
-(2.10.0–3.12.1). They are stored once under a top-level `defaults` key in
-`offsets.json` and hardcoded as fallback in `init_layout_hints()` in
+`function_name_offsets`) are **identical across the known Dart versions**
+(`2.10.0`-`3.12.2`). They are stored once under a top-level `defaults` key in
+`offsets.json` and hardcoded as fallback in `init_layout_hints ()` in
 `dart_pool_names.c`.
 
 **Maintenance workflow**:
@@ -1065,29 +1065,28 @@ such as `3.8.1` selects the static profile for that version.
    `./scripts/update-dart-version --hash <md5> 3.13.0`
 
 4. **Regenerating all tables** from known data:
-   `./scripts/update-dart-version --regenerate`
+   `./scripts/update-dart-version --generate`
 
-5. **Preview without writing**:
-   `./scripts/update-dart-version --dry-run 3.13.0`
+5. **Syncing stable Dart SDK tags**:
+   `./scripts/update-dart-version --sync-stable-tags --min-version 2.10.0`
 
 6. **List known versions**:
    `./scripts/update-dart-version --list`
 
 **Data sources**:
-- `offsets.json` — per-hash metadata (compressed_word_size, heap_object_tag,
-  max_alignment, it_cap) + top-level defaults for offset arrays
-- `src/lib/dart_version.c` — `known_hashes[]` (hash→version mapping) and
-  `version_profiles[]` (version→CID table)
-- `third_party/unflutter/internal/snapshot/version.go` — Go reference
-  implementation (most complete CID table)
+- `offsets.json` — the source of truth. `hashes` maps snapshot MD5 values to
+  exact Dart version strings, while `profiles` is range-keyed by the first
+  version that introduced a layout/CID tuple.
+- `src/lib/dart_version.c` — generated `known_hashes[]` plus range-start
+  `version_profiles[]`.
+- `src/lib/dart_cid.c` — generated range-start CID tables.
 - `third_party/sdk/runtime/vm/class_id.h` — Dart SDK source defining CID enum
-  values
+  values.
 
-**Key insight**: The offset arrays have never changed across any known Dart
-version. The only per-version variables are `compressed_word_size` (4 or 8),
-the CID numbers, and the tag encoding style. This means the fallback path
-(unknown hash → default offsets + v3.9.2 CID table) is now correct and
-functional.
+**Key insight**: A Dart version `V` uses the profile with the greatest
+range-start key `<= V`. Most new Dart patch releases therefore add only one
+line under `hashes`; a new `profiles` line is needed only when the layout or CID
+table actually changes. Unknown hashes still use the hardcoded modern fallback.
 
 ## The `first` Android Fixture Uses ObjectHeader Tags
 
@@ -1097,4 +1096,34 @@ bits. For example, the tagged object `0x1651` points at `0x1650`, whose header
 decodes CID `93` only via `(header >> 12) & 0xfffff`; interpreting it as
 `CID_SHIFT1` makes `-O` report an unresolved raw value. Keep the `2.18.2`
 profile as `OBJECT_HEADER` unless another fixture proves a hash-specific split
-is needed.
+is needed. The standalone `dart-lang/sdk` `2.18.2` tag also has a different CID
+table (`String=90`, `NumPredefinedCids=159`) from this Flutter-engine fixture,
+so the generator keeps `2.18.2` on the `3.9.2`-shaped fallback CID table used by
+the sample. This is documented as a Flutter-engine snapshot quirk, not as
+standalone Dart SDK `2.18.2` CID data.
+
+## Dart SDK Stable Tag Refresh
+
+Running `scripts/update-dart-version --sync-stable-tags --min-version 2.10.0`
+against `dart-lang/sdk` found 118 stable numeric tags from `2.10.0` through
+`3.12.2`. In expanded form those tags collapse to 19 range profiles and 61
+distinct hashes. The duplicate-hash aliases all had matching CID signatures, so
+a hash can still map to one representative version without losing CID
+correctness for explicit version overrides.
+
+The only profile mismatch against the current inference rules is still
+`2.18.2`: the source-derived default would be `CID_SHIFT1`, but the in-tree
+Android fixture needs `OBJECT_HEADER`. Keep preserving existing profiles during
+batch syncs unless a fixture proves the inferred profile is better. The same
+fixture also needs a CID-table alias because the standalone SDK tag's CID table
+does not match the Flutter-engine snapshot.
+
+The previous sync parser did not understand Dart `3.12.x`'s `CLASS_ID_LIST`
+macro form and emitted an empty CID table for `3.12.0+`. The parser now expands
+that macro form; Dart `3.12.x` floors to the same modern CID family as `3.9.x`
+(`String=93`, `ObjectPool=23`, `NumPredefinedCids=175`).
+
+Older tags `2.10.0` through `2.14.4` do not contain `runtime/vm/app_snapshot.cc`
+or `runtime/vm/app_snapshot.h`. The generator reports those missing hash inputs
+and computes the MD5 from the files present in that tag, matching the existing
+script behavior for local SDK checkouts.

@@ -2,8 +2,8 @@
 """
 Unified Dart version table generator for r2flutter.
 
-Reads/writes offsets.json (the single source of truth) and generates
-dart_offsets.h + dart_version.c from it.
+Reads/writes offsets.json (the source of truth for hashes/profiles) and
+generates dart_offsets.h, dart_version.c, and batch-refreshed dart_cid.c tables.
 
 Usage:
   # Add a new Dart version (pulls SDK, computes hash)
@@ -17,6 +17,9 @@ Usage:
 
   # Regenerate C files from offsets.json
   ./scripts/update-dart-version --generate
+
+  # Pull stable Dart SDK tags and rebuild version/hash/CID tables
+  ./scripts/update-dart-version --sync-stable-tags --min-version 2.10.0
 
   # Show current known versions
   ./scripts/update-dart-version --list
@@ -51,6 +54,106 @@ TAG_STYLE_NAMES = {
 
 TAG_STYLE_VALUES = {v: k for k, v in TAG_STYLE_NAMES.items()}
 
+CID_KIND_TO_CLASS_NAME = [
+    ("ILLEGAL", "Illegal"),
+    ("NATIVE_POINTER", "NativePointer"),
+    ("CLASS", "Class"),
+    ("PATCH_CLASS", "PatchClass"),
+    ("FUNCTION", "Function"),
+    ("TYPE_PARAMETERS", "TypeParameters"),
+    ("CLOSURE_DATA", "ClosureData"),
+    ("FFI_TRAMPOLINE_DATA", "FfiTrampolineData"),
+    ("FIELD", "Field"),
+    ("SCRIPT", "Script"),
+    ("LIBRARY", "Library"),
+    ("NAMESPACE", "Namespace"),
+    ("KERNEL_PROGRAM_INFO", "KernelProgramInfo"),
+    ("WEAK_SERIALIZATION_REFERENCE", "WeakSerializationReference"),
+    ("WEAK_ARRAY", "WeakArray"),
+    ("CODE", "Code"),
+    ("OBJECT_POOL", "ObjectPool"),
+    ("PC_DESCRIPTORS", "PcDescriptors"),
+    ("CODE_SOURCE_MAP", "CodeSourceMap"),
+    ("COMPRESSED_STACK_MAPS", "CompressedStackMaps"),
+    ("EXCEPTION_HANDLERS", "ExceptionHandlers"),
+    ("CONTEXT", "Context"),
+    ("CONTEXT_SCOPE", "ContextScope"),
+    ("SENTINEL", "Sentinel"),
+    ("SINGLE_TARGET_CACHE", "SingleTargetCache"),
+    ("UNLINKED_CALL", "UnlinkedCall"),
+    ("MONOMORPHIC_SMIABLE_CALL", "MonomorphicSmiableCall"),
+    ("CALL_SITE_DATA", "CallSiteData"),
+    ("ICDATA", "ICData"),
+    ("MEGAMORPHIC_CACHE", "MegamorphicCache"),
+    ("SUBTYPE_TEST_CACHE", "SubtypeTestCache"),
+    ("LOADING_UNIT", "LoadingUnit"),
+    ("LANGUAGE_ERROR", "LanguageError"),
+    ("UNHANDLED_EXCEPTION", "UnhandledException"),
+    ("INSTANCE", "Instance"),
+    ("LIBRARY_PREFIX", "LibraryPrefix"),
+    ("TYPE_ARGUMENTS", "TypeArguments"),
+    ("TYPE", "Type"),
+    ("FUNCTION_TYPE", "FunctionType"),
+    ("RECORD_TYPE", "RecordType"),
+    ("TYPE_REF", "TypeRef"),
+    ("TYPE_PARAMETER", "TypeParameter"),
+    ("CLOSURE", "Closure"),
+    ("MINT", "Mint"),
+    ("DOUBLE", "Double"),
+    ("FLOAT32X4", "Float32x4"),
+    ("INT32X4", "Int32x4"),
+    ("FLOAT64X2", "Float64x2"),
+    ("RECORD", "Record"),
+    ("TYPED_DATA", "TypedData"),
+    ("EXTERNAL_TYPED_DATA", "ExternalTypedData"),
+    ("TYPED_DATA_VIEW", "TypedDataView"),
+    ("CAPABILITY", "Capability"),
+    ("RECEIVE_PORT", "ReceivePort"),
+    ("SEND_PORT", "SendPort"),
+    ("STACK_TRACE", "StackTrace"),
+    ("SUSPEND_STATE", "SuspendState"),
+    ("REGEXP", "RegExp"),
+    ("WEAK_PROPERTY", "WeakProperty"),
+    ("WEAK_REFERENCE", "WeakReference"),
+    ("FUTURE_OR", "FutureOr"),
+    ("USER_TAG", "UserTag"),
+    ("TRANSFERABLE_TYPED_DATA", "TransferableTypedData"),
+    ("MAP", "Map"),
+    ("CONST_MAP", "ConstMap"),
+    ("SET", "Set"),
+    ("CONST_SET", "ConstSet"),
+    ("ARRAY", "Array"),
+    ("IMMUTABLE_ARRAY", "ImmutableArray"),
+    ("GROWABLE_OBJECT_ARRAY", "GrowableObjectArray"),
+    ("STRING", "String"),
+    ("ONE_BYTE_STRING", "OneByteString"),
+    ("TWO_BYTE_STRING", "TwoByteString"),
+    ("NUM_PREDEFINED_CIDS", "NumPredefinedCids"),
+]
+
+STABLE_TAG_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+# Some Flutter engine snapshots map to a Dart SDK version string but use a CID
+# layout that does not match the standalone dart-lang/sdk tag for that version.
+CID_TABLE_VERSION_ALIASES = {
+    "2.18.2": "3.9.2",
+}
+
+LAYOUT_KEYS = [
+    "cws",
+    "heap_object_tag",
+    "max_alignment",
+    "it_cap",
+    "tag_style",
+    "header_fields",
+]
+
+CID_META_KEYS = [
+    "typed_data_internal_base",
+    "typed_data_internal_limit",
+    "typed_data_stride",
+]
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # JSON I/O
@@ -61,9 +164,46 @@ def load_offsets(filepath):
         return json.load(f)
 
 
+def compact_json(value):
+    return json.dumps(value, separators=(", ", ": "))
+
+
+def format_offsets(data):
+    defaults = data.get("defaults", {})
+    profiles = data.get("profiles", {})
+    hashes = data.get("hashes", {})
+    lines = [
+        "{",
+        '  "defaults": {',
+        f'    "code_entry_point_offsets": {compact_json(defaults.get("code_entry_point_offsets", [8, 24, 16, 32]))},',
+        f'    "code_owner_offsets": {compact_json(defaults.get("code_owner_offsets", [56]))},',
+        f'    "function_name_offsets": {compact_json(defaults.get("function_name_offsets", [24, 8]))}',
+        "  },",
+        '  "profiles": {',
+    ]
+    profile_items = sorted(profiles.items(), key=lambda kv: parse_version(kv[0]))
+    for i, (version, profile) in enumerate(profile_items):
+        comma = "," if i + 1 < len(profile_items) else ""
+        lines.append(f'    "{version}": {compact_json(profile)}{comma}')
+    lines.extend([
+        "  },",
+        '  "hashes": {',
+    ])
+    hash_items = sorted(hashes.items(), key=lambda kv: (parse_version(kv[1]), kv[0]))
+    for i, (snapshot_hash, version) in enumerate(hash_items):
+        comma = "," if i + 1 < len(hash_items) else ""
+        lines.append(f'    "{snapshot_hash}": "{version}"{comma}')
+    lines.extend([
+        "  }",
+        "}",
+        "",
+    ])
+    return "\n".join(lines)
+
+
 def save_offsets(filepath, data):
     with open(filepath, 'w') as f:
-        json.dump(data, f, indent=2)
+        f.write(format_offsets(data))
     print(f"  Updated {filepath}")
 
 
@@ -88,40 +228,194 @@ def compute_snapshot_hash(sdk_vm_dir):
     return h.hexdigest()
 
 
-def parse_class_id_h(filepath):
-    """Parse a Dart SDK class_id.h and extract CID values."""
-    with open(filepath) as f:
-        content = f.read()
-    enum_match = re.search(r'enum ClassId : intptr_t \{(.*?)\};', content, re.DOTALL)
+def strip_comments(content):
+    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    content = re.sub(r'//.*', '', content)
+    return content
+
+
+def parse_macro_lists(content):
+    """Return class-id macro lists such as CLASS_LIST(V) as ordered names."""
+    clean = strip_comments(content)
+    raw_macros = {}
+    lines = clean.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = re.match(r'\s*#define\s+(\w+)\s*\(([^)]*)\)\s*(.*)', line)
+        if not m:
+            i += 1
+            continue
+        name = m.group(1)
+        body = m.group(3)
+        while body.rstrip().endswith('\\') and i + 1 < len(lines):
+            body = body.rstrip()[:-1] + " " + lines[i + 1].strip()
+            i += 1
+        raw_macros[name] = body
+        i += 1
+
+    memo = {}
+
+    item_re = re.compile(r'\bV\s*\(\s*(\w+)\s*\)|\b(\w*CLASS_LIST\w*|DART_CLASS_LIST\w*)\s*\(\s*V\s*\)')
+
+    def expand(name):
+        if name in memo:
+            return memo[name]
+        body = raw_macros.get(name, "")
+        out = []
+        for match in item_re.finditer(body):
+            cls = match.group(1)
+            nested = match.group(2)
+            if cls:
+                out.append(cls)
+            elif nested and nested != name:
+                out.extend(expand(nested))
+        memo[name] = out
+        return out
+
+    return {name: expand(name) for name in raw_macros}
+
+
+def cid_token_name(token):
+    if not token.startswith("k"):
+        return None
+    name = token[1:]
+    if name.endswith("Cid"):
+        name = name[:-3]
+    return name
+
+
+def apply_define_object_kind(body, cls):
+    text = body.replace("##", "")
+    text = text.replace("clazz", cls)
+    return re.findall(r'\bk[A-Za-z0-9_]+(?:Cid|Cids)?\b', text)
+
+
+def parse_class_id_list_tokens(content, macro_lists):
+    clean = strip_comments(content)
+    m = re.search(r'#define\s+CLASS_ID_LIST\s+(.*?)(?:\n#undef\s+CLASS_ID_LIST|\nenum\s+ClassId)', clean, re.DOTALL)
+    if not m:
+        return []
+    body = re.sub(r'\\\n\s*', ' ', m.group(1))
+    tokens = []
+    item_re = re.compile(
+        r'\bCID\s*\(\s*(\w+)\s*\)|'
+        r'\b(\w+)\s*\(\s*DEFINE_TYPED_DATA_CLASS_ID\s*\)|'
+        r'\b(\w+)\s*\(\s*DEFINE_FFI_CLASS_ID\s*\)|'
+        r'\b(\w+)\s*\(\s*DEFINE_CLASS_ID\s*\)')
+    for match in item_re.finditer(body):
+        direct, typed_list, ffi_list, class_list = match.groups()
+        if direct:
+            tokens.append(f"k{direct}")
+            continue
+        if typed_list:
+            for cls in macro_lists.get(typed_list, []):
+                tokens.extend([
+                    f"kTypedData{cls}Cid",
+                    f"kTypedData{cls}ViewCid",
+                    f"kExternalTypedData{cls}Cid",
+                    f"kUnmodifiableTypedData{cls}ViewCid",
+                ])
+            continue
+        if ffi_list:
+            for cls in macro_lists.get(ffi_list, []):
+                tokens.append(f"kFfi{cls}Cid")
+            continue
+        if class_list:
+            for cls in macro_lists.get(class_list, []):
+                tokens.append(f"k{cls}Cid")
+    return tokens
+
+
+def parse_class_id_content(content):
+    """Parse Dart runtime/vm/class_id.h and extract CID values."""
+    macro_lists = parse_macro_lists(content)
+    clean = strip_comments(content)
+    enum_match = re.search(r'enum\s+ClassId(?:\s*:\s*intptr_t)?\s*\{(.*?)\};', clean, re.DOTALL)
     if not enum_match:
         raise ValueError("Could not find ClassId enum in class_id.h")
     enum_body = enum_match.group(1)
     cids = {}
     current_value = 0
-    for line in enum_body.split('\n'):
-        line = line.strip()
-        if not line or line.startswith('//') or line.startswith('/*'):
+    define_body = None
+    logical_lines = []
+    pending = ""
+    for raw_line in enum_body.split('\n'):
+        line = raw_line.rstrip()
+        if line.endswith('\\'):
+            pending += line[:-1] + " "
             continue
-        line = re.sub(r'//.*', '', line)
-        line = re.sub(r'/\*.*?\*/', '', line, flags=re.DOTALL)
-        line = line.rstrip(',').strip()
+        if pending:
+            line = pending + line.strip()
+            pending = ""
+        logical_lines.append(line)
+    if pending:
+        logical_lines.append(pending)
+
+    for line in logical_lines:
+        line = line.strip()
         if not line:
             continue
-        assign_match = re.match(r'k(\w+)Cid\s*=\s*(\d+)', line)
-        if assign_match:
-            cids[assign_match.group(1)] = int(assign_match.group(2))
-            current_value = int(assign_match.group(2)) + 1
+
+        define_match = re.match(r'#define\s+DEFINE_OBJECT_KIND\s*\([^)]*\)\s*(.*)', line)
+        if define_match:
+            define_body = define_match.group(1)
             continue
-        implicit_match = re.match(r'k(\w+)Cid', line)
-        if implicit_match:
-            cids[implicit_match.group(1)] = current_value
-            current_value += 1
+        if line.startswith("#undef DEFINE_OBJECT_KIND"):
+            define_body = None
             continue
-        other_match = re.match(r'k(\w+),', line)
-        if other_match and not other_match.group(1).endswith('Cid'):
-            cids[other_match.group(1)] = current_value
-            current_value += 1
+
+        list_match = re.match(r'(\w+)\s*\(\s*DEFINE_OBJECT_KIND\s*\)', line)
+        if list_match and define_body:
+            for cls in macro_lists.get(list_match.group(1), []):
+                for token in apply_define_object_kind(define_body, cls):
+                    name = cid_token_name(token)
+                    if name:
+                        cids[name] = current_value
+                        current_value += 1
+            continue
+
+        if line == "CLASS_ID_LIST":
+            for token in parse_class_id_list_tokens(content, macro_lists):
+                name = cid_token_name(token)
+                if name:
+                    cids[name] = current_value
+                    current_value += 1
+            continue
+
+        for part in [p.strip() for p in line.split(',') if p.strip()]:
+            assign_match = re.match(r'(k\w+(?:Cid|Cids)?)\s*=\s*(\d+)$', part)
+            if assign_match:
+                name = cid_token_name(assign_match.group(1))
+                cids[name] = int(assign_match.group(2))
+                current_value = int(assign_match.group(2)) + 1
+                continue
+            implicit_match = re.match(r'(k\w+(?:Cid|Cids)?)$', part)
+            if implicit_match:
+                name = cid_token_name(implicit_match.group(1))
+                cids[name] = current_value
+                current_value += 1
     return cids
+
+
+def parse_class_id_h(filepath):
+    """Parse a Dart SDK class_id.h and extract CID values."""
+    with open(filepath) as f:
+        return parse_class_id_content(f.read())
+
+
+def typed_data_info_from_cids(cids):
+    base = cids.get("TypedDataInt8Array")
+    next_base = cids.get("TypedDataUint8Array")
+    if base is None:
+        return 0, 0, 0
+    stride = (next_base - base) if next_base is not None and next_base > base else 3
+    last = cids.get("UnmodifiableTypedDataFloat64x2ArrayView")
+    if last is None:
+        last = cids.get("ExternalTypedDataFloat64x2Array")
+    if last is None:
+        last = base + (14 * stride) - 1
+    return base, last + 1, stride
 
 
 def pull_sdk_tag(sdk_repo, tag, work_dir):
@@ -141,6 +435,226 @@ def pull_sdk_tag(sdk_repo, tag, work_dir):
         print(f"Error: runtime/vm not found in cloned repo", file=sys.stderr)
         return None
     return vm_dir
+
+
+def run_checked(cmd, **kwargs):
+    result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+    if result.returncode != 0:
+        raise RuntimeError(f"{' '.join(cmd)} failed: {result.stderr.strip()}")
+    return result
+
+
+def list_stable_sdk_tags(sdk_repo, min_version, max_version=None):
+    result = run_checked(["git", "ls-remote", "--tags", sdk_repo, "refs/tags/[0-9]*"])
+    tags = set()
+    for line in result.stdout.splitlines():
+        m = re.search(r"refs/tags/([^{}^]+)(?:\^\{\})?$", line)
+        if not m:
+            continue
+        tag = m.group(1)
+        if not STABLE_TAG_RE.fullmatch(tag):
+            continue
+        if parse_version(tag) < parse_version(min_version):
+            continue
+        if max_version and parse_version(tag) > parse_version(max_version):
+            continue
+        tags.add(tag)
+    return sorted(tags, key=parse_version)
+
+
+def ensure_partial_sdk_repo(sdk_repo, repo_dir):
+    if os.path.isdir(os.path.join(repo_dir, ".git")):
+        return
+    os.makedirs(os.path.dirname(repo_dir), exist_ok=True)
+    run_checked([
+        "git", "clone", "--filter=blob:none", "--no-checkout", "--no-tags",
+        sdk_repo, repo_dir
+    ])
+
+
+def fetch_sdk_tags(repo_dir, tags):
+    chunk_size = 24
+    for i in range(0, len(tags), chunk_size):
+        chunk = tags[i:i + chunk_size]
+        print(f"Fetching tags {chunk[0]}..{chunk[-1]}", flush=True)
+        refspecs = [f"+refs/tags/{tag}:refs/tags/{tag}" for tag in chunk]
+        run_checked(["git", "-C", repo_dir, "fetch", "--depth", "1", "origin"] + refspecs)
+
+
+def git_show_text(repo_dir, tag, path):
+    result = run_checked(["git", "-C", repo_dir, "show", f"{tag}:{path}"])
+    return result.stdout
+
+
+def git_show_bytes(repo_dir, tag, path):
+    result = subprocess.run(
+        ["git", "-C", repo_dir, "show", f"{tag}:{path}"],
+        capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"git show {tag}:{path} failed: {result.stderr.decode(errors='replace').strip()}")
+    return result.stdout
+
+
+def git_blob_bytes(repo_dir, tag, paths):
+    result = run_checked(["git", "-C", repo_dir, "ls-tree", "-r", tag, "--"] + paths)
+    oid_to_path = {}
+    for line in result.stdout.splitlines():
+        m = re.match(r'^\d+\s+blob\s+([0-9a-f]+)\t(.+)$', line)
+        if m:
+            oid_to_path[m.group(1)] = m.group(2)
+    missing = [path for path in paths if path not in set(oid_to_path.values())]
+    if not oid_to_path:
+        return {}, missing
+
+    oid_order = list(oid_to_path.keys())
+    proc = subprocess.run(
+        ["git", "-C", repo_dir, "cat-file", "--batch"],
+        input=("".join(f"{oid}\n" for oid in oid_order)).encode(),
+        capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode(errors='replace').strip())
+
+    blobs = {}
+    pos = 0
+    out = proc.stdout
+    for oid in oid_order:
+        nl = out.find(b'\n', pos)
+        if nl < 0:
+            raise RuntimeError(f"truncated cat-file output for {tag}:{oid_to_path[oid]}")
+        header = out[pos:nl].decode(errors='replace')
+        parts = header.split()
+        if len(parts) < 3 or parts[1] != "blob":
+            raise RuntimeError(f"unexpected cat-file header for {tag}:{oid_to_path[oid]}: {header}")
+        size = int(parts[2])
+        start = nl + 1
+        end = start + size
+        blobs[oid_to_path[oid]] = out[start:end]
+        pos = end + 1
+    return blobs, missing
+
+
+def compute_snapshot_hash_from_git(repo_dir, tag):
+    h = hashlib.md5()
+    missing = []
+    for fname in VM_SNAPSHOT_FILES:
+        path = f"runtime/vm/{fname}"
+        try:
+            h.update(git_show_bytes(repo_dir, tag, path))
+        except RuntimeError:
+            missing.append(fname)
+    return h.hexdigest(), missing
+
+
+def infer_profile_for_version(version):
+    ver_tuple = parse_version(version)
+    if ver_tuple >= (3, 4):
+        tag_style = "OBJECT_HEADER"
+    elif ver_tuple >= (2, 14):
+        tag_style = "CID_SHIFT1"
+    else:
+        tag_style = "CID_INT32"
+    if (2, 16) <= ver_tuple < (2, 18):
+        hdr = 6
+    elif ver_tuple >= (2, 13):
+        hdr = 5
+    else:
+        hdr = 4
+    if ver_tuple < (2, 17) or (ver_tuple[0], ver_tuple[1]) in ((3, 2), (3, 4)):
+        cws = 8
+    else:
+        cws = 4
+    return {
+        "cws": cws,
+        "heap_object_tag": 1,
+        "max_alignment": 16,
+        "it_cap": 20000,
+        "tag_style": tag_style,
+        "header_fields": hdr,
+    }
+
+
+def profile_diff(existing, inferred):
+    diffs = []
+    for key in ("cws", "heap_object_tag", "max_alignment", "it_cap", "tag_style", "header_fields"):
+        if existing.get(key) != inferred.get(key):
+            diffs.append(f"{key}:{existing.get(key)}!={inferred.get(key)}")
+    return diffs
+
+
+def cid_signature(cids):
+    keys = (
+        "Class", "Function", "Code", "ObjectPool", "String",
+        "OneByteString", "TwoByteString", "Array", "Mint",
+        "NumPredefinedCids",
+    )
+    return tuple(cids.get(key) for key in keys)
+
+
+def report_item(report, key, value):
+    report.setdefault(key, []).append(value)
+
+
+def profiles_from_offsets(offsets):
+    profiles = offsets.get("profiles")
+    if isinstance(profiles, dict):
+        return profiles
+    versions = offsets.get("versions")
+    if isinstance(versions, dict):
+        return versions
+    return {}
+
+
+def profile_layout(profile):
+    return {key: profile[key] for key in LAYOUT_KEYS}
+
+
+def cid_values_from_table(table):
+    cids = table.get("cids", {})
+    return {kind: cids[kind] for kind, _class_name in CID_KIND_TO_CLASS_NAME if kind in cids}
+
+
+def profile_signature(profile):
+    sig = profile_layout(profile)
+    for key in CID_META_KEYS:
+        sig[key] = profile.get(key, 0)
+    sig["cids"] = cid_values_from_table(profile)
+    return sig
+
+
+def profile_matches(a, b):
+    return bool(a and b and profile_signature(a) == profile_signature(b))
+
+
+def floor_profile(profiles, version):
+    best = None
+    for key in sorted(profiles.keys(), key=parse_version):
+        if parse_version(key) > parse_version(version):
+            break
+        best = profiles[key]
+    if best:
+        return best
+    keys = sorted(profiles.keys(), key=parse_version)
+    return profiles[keys[0]] if keys else None
+
+
+def make_profile(layout, cid_table, note=None):
+    profile = dict(layout)
+    for key in CID_META_KEYS:
+        profile[key] = cid_table[key]
+    profile["cids"] = cid_values_from_table(cid_table)
+    if note:
+        profile["note"] = note
+    return profile
+
+
+def cid_table_from_cids(cids):
+    base, limit, stride = typed_data_info_from_cids(cids)
+    return {
+        "cids": {kind: cids[class_name] for kind, class_name in CID_KIND_TO_CLASS_NAME if class_name in cids},
+        "typed_data_internal_base": base,
+        "typed_data_internal_limit": limit,
+        "typed_data_stride": stride,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -167,10 +681,10 @@ def gen_hash_entries(offsets):
 
 def gen_profile_entries(offsets):
     """Generate just the entries for version_profiles[] (no declaration wrapper)."""
-    versions = offsets.get("versions", {})
+    profiles = profiles_from_offsets(offsets)
     lines = []
-    for ver in sorted(versions.keys(), key=parse_version):
-        v = versions[ver]
+    for ver in sorted(profiles.keys(), key=parse_version):
+        v = profiles[ver]
         tag_name = TAG_STYLE_NAMES.get(v["tag_style"], "0")
         lines.append(f'\t{{ "", "{ver}", {v["cws"]}, {v["heap_object_tag"]}, '
                      f'{v["max_alignment"]}, {v["it_cap"]}, {tag_name}, '
@@ -187,7 +701,7 @@ def gen_dart_offsets_h(offsets):
     ep = defaults.get("code_entry_point_offsets", [8, 24, 16, 32])
     owner = defaults.get("code_owner_offsets", [56])
     name = defaults.get("function_name_offsets", [24, 8])
-    versions = offsets.get("versions", {})
+    profiles = profiles_from_offsets(offsets)
 
     lines = [
         "// Auto-generated from offsets.json by scripts/update-dart-version",
@@ -206,8 +720,9 @@ def gen_dart_offsets_h(offsets):
         "static const DartHashEntry dart_hash_entries[] = {",
     ]
     for h, ver in sorted(hashes.items()):
-        cws = versions.get(ver, {}).get("cws", 4)
-        lines.append(f'\t{{ "{h}", {cws} }},  // Dart {ver}')
+        profile = floor_profile(profiles, ver)
+        cws = profile.get("cws", 4) if profile else 4
+        lines.append(f'\t{{ "{h}", {cws} }}, // Dart {ver}')
     lines.append("};")
     lines.append("")
     lines.append(f"#define DART_HASH_ENTRIES_COUNT {len(hashes)}")
@@ -223,6 +738,51 @@ def gen_dart_offsets_h(offsets):
     lines.append("#endif // R2C_DART_OFFSETS_H")
     lines.append("")
     return "\n".join(lines)
+
+
+def gen_cid_table_entries(profiles):
+    lines = []
+    lines.append("\t// clang-format off")
+    for ver in sorted(profiles.keys(), key=parse_version):
+        cids = profiles[ver].get("cids", {})
+        base = profiles[ver].get("typed_data_internal_base", 0)
+        limit = profiles[ver].get("typed_data_internal_limit", 0)
+        stride = profiles[ver].get("typed_data_stride", 0)
+        cid_items = []
+        for kind, class_name in CID_KIND_TO_CLASS_NAME:
+            value = cids.get(kind)
+            if value is not None:
+                cid_items.append(f"CID ({kind}, {value})")
+        lines.append(f'\t{{ "{ver}", {{ {", ".join(cid_items)} }}, {base}, {limit}, {stride} }},')
+    lines.append('\t{ NULL, { 0 }, 0, 0, 0 }')
+    lines.append("\t// clang-format on")
+    return "\n".join(lines)
+
+
+def write_dart_cid_c(filepath, profiles):
+    """Rewrite cid_tables[] in dart_cid.c from parsed SDK class_id.h data."""
+    if not profiles:
+        return
+    with open(filepath) as f:
+        content = f.read()
+    table_pos = content.find("cid_tables[]")
+    if table_pos < 0:
+        print("Error: could not find 'cid_tables[]' in file", file=sys.stderr)
+        sys.exit(1)
+    table_eq = content.find("=", table_pos)
+    table_open = content.find("{", table_eq)
+    names_pos = content.find("static const char *const cid_kind_names", table_open)
+    if table_open < 0 or names_pos < 0:
+        print("Error: could not locate cid_tables[] replacement bounds", file=sys.stderr)
+        sys.exit(1)
+    new_content = (
+        content[:table_open + 1] +
+        "\n" + gen_cid_table_entries(profiles) +
+        "\n};\n\n" + content[names_pos:]
+    )
+    with open(filepath, 'w') as f:
+        f.write(new_content)
+    print(f"  Updated {filepath}")
 
 
 def write_dart_version_c(filepath, offsets):
@@ -255,7 +815,7 @@ def write_dart_version_c(filepath, offsets):
         sys.exit(1)
 
     # Replace version_profiles[] first (it's later in the file)
-    content = content[:vp_open + 1] + "\n" + profile_entries + "\n" + content[vp_close:]
+    content = content[:vp_open + 1] + "\n" + profile_entries + "\n\n" + content[vp_close:].lstrip("\n")
 
     # Now find known_hashes[] bounds in the MODIFIED content
     kh_pos = content.find("known_hashes[]")
@@ -279,7 +839,7 @@ def write_dart_version_c(filepath, offsets):
         sys.exit(1)
 
     # Replace known_hashes[]
-    content = content[:kh_open + 1] + "\n" + hash_entries + "\n" + content[kh_close:]
+    content = content[:kh_open + 1] + "\n" + hash_entries + "\n\n" + content[kh_close:].lstrip("\n")
 
     with open(filepath, 'w') as f:
         f.write(content)
@@ -292,6 +852,167 @@ def write_dart_offsets_h(filepath, offsets):
     with open(filepath, 'w') as f:
         f.write(content)
     print(f"  Generated {filepath}")
+
+
+def sync_stable_tags(args, repo_root, offsets_path, dart_version_path, dart_offsets_h_path, dart_cid_path):
+    tags = list_stable_sdk_tags(args.sdk_repo, args.min_version, args.max_version)
+    if not tags:
+        print("No stable Dart SDK tags found", file=sys.stderr)
+        sys.exit(1)
+
+    repo_cache = args.repo_cache
+    temp_dir = None
+    if not repo_cache:
+        temp_dir = tempfile.TemporaryDirectory(prefix="r2flutter-dart-sdk-")
+        repo_cache = os.path.join(temp_dir.name, "sdk")
+    try:
+        print(f"Found {len(tags)} stable Dart SDK tags ({tags[0]}..{tags[-1]})", flush=True)
+        print(f"Using Dart SDK cache: {repo_cache}", flush=True)
+        ensure_partial_sdk_repo(args.sdk_repo, repo_cache)
+        fetch_sdk_tags(repo_cache, tags)
+
+        offsets = load_offsets(offsets_path)
+        hashes = offsets.setdefault("hashes", {})
+        profiles = offsets.setdefault("profiles", profiles_from_offsets(offsets))
+        offsets.pop("versions", None)
+        candidate_profiles = {}
+        report = {
+            "new_hashes": [],
+            "new_profiles": [],
+            "hash_aliases": [],
+            "hash_conflicts": [],
+            "profile_mismatches": [],
+            "cid_aliases": [],
+            "missing_files": [],
+            "parse_errors": [],
+        }
+        hash_cid_signatures = {}
+
+        blob_paths = [f"runtime/vm/{fname}" for fname in VM_SNAPSHOT_FILES]
+        class_id_path = "runtime/vm/class_id.h"
+        tag_paths = blob_paths + [class_id_path]
+
+        for idx, tag in enumerate(tags, start=1):
+            print(f"[{idx:03d}/{len(tags):03d}] {tag}", flush=True)
+            try:
+                blobs, missing_paths = git_blob_bytes(repo_cache, tag, tag_paths)
+            except RuntimeError as e:
+                report_item(report, "parse_errors", (tag, str(e)))
+                continue
+            h = hashlib.md5()
+            missing = []
+            for fname, path in zip(VM_SNAPSHOT_FILES, blob_paths):
+                data = blobs.get(path)
+                if data is None:
+                    missing.append(fname)
+                    continue
+                h.update(data)
+            snapshot_hash = h.hexdigest()
+            if class_id_path in missing_paths:
+                missing.append("class_id.h")
+            if missing:
+                report_item(report, "missing_files", (tag, missing))
+
+            known_version = hashes.get(snapshot_hash)
+            if known_version:
+                if known_version != tag:
+                    report_item(report, "hash_aliases", (snapshot_hash, known_version, tag))
+            else:
+                hashes[snapshot_hash] = tag
+                report_item(report, "new_hashes", (snapshot_hash, tag))
+
+            try:
+                class_id_data = blobs.get(class_id_path)
+                if class_id_data is None:
+                    raise ValueError("runtime/vm/class_id.h not found")
+                class_id = class_id_data.decode()
+                cids = parse_class_id_content(class_id)
+            except Exception as e:
+                report_item(report, "parse_errors", (tag, str(e)))
+                continue
+            cid_table = cid_table_from_cids(cids)
+            candidate_profiles[tag] = make_profile(infer_profile_for_version(tag), cid_table)
+            sig = cid_signature(cids)
+            old_sig = hash_cid_signatures.setdefault(snapshot_hash, (tag, sig))
+            if old_sig[1] != sig:
+                report_item(report, "hash_conflicts", (snapshot_hash, old_sig[0], tag))
+
+        for dst, src in CID_TABLE_VERSION_ALIASES.items():
+            src_profile = candidate_profiles.get(src) or floor_profile(profiles, src)
+            if dst in candidate_profiles and src_profile:
+                layout = profile_layout(candidate_profiles[dst])
+                candidate_profiles[dst] = make_profile(
+                    layout,
+                    src_profile,
+                    "Uses fallback CIDs from 3.9.2 for the in-tree Flutter engine snapshot; not standalone Dart SDK 2.18.2 CIDs.")
+                report_item(report, "cid_aliases", (dst, src))
+
+        for tag in sorted(candidate_profiles.keys(), key=parse_version):
+            candidate = candidate_profiles[tag]
+            existing = profiles.get(tag)
+            if existing:
+                diffs = profile_diff(existing, candidate)
+                if cid_values_from_table(existing) != cid_values_from_table(candidate):
+                    diffs.append("cids")
+                for key in CID_META_KEYS:
+                    if existing.get(key) != candidate.get(key):
+                        diffs.append(key)
+                if diffs:
+                    report_item(report, "profile_mismatches", (tag, diffs))
+                if args.force_profiles:
+                    profiles[tag] = candidate
+                continue
+            floor = floor_profile(profiles, tag)
+            if not profile_matches(candidate, floor):
+                profiles[tag] = candidate
+                report_item(report, "new_profiles", tag)
+
+        save_offsets(offsets_path, offsets)
+        write_dart_version_c(dart_version_path, offsets)
+        write_dart_offsets_h(dart_offsets_h_path, offsets)
+        write_dart_cid_c(dart_cid_path, profiles)
+
+        print("\nSync report:")
+        print(f"  Tags scanned: {len(tags)}")
+        print(f"  Range profiles: {len(profiles)}")
+        print(f"  New hashes: {len(report['new_hashes'])}")
+        print(f"  New range profiles: {len(report['new_profiles'])}")
+        print(f"  Existing-hash aliases: {len(report['hash_aliases'])}")
+        print(f"  Profile mismatches preserved: {len(report['profile_mismatches'])}")
+        print(f"  CID table aliases applied: {len(report['cid_aliases'])}")
+        print(f"  Hash/CID conflicts: {len(report['hash_conflicts'])}")
+        print(f"  Tags with missing hash inputs: {len(report['missing_files'])}")
+        print(f"  Parse/hash errors: {len(report['parse_errors'])}")
+        if report["profile_mismatches"]:
+            print("  Profile mismatches:")
+            for tag, diffs in report["profile_mismatches"][:12]:
+                print(f"    {tag}: {', '.join(diffs)}")
+            if len(report["profile_mismatches"]) > 12:
+                print(f"    ... {len(report['profile_mismatches']) - 12} more")
+        if report["hash_conflicts"]:
+            print("  Hash/CID conflicts:")
+            for snapshot_hash, old_tag, new_tag in report["hash_conflicts"]:
+                print(f"    {snapshot_hash}: {old_tag} vs {new_tag}")
+        if report["cid_aliases"]:
+            print("  CID table aliases:")
+            for dst, src in report["cid_aliases"]:
+                print(f"    {dst}: {src}")
+        if report["missing_files"]:
+            print("  Missing hash inputs:")
+            for tag, files in report["missing_files"][:12]:
+                print(f"    {tag}: {', '.join(files)}")
+            if len(report["missing_files"]) > 12:
+                print(f"    ... {len(report['missing_files']) - 12} more")
+        if report["parse_errors"]:
+            print("  Errors:")
+            for tag, error in report["parse_errors"][:12]:
+                print(f"    {tag}: {error}")
+            if len(report["parse_errors"]) > 12:
+                print(f"    ... {len(report['parse_errors']) - 12} more")
+        print("\nDone. Run 'make && make test' to verify.")
+    finally:
+        if temp_dir:
+            temp_dir.cleanup()
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -308,6 +1029,16 @@ def main():
     parser.add_argument("--hash", help="Snapshot hash (skip SDK pull)")
     parser.add_argument("--generate", action="store_true",
                         help="Regenerate C files from offsets.json (no SDK pull)")
+    parser.add_argument("--sync-stable-tags", action="store_true",
+                        help="Pull stable Dart SDK tags and rebuild hash/profile/CID tables")
+    parser.add_argument("--min-version", default="2.10.0",
+                        help="Oldest stable Dart SDK tag to sync (default: %(default)s)")
+    parser.add_argument("--max-version",
+                        help="Newest stable Dart SDK tag to sync")
+    parser.add_argument("--repo-cache",
+                        help="Path to a reusable partial Dart SDK git cache")
+    parser.add_argument("--force-profiles", action="store_true",
+                        help="Overwrite existing version profiles with inferred defaults")
     parser.add_argument("--list", action="store_true",
                         help="List known versions and exit")
     args = parser.parse_args()
@@ -316,6 +1047,7 @@ def main():
     offsets_path = os.path.join(repo_root, "offsets.json")
     dart_version_path = os.path.join(repo_root, "src", "lib", "dart_version.c")
     dart_offsets_h_path = os.path.join(repo_root, "include", "r2flutter", "dart_offsets.h")
+    dart_cid_path = os.path.join(repo_root, "src", "lib", "dart_cid.c")
 
     # ── --list mode ──────────────────────────────────────────────────
     if args.list:
@@ -332,7 +1064,13 @@ def main():
         offsets = load_offsets(offsets_path)
         write_dart_version_c(dart_version_path, offsets)
         write_dart_offsets_h(dart_offsets_h_path, offsets)
+        write_dart_cid_c(dart_cid_path, profiles_from_offsets(offsets))
         print("Done. Run 'make && make test' to verify.")
+        return
+
+    # ── --sync-stable-tags mode ───────────────────────────────────────
+    if args.sync_stable_tags:
+        sync_stable_tags(args, repo_root, offsets_path, dart_version_path, dart_offsets_h_path, dart_cid_path)
         return
 
     # ── Need a version argument ───────────────────────────────────────
@@ -341,7 +1079,7 @@ def main():
         sys.exit(1)
 
     version = args.version
-    ver_tuple = parse_version(version)
+    parsed_cids = None
 
     # ── Get or compute the snapshot hash ──────────────────────────────
     if args.hash:
@@ -354,6 +1092,10 @@ def main():
             sys.exit(1)
         snapshot_hash = compute_snapshot_hash(vm_dir)
         print(f"Computed snapshot hash from {vm_dir}: {snapshot_hash}")
+        class_id_path = os.path.join(vm_dir, "class_id.h")
+        if os.path.exists(class_id_path):
+            parsed_cids = parse_class_id_h(class_id_path)
+            print(f"Extracted CIDs from class_id.h ({len(parsed_cids)} entries)")
     else:
         print(f"Cloning Dart SDK tag {version}...")
         with tempfile.TemporaryDirectory(prefix=f"dart-sdk-{version}-") as tmpdir:
@@ -366,17 +1108,18 @@ def main():
 
             class_id_path = os.path.join(vm_dir, "class_id.h")
             if os.path.exists(class_id_path):
-                cids = parse_class_id_h(class_id_path)
-                print(f"Extracted CIDs from class_id.h ({len(cids)} entries)")
-                print(f"  Class={cids.get('Class', '?')}, Function={cids.get('Function', '?')}, "
-                      f"Code={cids.get('Code', '?')}, String={cids.get('String', '?')}")
+                parsed_cids = parse_class_id_h(class_id_path)
+                print(f"Extracted CIDs from class_id.h ({len(parsed_cids)} entries)")
+                print(f"  Class={parsed_cids.get('Class', '?')}, Function={parsed_cids.get('Function', '?')}, "
+                      f"Code={parsed_cids.get('Code', '?')}, String={parsed_cids.get('String', '?')}")
             else:
                 print("Warning: class_id.h not found")
 
     # ── Update offsets.json ──────────────────────────────────────────
     offsets = load_offsets(offsets_path)
     hashes = offsets.setdefault("hashes", {})
-    versions = offsets.setdefault("versions", {})
+    profiles = offsets.setdefault("profiles", profiles_from_offsets(offsets))
+    offsets.pop("versions", None)
 
     if snapshot_hash in hashes:
         print(f"  Hash {snapshot_hash} already known (version {hashes[snapshot_hash]})")
@@ -384,39 +1127,20 @@ def main():
         hashes[snapshot_hash] = version
         print(f"  Added hash {snapshot_hash} -> {version}")
 
-    # Add version profile if not present
-    if version not in versions:
-        if ver_tuple >= (3, 4):
-            tag_style = "OBJECT_HEADER"
-        elif ver_tuple >= (2, 14):
-            tag_style = "CID_SHIFT1"
-        else:
-            tag_style = "CID_INT32"
-        if (2, 16) <= ver_tuple < (2, 18):
-            hdr = 6
-        elif ver_tuple >= (2, 13):
-            hdr = 5
-        else:
-            hdr = 4
-        if ver_tuple < (2, 17) or ver_tuple in ((3, 2), (3, 4)):
-            cws = 8
-        else:
-            cws = 4
-        versions[version] = {
-            "cws": cws,
-            "heap_object_tag": 1,
-            "max_alignment": 16,
-            "it_cap": 20000,
-            "tag_style": tag_style,
-            "header_fields": hdr,
-        }
-        print(f"  Added version profile: {version} (cws={cws}, tag={tag_style}, hdr={hdr})")
+    if parsed_cids:
+        candidate = make_profile(infer_profile_for_version(version), cid_table_from_cids(parsed_cids))
+        if not profile_matches(candidate, floor_profile(profiles, version)):
+            profiles[version] = candidate
+            print(f"  Added range profile: {version}")
+    elif not floor_profile(profiles, version):
+        print("Warning: no floor profile exists and no class_id.h was parsed")
 
     save_offsets(offsets_path, offsets)
 
     # ── Regenerate C files ──────────────────────────────────────────
     write_dart_version_c(dart_version_path, offsets)
     write_dart_offsets_h(dart_offsets_h_path, offsets)
+    write_dart_cid_c(dart_cid_path, profiles)
 
     print("\nDone. Run 'make && make test' to verify.")
 

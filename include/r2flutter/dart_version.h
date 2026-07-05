@@ -16,7 +16,7 @@ extern "C" {
 typedef enum {
 	DART_TAG_STYLE_CID_INT32 = 0, // v2.10-2.13: raw int32 CID
 	DART_TAG_STYLE_CID_SHIFT1 = 1, // v2.14-3.3: (cid << 1) | canonical
-	DART_TAG_STYLE_OBJECT_HEADER = 2 // v3.4.3+: ObjectHeader with ClassIdTag at bits 12-31
+	DART_TAG_STYLE_OBJECT_HEADER = 2 // v3.4.3+ and known 2.18.2 exception
 } DartTagStyle;
 
 // Version layout information for Dart snapshots
@@ -36,8 +36,8 @@ typedef struct {
 // Returns NULL if hash is not recognized
 const char *dart_version_from_hash(const char *hash);
 
-// Lookup version profile from a Dart version string
-// Returns NULL if version is not recognized
+// Lookup version profile from a Dart version string using floor semantics.
+// Returns NULL if the version string is not a dotted numeric version.
 const DartVerLayout *dart_profile_from_version(const char *version);
 
 // Pick a layout structure based on hash, with fallback to defaults
@@ -49,6 +49,10 @@ DartVerLayout *dart_pick_layout_by_hash(const char *hash);
 void dart_ver_layout_free(DartVerLayout *layout);
 
 void dart_version_set_verbose(int level);
+
+// Compare dotted Dart SDK versions numerically.
+// Returns -1, 0, 1, or -2 when either input is not a dotted numeric version.
+int dart_version_compare(const char *a, const char *b);
 
 #ifdef __cplusplus
 }
