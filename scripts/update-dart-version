@@ -139,6 +139,21 @@ CID_TABLE_VERSION_ALIASES = {
     "2.18.2": "3.9.2",
 }
 
+LAYOUT_KEYS = [
+    "cws",
+    "heap_object_tag",
+    "max_alignment",
+    "it_cap",
+    "tag_style",
+    "header_fields",
+]
+
+CID_META_KEYS = [
+    "typed_data_internal_base",
+    "typed_data_internal_limit",
+    "typed_data_stride",
+]
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # JSON I/O
@@ -149,15 +164,46 @@ def load_offsets(filepath):
         return json.load(f)
 
 
+def compact_json(value):
+    return json.dumps(value, separators=(", ", ": "))
+
+
+def format_offsets(data):
+    defaults = data.get("defaults", {})
+    profiles = data.get("profiles", {})
+    hashes = data.get("hashes", {})
+    lines = [
+        "{",
+        '  "defaults": {',
+        f'    "code_entry_point_offsets": {compact_json(defaults.get("code_entry_point_offsets", [8, 24, 16, 32]))},',
+        f'    "code_owner_offsets": {compact_json(defaults.get("code_owner_offsets", [56]))},',
+        f'    "function_name_offsets": {compact_json(defaults.get("function_name_offsets", [24, 8]))}',
+        "  },",
+        '  "profiles": {',
+    ]
+    profile_items = sorted(profiles.items(), key=lambda kv: parse_version(kv[0]))
+    for i, (version, profile) in enumerate(profile_items):
+        comma = "," if i + 1 < len(profile_items) else ""
+        lines.append(f'    "{version}": {compact_json(profile)}{comma}')
+    lines.extend([
+        "  },",
+        '  "hashes": {',
+    ])
+    hash_items = sorted(hashes.items(), key=lambda kv: (parse_version(kv[1]), kv[0]))
+    for i, (snapshot_hash, version) in enumerate(hash_items):
+        comma = "," if i + 1 < len(hash_items) else ""
+        lines.append(f'    "{snapshot_hash}": "{version}"{comma}')
+    lines.extend([
+        "  }",
+        "}",
+        "",
+    ])
+    return "\n".join(lines)
+
+
 def save_offsets(filepath, data):
-    versions = data.get("versions")
-    if isinstance(versions, dict):
-        data["versions"] = dict(sorted(versions.items(), key=lambda kv: parse_version(kv[0])))
-    hashes = data.get("hashes")
-    if isinstance(hashes, dict):
-        data["hashes"] = dict(sorted(hashes.items(), key=lambda kv: (parse_version(kv[1]), kv[0])))
     with open(filepath, 'w') as f:
-        json.dump(data, f, indent=2)
+        f.write(format_offsets(data))
     print(f"  Updated {filepath}")
 
 
@@ -245,6 +291,42 @@ def apply_define_object_kind(body, cls):
     return re.findall(r'\bk[A-Za-z0-9_]+(?:Cid|Cids)?\b', text)
 
 
+def parse_class_id_list_tokens(content, macro_lists):
+    clean = strip_comments(content)
+    m = re.search(r'#define\s+CLASS_ID_LIST\s+(.*?)(?:\n#undef\s+CLASS_ID_LIST|\nenum\s+ClassId)', clean, re.DOTALL)
+    if not m:
+        return []
+    body = re.sub(r'\\\n\s*', ' ', m.group(1))
+    tokens = []
+    item_re = re.compile(
+        r'\bCID\s*\(\s*(\w+)\s*\)|'
+        r'\b(\w+)\s*\(\s*DEFINE_TYPED_DATA_CLASS_ID\s*\)|'
+        r'\b(\w+)\s*\(\s*DEFINE_FFI_CLASS_ID\s*\)|'
+        r'\b(\w+)\s*\(\s*DEFINE_CLASS_ID\s*\)')
+    for match in item_re.finditer(body):
+        direct, typed_list, ffi_list, class_list = match.groups()
+        if direct:
+            tokens.append(f"k{direct}")
+            continue
+        if typed_list:
+            for cls in macro_lists.get(typed_list, []):
+                tokens.extend([
+                    f"kTypedData{cls}Cid",
+                    f"kTypedData{cls}ViewCid",
+                    f"kExternalTypedData{cls}Cid",
+                    f"kUnmodifiableTypedData{cls}ViewCid",
+                ])
+            continue
+        if ffi_list:
+            for cls in macro_lists.get(ffi_list, []):
+                tokens.append(f"kFfi{cls}Cid")
+            continue
+        if class_list:
+            for cls in macro_lists.get(class_list, []):
+                tokens.append(f"k{cls}Cid")
+    return tokens
+
+
 def parse_class_id_content(content):
     """Parse Dart runtime/vm/class_id.h and extract CID values."""
     macro_lists = parse_macro_lists(content)
@@ -291,6 +373,14 @@ def parse_class_id_content(content):
                     if name:
                         cids[name] = current_value
                         current_value += 1
+            continue
+
+        if line == "CLASS_ID_LIST":
+            for token in parse_class_id_list_tokens(content, macro_lists):
+                name = cid_token_name(token)
+                if name:
+                    cids[name] = current_value
+                    current_value += 1
             continue
 
         for part in [p.strip() for p in line.split(',') if p.strip()]:
@@ -504,6 +594,69 @@ def report_item(report, key, value):
     report.setdefault(key, []).append(value)
 
 
+def profiles_from_offsets(offsets):
+    profiles = offsets.get("profiles")
+    if isinstance(profiles, dict):
+        return profiles
+    versions = offsets.get("versions")
+    if isinstance(versions, dict):
+        return versions
+    return {}
+
+
+def profile_layout(profile):
+    return {key: profile[key] for key in LAYOUT_KEYS}
+
+
+def cid_values_from_table(table):
+    cids = table.get("cids", {})
+    return {kind: cids[kind] for kind, _class_name in CID_KIND_TO_CLASS_NAME if kind in cids}
+
+
+def profile_signature(profile):
+    sig = profile_layout(profile)
+    for key in CID_META_KEYS:
+        sig[key] = profile.get(key, 0)
+    sig["cids"] = cid_values_from_table(profile)
+    return sig
+
+
+def profile_matches(a, b):
+    return bool(a and b and profile_signature(a) == profile_signature(b))
+
+
+def floor_profile(profiles, version):
+    best = None
+    for key in sorted(profiles.keys(), key=parse_version):
+        if parse_version(key) > parse_version(version):
+            break
+        best = profiles[key]
+    if best:
+        return best
+    keys = sorted(profiles.keys(), key=parse_version)
+    return profiles[keys[0]] if keys else None
+
+
+def make_profile(layout, cid_table, note=None):
+    profile = dict(layout)
+    for key in CID_META_KEYS:
+        profile[key] = cid_table[key]
+    profile["cids"] = cid_values_from_table(cid_table)
+    if note:
+        profile["note"] = note
+    return profile
+
+
+def cid_table_from_cids(cids):
+    base, limit, stride = typed_data_info_from_cids(cids)
+    return {
+        "cids": {kind: cids[class_name] for kind, class_name in CID_KIND_TO_CLASS_NAME if class_name in cids},
+        "typed_data_internal_base": base,
+        "typed_data_internal_limit": limit,
+        "typed_data_stride": stride,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # C code generation from offsets.json
 # ═══════════════════════════════════════════════════════════════════════
@@ -528,10 +681,10 @@ def gen_hash_entries(offsets):
 
 def gen_profile_entries(offsets):
     """Generate just the entries for version_profiles[] (no declaration wrapper)."""
-    versions = offsets.get("versions", {})
+    profiles = profiles_from_offsets(offsets)
     lines = []
-    for ver in sorted(versions.keys(), key=parse_version):
-        v = versions[ver]
+    for ver in sorted(profiles.keys(), key=parse_version):
+        v = profiles[ver]
         tag_name = TAG_STYLE_NAMES.get(v["tag_style"], "0")
         lines.append(f'\t{{ "", "{ver}", {v["cws"]}, {v["heap_object_tag"]}, '
                      f'{v["max_alignment"]}, {v["it_cap"]}, {tag_name}, '
@@ -548,7 +701,7 @@ def gen_dart_offsets_h(offsets):
     ep = defaults.get("code_entry_point_offsets", [8, 24, 16, 32])
     owner = defaults.get("code_owner_offsets", [56])
     name = defaults.get("function_name_offsets", [24, 8])
-    versions = offsets.get("versions", {})
+    profiles = profiles_from_offsets(offsets)
 
     lines = [
         "// Auto-generated from offsets.json by scripts/update-dart-version",
@@ -567,8 +720,9 @@ def gen_dart_offsets_h(offsets):
         "static const DartHashEntry dart_hash_entries[] = {",
     ]
     for h, ver in sorted(hashes.items()):
-        cws = versions.get(ver, {}).get("cws", 4)
-        lines.append(f'\t{{ "{h}", {cws} }},  // Dart {ver}')
+        profile = floor_profile(profiles, ver)
+        cws = profile.get("cws", 4) if profile else 4
+        lines.append(f'\t{{ "{h}", {cws} }}, // Dart {ver}')
     lines.append("};")
     lines.append("")
     lines.append(f"#define DART_HASH_ENTRIES_COUNT {len(hashes)}")
@@ -586,30 +740,28 @@ def gen_dart_offsets_h(offsets):
     return "\n".join(lines)
 
 
-def gen_cid_table_entries(cid_tables):
+def gen_cid_table_entries(profiles):
     lines = []
-    for ver in sorted(cid_tables.keys(), key=parse_version):
-        cids = cid_tables[ver]["cids"]
-        base = cid_tables[ver]["typed_data_internal_base"]
-        limit = cid_tables[ver]["typed_data_internal_limit"]
-        stride = cid_tables[ver]["typed_data_stride"]
-        lines.append(f'\t{{ "{ver}",')
-        lines.append("\t\t{")
+    lines.append("\t// clang-format off")
+    for ver in sorted(profiles.keys(), key=parse_version):
+        cids = profiles[ver].get("cids", {})
+        base = profiles[ver].get("typed_data_internal_base", 0)
+        limit = profiles[ver].get("typed_data_internal_limit", 0)
+        stride = profiles[ver].get("typed_data_stride", 0)
+        cid_items = []
         for kind, class_name in CID_KIND_TO_CLASS_NAME:
-            value = cids.get(class_name)
+            value = cids.get(kind)
             if value is not None:
-                lines.append(f"\t\t\tCID ({kind}, {value}),")
-        lines.append("\t\t},")
-        lines.append(f"\t\t{base},")
-        lines.append(f"\t\t{limit},")
-        lines.append(f"\t\t{stride} }},")
+                cid_items.append(f"CID ({kind}, {value})")
+        lines.append(f'\t{{ "{ver}", {{ {", ".join(cid_items)} }}, {base}, {limit}, {stride} }},')
     lines.append('\t{ NULL, { 0 }, 0, 0, 0 }')
+    lines.append("\t// clang-format on")
     return "\n".join(lines)
 
 
-def write_dart_cid_c(filepath, cid_tables):
+def write_dart_cid_c(filepath, profiles):
     """Rewrite cid_tables[] in dart_cid.c from parsed SDK class_id.h data."""
-    if not cid_tables:
+    if not profiles:
         return
     with open(filepath) as f:
         content = f.read()
@@ -625,7 +777,7 @@ def write_dart_cid_c(filepath, cid_tables):
         sys.exit(1)
     new_content = (
         content[:table_open + 1] +
-        "\n" + gen_cid_table_entries(cid_tables) +
+        "\n" + gen_cid_table_entries(profiles) +
         "\n};\n\n" + content[names_pos:]
     )
     with open(filepath, 'w') as f:
@@ -663,7 +815,7 @@ def write_dart_version_c(filepath, offsets):
         sys.exit(1)
 
     # Replace version_profiles[] first (it's later in the file)
-    content = content[:vp_open + 1] + "\n" + profile_entries + "\n" + content[vp_close:]
+    content = content[:vp_open + 1] + "\n" + profile_entries + "\n\n" + content[vp_close:].lstrip("\n")
 
     # Now find known_hashes[] bounds in the MODIFIED content
     kh_pos = content.find("known_hashes[]")
@@ -687,7 +839,7 @@ def write_dart_version_c(filepath, offsets):
         sys.exit(1)
 
     # Replace known_hashes[]
-    content = content[:kh_open + 1] + "\n" + hash_entries + "\n" + content[kh_close:]
+    content = content[:kh_open + 1] + "\n" + hash_entries + "\n\n" + content[kh_close:].lstrip("\n")
 
     with open(filepath, 'w') as f:
         f.write(content)
@@ -721,11 +873,12 @@ def sync_stable_tags(args, repo_root, offsets_path, dart_version_path, dart_offs
 
         offsets = load_offsets(offsets_path)
         hashes = offsets.setdefault("hashes", {})
-        versions = offsets.setdefault("versions", {})
-        cid_tables = {}
+        profiles = offsets.setdefault("profiles", profiles_from_offsets(offsets))
+        offsets.pop("versions", None)
+        candidate_profiles = {}
         report = {
             "new_hashes": [],
-            "new_versions": [],
+            "new_profiles": [],
             "hash_aliases": [],
             "hash_conflicts": [],
             "profile_mismatches": [],
@@ -768,18 +921,6 @@ def sync_stable_tags(args, repo_root, offsets_path, dart_version_path, dart_offs
                 hashes[snapshot_hash] = tag
                 report_item(report, "new_hashes", (snapshot_hash, tag))
 
-            inferred = infer_profile_for_version(tag)
-            existing = versions.get(tag)
-            if existing:
-                diffs = profile_diff(existing, inferred)
-                if diffs:
-                    report_item(report, "profile_mismatches", (tag, diffs))
-                if args.force_profiles:
-                    versions[tag] = inferred
-            else:
-                versions[tag] = inferred
-                report_item(report, "new_versions", tag)
-
             try:
                 class_id_data = blobs.get(class_id_path)
                 if class_id_data is None:
@@ -789,39 +930,53 @@ def sync_stable_tags(args, repo_root, offsets_path, dart_version_path, dart_offs
             except Exception as e:
                 report_item(report, "parse_errors", (tag, str(e)))
                 continue
-            base, limit, stride = typed_data_info_from_cids(cids)
-            cid_tables[tag] = {
-                "cids": cids,
-                "typed_data_internal_base": base,
-                "typed_data_internal_limit": limit,
-                "typed_data_stride": stride,
-            }
+            cid_table = cid_table_from_cids(cids)
+            candidate_profiles[tag] = make_profile(infer_profile_for_version(tag), cid_table)
             sig = cid_signature(cids)
             old_sig = hash_cid_signatures.setdefault(snapshot_hash, (tag, sig))
             if old_sig[1] != sig:
                 report_item(report, "hash_conflicts", (snapshot_hash, old_sig[0], tag))
 
         for dst, src in CID_TABLE_VERSION_ALIASES.items():
-            src_table = cid_tables.get(src)
-            if dst in cid_tables and src_table:
-                cid_tables[dst] = {
-                    "cids": dict(src_table["cids"]),
-                    "typed_data_internal_base": src_table["typed_data_internal_base"],
-                    "typed_data_internal_limit": src_table["typed_data_internal_limit"],
-                    "typed_data_stride": src_table["typed_data_stride"],
-                }
+            src_profile = candidate_profiles.get(src) or floor_profile(profiles, src)
+            if dst in candidate_profiles and src_profile:
+                layout = profile_layout(candidate_profiles[dst])
+                candidate_profiles[dst] = make_profile(
+                    layout,
+                    src_profile,
+                    "Uses fallback CIDs from 3.9.2 for the in-tree Flutter engine snapshot; not standalone Dart SDK 2.18.2 CIDs.")
                 report_item(report, "cid_aliases", (dst, src))
+
+        for tag in sorted(candidate_profiles.keys(), key=parse_version):
+            candidate = candidate_profiles[tag]
+            existing = profiles.get(tag)
+            if existing:
+                diffs = profile_diff(existing, candidate)
+                if cid_values_from_table(existing) != cid_values_from_table(candidate):
+                    diffs.append("cids")
+                for key in CID_META_KEYS:
+                    if existing.get(key) != candidate.get(key):
+                        diffs.append(key)
+                if diffs:
+                    report_item(report, "profile_mismatches", (tag, diffs))
+                if args.force_profiles:
+                    profiles[tag] = candidate
+                continue
+            floor = floor_profile(profiles, tag)
+            if not profile_matches(candidate, floor):
+                profiles[tag] = candidate
+                report_item(report, "new_profiles", tag)
 
         save_offsets(offsets_path, offsets)
         write_dart_version_c(dart_version_path, offsets)
         write_dart_offsets_h(dart_offsets_h_path, offsets)
-        write_dart_cid_c(dart_cid_path, cid_tables)
+        write_dart_cid_c(dart_cid_path, profiles)
 
         print("\nSync report:")
         print(f"  Tags scanned: {len(tags)}")
-        print(f"  CID tables generated: {len(cid_tables)}")
+        print(f"  Range profiles: {len(profiles)}")
         print(f"  New hashes: {len(report['new_hashes'])}")
-        print(f"  New version profiles: {len(report['new_versions'])}")
+        print(f"  New range profiles: {len(report['new_profiles'])}")
         print(f"  Existing-hash aliases: {len(report['hash_aliases'])}")
         print(f"  Profile mismatches preserved: {len(report['profile_mismatches'])}")
         print(f"  CID table aliases applied: {len(report['cid_aliases'])}")
@@ -909,6 +1064,7 @@ def main():
         offsets = load_offsets(offsets_path)
         write_dart_version_c(dart_version_path, offsets)
         write_dart_offsets_h(dart_offsets_h_path, offsets)
+        write_dart_cid_c(dart_cid_path, profiles_from_offsets(offsets))
         print("Done. Run 'make && make test' to verify.")
         return
 
@@ -923,7 +1079,7 @@ def main():
         sys.exit(1)
 
     version = args.version
-    ver_tuple = parse_version(version)
+    parsed_cids = None
 
     # ── Get or compute the snapshot hash ──────────────────────────────
     if args.hash:
@@ -936,6 +1092,10 @@ def main():
             sys.exit(1)
         snapshot_hash = compute_snapshot_hash(vm_dir)
         print(f"Computed snapshot hash from {vm_dir}: {snapshot_hash}")
+        class_id_path = os.path.join(vm_dir, "class_id.h")
+        if os.path.exists(class_id_path):
+            parsed_cids = parse_class_id_h(class_id_path)
+            print(f"Extracted CIDs from class_id.h ({len(parsed_cids)} entries)")
     else:
         print(f"Cloning Dart SDK tag {version}...")
         with tempfile.TemporaryDirectory(prefix=f"dart-sdk-{version}-") as tmpdir:
@@ -948,17 +1108,18 @@ def main():
 
             class_id_path = os.path.join(vm_dir, "class_id.h")
             if os.path.exists(class_id_path):
-                cids = parse_class_id_h(class_id_path)
-                print(f"Extracted CIDs from class_id.h ({len(cids)} entries)")
-                print(f"  Class={cids.get('Class', '?')}, Function={cids.get('Function', '?')}, "
-                      f"Code={cids.get('Code', '?')}, String={cids.get('String', '?')}")
+                parsed_cids = parse_class_id_h(class_id_path)
+                print(f"Extracted CIDs from class_id.h ({len(parsed_cids)} entries)")
+                print(f"  Class={parsed_cids.get('Class', '?')}, Function={parsed_cids.get('Function', '?')}, "
+                      f"Code={parsed_cids.get('Code', '?')}, String={parsed_cids.get('String', '?')}")
             else:
                 print("Warning: class_id.h not found")
 
     # ── Update offsets.json ──────────────────────────────────────────
     offsets = load_offsets(offsets_path)
     hashes = offsets.setdefault("hashes", {})
-    versions = offsets.setdefault("versions", {})
+    profiles = offsets.setdefault("profiles", profiles_from_offsets(offsets))
+    offsets.pop("versions", None)
 
     if snapshot_hash in hashes:
         print(f"  Hash {snapshot_hash} already known (version {hashes[snapshot_hash]})")
@@ -966,18 +1127,20 @@ def main():
         hashes[snapshot_hash] = version
         print(f"  Added hash {snapshot_hash} -> {version}")
 
-    # Add version profile if not present
-    if version not in versions:
-        versions[version] = infer_profile_for_version(version)
-        profile = versions[version]
-        print(f"  Added version profile: {version} (cws={profile['cws']}, "
-              f"tag={profile['tag_style']}, hdr={profile['header_fields']})")
+    if parsed_cids:
+        candidate = make_profile(infer_profile_for_version(version), cid_table_from_cids(parsed_cids))
+        if not profile_matches(candidate, floor_profile(profiles, version)):
+            profiles[version] = candidate
+            print(f"  Added range profile: {version}")
+    elif not floor_profile(profiles, version):
+        print("Warning: no floor profile exists and no class_id.h was parsed")
 
     save_offsets(offsets_path, offsets)
 
     # ── Regenerate C files ──────────────────────────────────────────
     write_dart_version_c(dart_version_path, offsets)
     write_dart_offsets_h(dart_offsets_h_path, offsets)
+    write_dart_cid_c(dart_cid_path, profiles)
 
     print("\nDone. Run 'make && make test' to verify.")
 
