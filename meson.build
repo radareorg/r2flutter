@@ -2,11 +2,17 @@ project(
   'r2flutter',
   'c',
 version : '0.2.0',
-  meson_version : '>=0.53.0',
+  meson_version : '>=0.55.0',
   default_options : ['warning_level=2', 'werror=false']
 )
 
-r_core_dep = dependency('r_core', method: 'pkg-config')
+r2 = find_program('r2', required: true)
+r2_cflags_res = run_command(r2, '-H', 'R2_CFLAGS', check: true)
+r2_ldflags_res = run_command(r2, '-H', 'R2_LDFLAGS', check: true)
+r_core_dep = declare_dependency(
+  compile_args: r2_cflags_res.stdout().strip().split(),
+  link_args: r2_ldflags_res.stdout().strip().split(),
+)
 r2flutter_inc = include_directories('include')
 
 r2flutter_sources = files(

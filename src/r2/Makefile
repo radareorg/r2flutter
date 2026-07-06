@@ -1,9 +1,11 @@
 CC ?= gcc
 CFLAGS += -Wall -Wextra -O2 -fPIC
 CFLAGS += -I../../include -I../../include/r2flutter
-CFLAGS += $(shell pkg-config --cflags r_core 2>/dev/null || echo "-I/usr/local/include/libr")
+R2_CFLAGS  ?= $(shell r2 -H R2_CFLAGS 2>/dev/null)
+R2_LDFLAGS ?= $(shell r2 -H R2_LDFLAGS 2>/dev/null)
 R2_PLUGDIR ?= $(shell r2 -H R2_USER_PLUGINS)
-LDFLAGS += $(shell pkg-config --libs r_core 2>/dev/null || echo "-L/usr/local/lib -lr_core -lr_util -ldl")
+CFLAGS += $(R2_CFLAGS)
+LDFLAGS += $(R2_LDFLAGS)
 DEPFLAGS = -MMD -MP
 
 # Detect platform for shared library extension
