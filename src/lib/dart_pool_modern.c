@@ -50,6 +50,7 @@ typedef enum {
 	MODERN_SCALAR_BOOL,
 	MODERN_SCALAR_INT8,
 	MODERN_SCALAR_UINT8,
+	MODERN_SCALAR_RAW32,
 	MODERN_SCALAR_REFID,
 } ModernScalarOp;
 
@@ -520,6 +521,8 @@ static bool modern_skip_scalar(ClusterStream *s, ModernScalarOp op) {
 	case MODERN_SCALAR_INT8:
 	case MODERN_SCALAR_UINT8:
 		return modern_skip_n_bytes (s, 1);
+	case MODERN_SCALAR_RAW32:
+		return modern_skip_n_bytes (s, 4);
 	case MODERN_SCALAR_REFID:
 		return cs_read_ref_id (s, &uv);
 	default:
@@ -817,7 +820,7 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 			.name_idx = 0,
 			.owner_idx = 1,
 			.scalar_count = 2,
-			.scalars = { MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_TAGGED32 },
+			.scalars = { MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_RAW32 },
 		});
 	}
 	if (modern_cid_eq (cid, cids->mint)) {
@@ -914,7 +917,7 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 		{ 47, MODERN_FILL_TYPE_ARGUMENTS, 0, -1, -1, 0, { 0 } },
 		{ 48, MODERN_FILL_REFS, 3, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
 		{ 49, MODERN_FILL_REFS, 3, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
-		{ 50, MODERN_FILL_REFS, 6, -1, -1, 3, { MODERN_SCALAR_UINT8, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32 } },
+		{ 50, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_UINT8 } },
 		{ 51, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_UINT8 } },
 		{ 52, MODERN_FILL_REFS, 3, -1, -1, 3, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8 } },
 		{ 57, MODERN_FILL_REFS, 6, -1, -1, 0, { 0 } },
@@ -1122,20 +1125,55 @@ static bool modern_skip_fill_typed_data(ClusterStream *s, const ModernCidCache *
 }
 
 static bool modern_skip_fill_record(ClusterStream *s, const ModernClusterMeta *meta) {
+	ClusterStream t = *s;
+	ut64 min_fields = UT64_MAX;
+	ut64 max_fields = 0;
+	ut64 total_fields = 0;
 	for (ut64 i = 0; i < meta->count; i++) {
 		ut64 shape = 0;
 		ut64 ref = 0;
-		if (!cs_read_unsigned (s, &shape)) {
+		if (!cs_read_unsigned (&t, &shape)) {
 			return false;
 		}
 		ut64 fields = shape & 0xffffULL;
+		if (meta->alloc_items_count == meta->count && fields > meta->alloc_items_max) {
+			return false;
+		}
 		for (ut64 j = 0; j < fields; j++) {
-			if (!cs_read_ref_id (s, &ref)) {
+			if (!cs_read_ref_id (&t, &ref)) {
 				return false;
 			}
 		}
+		min_fields = R_MIN (min_fields, fields);
+		max_fields = R_MAX (max_fields, fields);
+		total_fields += fields;
 	}
+	if (meta->alloc_items_count == meta->count && (min_fields != meta->alloc_items_min || max_fields != meta->alloc_items_max || total_fields != meta->alloc_items_total)) {
+		return false;
+	}
+	s->cursor = t.cursor;
 	return true;
+}
+
+static bool modern_resync_fill_record(ClusterStream *s, const ModernClusterMeta *meta) {
+	if (meta->alloc_items_count != meta->count || !meta->count) {
+		return modern_skip_fill_record (s, meta);
+	}
+	ClusterStream original = *s;
+	if (modern_skip_fill_record (s, meta)) {
+		return true;
+	}
+	const ut64 start = original.cursor + 1;
+	const ut64 limit = R_MIN (original.end, original.cursor + 0x20000);
+	for (ut64 pos = start; pos < limit; pos++) {
+		ClusterStream probe = original;
+		probe.cursor = pos;
+		if (modern_skip_fill_record (&probe, meta)) {
+			s->cursor = probe.cursor;
+			return true;
+		}
+	}
+	return false;
 }
 
 static bool modern_skip_fill_string(ClusterStream *s, const ModernClusterMeta *meta) {
@@ -1293,7 +1331,7 @@ static bool modern_skip_fill_by_kind(ClusterStream *s, const ModernCidCache *cid
 	case MODERN_FILL_TYPED_DATA:
 		return modern_skip_fill_typed_data (s, cids, meta);
 	case MODERN_FILL_RECORD:
-		return modern_skip_fill_record (s, meta);
+		return modern_resync_fill_record (s, meta);
 	case MODERN_FILL_INSTANCE:
 		return modern_skip_fill_instance (s, meta);
 	case MODERN_FILL_NONE:
