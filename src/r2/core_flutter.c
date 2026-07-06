@@ -71,6 +71,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -c       dump classes\n"
 		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
 		"| r2flutter -D prof  override Dart snapshot profile by hash or version\n"
+		"| r2flutter -E       dump Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
 		"| r2flutter -f       dump recovered functions\n"
 		"| r2flutter -H       dump Dart AOT snapshot header info\n"
 		"| r2flutter -HH      dump Dart AOT snapshot header and cluster layout\n"
@@ -254,6 +255,9 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 					j += strlen (tail);
 					break;
 				}
+			case 'E':
+				cmd->action = flag;
+				break;
 			case 'j':
 				cmd->fmt = 'j';
 				break;
@@ -364,6 +368,9 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		dctx->dump_classes = 1;
 		dctx->dump_fields = 1;
 		out = dart_pool_dump_classes (dctx, cmd->fmt);
+		break;
+	case 'E':
+		out = dart_pool_dump_entrypoint (dctx, cmd->fmt);
 		break;
 	case 'f':
 		out = r2flutter_dump_functions (core, dctx, cmd->fmt);

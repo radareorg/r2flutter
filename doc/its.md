@@ -49,6 +49,15 @@ bin/r2flutter -r -l 16 -i test/bins/ios/Runner.app
 
 `-l` is useful because real apps can have thousands of entries.
 
+Entrypoint and instruction-image marking:
+
+```bash
+bin/r2flutter -E test/bins/ios/Runner.app
+bin/r2flutter -rE test/bins/ios/Runner.app
+```
+
+`-E` reports the first decoded code entry from the InstructionTable. This is different from the loader symbol for `_kDartVmSnapshotInstructions`, which points at the VM instruction image data, not a normal program entrypoint. With `-r`, `-E` also emits `Cd 4 ...` metadata commands for the VM and isolate instruction images so radare2 renders them as dword arrays instead of treating the snapshot symbol as code.
+
 ## Fields Exposed By r2flutter
 
 Plain output shows:
@@ -65,9 +74,11 @@ JSON also includes:
 - `canonical_stack_map_entries_offset`
 - per-entry `pc_offset`
 - per-entry `stack_map_offset`
+- `-E` JSON includes `entrypoint`, `index`, `code_index`, and instruction-image sizes when known
 
 ## Notes
 
 - Output is written to `stdout`, not `stderr`.
 - `-j` and `-r` now affect `-i` the same way they affect the other dump commands.
+- `-j`, `-q`, and `-r` also affect `-E`; use `-qE` when only the address is needed.
 - The current parser finds the table by scanning the mapped data image for a valid `InstructionsTable::Data` header when the snapshot's `it_off` field does not point exactly at the payload start.

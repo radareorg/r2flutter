@@ -204,6 +204,7 @@ char *dart_pool_dump_sbom(DartCtx *ctx, const char *input_path, int fmt);
 // ============================================================================
 
 RVecDartInstructionTableEntry *dart_pool_extract_instruction_table(DartCtx *ctx);
+char *dart_pool_dump_entrypoint(DartCtx *ctx, int fmt);
 char *dart_pool_dump_it(DartCtx *ctx, int fmt);
 void dart_instruction_table_entry_free(DartInstructionTableEntry *ie);
 void dart_instruction_table_list_free(RVecDartInstructionTableEntry *list);

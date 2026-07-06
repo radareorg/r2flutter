@@ -1205,6 +1205,182 @@ RVecDartInstructionTableEntry *dart_pool_extract_instruction_table(DartCtx *ctx)
 	return list;
 }
 
+typedef struct {
+	ut64 entrypoint;
+	ut64 index;
+	ut64 code_index;
+	ut64 vm_instr_size;
+	ut64 iso_instr_size;
+	bool has_code;
+	char *name;
+} DartEntrypointInfo;
+
+static bool dart_snapshot_raw_size(DartCtx *ctx, ut64 addr, ut64 *out) {
+	if (!ctx || !addr || !out) {
+		return false;
+	}
+	ut8 hdr[16];
+	if (!read_mem (ctx, addr, hdr, sizeof (hdr))) {
+		return false;
+	}
+	if (r_read_le32 (hdr) != DART_SNAPSHOT_MAGIC) {
+		ut64 image_size = r_read_le64 (hdr);
+		ut64 header_size = r_read_le64 (hdr + 8);
+		if (image_size < 16 || image_size > (1ULL << 34) || header_size > image_size) {
+			return false;
+		}
+		*out = image_size;
+		return true;
+	}
+	ut64 size = r_read_le64 (hdr + 4) + 4;
+	if (size < DART_SNAPSHOT_FIXED_SIZE || size > (1ULL << 34)) {
+		return false;
+	}
+	*out = size;
+	return true;
+}
+
+static bool dart_pool_entrypoint_info(DartCtx *ctx, DartEntrypointInfo *info) {
+	if (!ctx || !info) {
+		return false;
+	}
+	memset (info, 0, sizeof (*info));
+	if (find_snapshots (ctx) != 0) {
+		return false;
+	}
+	(void)dart_snapshot_raw_size (ctx, ctx->vm_instr, &info->vm_instr_size);
+	(void)dart_snapshot_raw_size (ctx, ctx->iso_instr, &info->iso_instr_size);
+
+	int old_limit = ctx->dump_fns_limit;
+	ctx->dump_fns_limit = 1000000;
+	RVecDartInstructionTableEntry *entries = dart_pool_extract_instruction_table (ctx);
+	ctx->dump_fns_limit = old_limit;
+	if (!entries) {
+		return false;
+	}
+	DartInstructionTableEntry *entry;
+	DartInstructionTableEntry *fallback = NULL;
+	R_VEC_FOREACH (entries, entry) {
+		if (!fallback && entry->address) {
+			fallback = entry;
+		}
+		if (entry->has_code && entry->address) {
+			fallback = entry;
+			break;
+		}
+	}
+	if (fallback) {
+		info->entrypoint = fallback->address;
+		info->index = fallback->index;
+		info->code_index = fallback->code_index;
+		info->has_code = fallback->has_code;
+		info->name = fallback->name? strdup (fallback->name): NULL;
+	}
+	dart_instruction_table_list_free (entries);
+	return info->entrypoint != 0;
+}
+
+static void dart_pool_entrypoint_json(PJ *pj, DartCtx *ctx, const DartEntrypointInfo *info) {
+	pj_o (pj);
+	pj_kn (pj, "entrypoint", info->entrypoint);
+	pj_kn (pj, "index", info->index);
+	if (info->has_code) {
+		pj_kn (pj, "code_index", info->code_index);
+	}
+	pj_ks (pj, "kind", info->has_code? "code": "stub");
+	if (R_STR_ISNOTEMPTY (info->name)) {
+		pj_ks (pj, "name", info->name);
+	}
+	pj_kn (pj, "vm_instr", ctx->vm_instr);
+	if (info->vm_instr_size) {
+		pj_kn (pj, "vm_instr_size", info->vm_instr_size);
+	}
+	pj_kn (pj, "iso_instr", ctx->iso_instr);
+	if (info->iso_instr_size) {
+		pj_kn (pj, "iso_instr_size", info->iso_instr_size);
+	}
+	pj_end (pj);
+}
+
+static void dart_pool_entrypoint_r2_mark(RStrBuf *sb, const char *name, ut64 addr, ut64 size, bool quiet) {
+	if (!addr) {
+		return;
+	}
+	r_strbuf_appendf (sb, "f dart.%s = 0x%" PFMT64x "\n", name, addr);
+	if (size >= 4) {
+		ut64 words = size / 4;
+		r_strbuf_appendf (sb, "Cd 4 %" PRIu64 " @ 0x%" PFMT64x "\n", (uint64_t)words, addr);
+		if (!quiet) {
+			r_strbuf_appendf (sb, "CC Dart %s snapshot instructions dword array size=0x%" PFMT64x " @ 0x%" PFMT64x "\n", name, size, addr);
+		}
+	}
+}
+
+static char *dart_pool_drain_trimmed_strbuf(RStrBuf *sb) {
+	char *out = r_strbuf_drain (sb);
+	r_str_trim_tail (out);
+	return out;
+}
+
+char *dart_pool_dump_entrypoint(DartCtx *ctx, int fmt) {
+	DartEntrypointInfo info;
+	if (!dart_pool_entrypoint_info (ctx, &info)) {
+		return fmt == 'j'? strdup ("{\"error\":\"Dart entrypoint not found\"}"): strdup ("Error: Dart entrypoint not found\n");
+	}
+	const bool quiet = ctx && ctx->quiet;
+	if (fmt == 'j') {
+		PJ *pj = pj_new ();
+		if (!pj) {
+			free (info.name);
+			return strdup ("{\"error\":\"Failed to create JSON\"}");
+		}
+		dart_pool_entrypoint_json (pj, ctx, &info);
+		free (info.name);
+		return pj_drain (pj);
+	}
+	RStrBuf *sb = r_strbuf_new ("");
+	if (fmt == 'r') {
+		if (!quiet) {
+			r_strbuf_append (sb, "# Dart AOT entrypoint and instruction snapshot data\n");
+		}
+		r_strbuf_append (sb, "fs dart\n");
+		r_strbuf_appendf (sb, "f dart.entrypoint = 0x%" PFMT64x "\n", info.entrypoint);
+		if (!quiet) {
+			r_strbuf_appendf (sb, "CC Dart code entrypoint it[%" PRIu64 "] %s @ 0x%" PFMT64x "\n", (uint64_t)info.index, R_STR_ISNOTEMPTY (info.name)? info.name: (info.has_code? "code": "stub"), info.entrypoint);
+		}
+		dart_pool_entrypoint_r2_mark (sb, "vm_instr", ctx->vm_instr, info.vm_instr_size, quiet);
+		dart_pool_entrypoint_r2_mark (sb, "iso_instr", ctx->iso_instr, info.iso_instr_size, quiet);
+		free (info.name);
+		return dart_pool_drain_trimmed_strbuf (sb);
+	}
+	if (quiet) {
+		r_strbuf_appendf (sb, "0x%" PFMT64x, info.entrypoint);
+		free (info.name);
+		return r_strbuf_drain (sb);
+	}
+	r_strbuf_appendf (sb, "dart_entrypoint: 0x%" PFMT64x "\n", info.entrypoint);
+	r_strbuf_appendf (sb, "it_index:        %" PRIu64 "\n", (uint64_t)info.index);
+	if (info.has_code) {
+		r_strbuf_appendf (sb, "code_index:      %" PRIu64 "\n", (uint64_t)info.code_index);
+	}
+	r_strbuf_appendf (sb, "kind:            %s\n", info.has_code? "code": "stub");
+	if (R_STR_ISNOTEMPTY (info.name)) {
+		r_strbuf_appendf (sb, "name:            %s\n", info.name);
+	}
+	r_strbuf_appendf (sb, "vm_instr:        0x%" PFMT64x, ctx->vm_instr);
+	if (info.vm_instr_size) {
+		r_strbuf_appendf (sb, " size=0x%" PFMT64x, info.vm_instr_size);
+	}
+	r_strbuf_append (sb, "\n");
+	r_strbuf_appendf (sb, "iso_instr:       0x%" PFMT64x, ctx->iso_instr);
+	if (info.iso_instr_size) {
+		r_strbuf_appendf (sb, " size=0x%" PFMT64x, info.iso_instr_size);
+	}
+	r_strbuf_append (sb, "\n");
+	free (info.name);
+	return dart_pool_drain_trimmed_strbuf (sb);
+}
+
 char *dart_pool_dump_it(DartCtx *ctx, int fmt) {
 	RVecDartInstructionTableEntry *entries = dart_pool_extract_instruction_table (ctx);
 	if (!entries) {

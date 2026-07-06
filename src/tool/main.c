@@ -25,6 +25,7 @@ static const char usage_text[] =
 	"  -AA                   Analyze with field extraction enabled\n"
 	"  -AAA                  Run Dart-aware code analysis and recover code refs\n"
 	"  -c                    Print extracted class information\n"
+	"  -E                    Print Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
 	"  -f                    Print all extracted functions (addr name)\n"
 	"  -H                    Print Dart AOT snapshot header info\n"
 	"  -HH                   Print extended snapshot header and cluster layout\n"
@@ -118,7 +119,7 @@ int main(int argc, char **argv) {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "AcD:fhHijnm:O:pqrRSzTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "AcD:EfhHijnm:O:pqrRSzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -127,6 +128,9 @@ int main(int argc, char **argv) {
 			analysis_depth++;
 			break;
 		case 'c':
+			action = c;
+			break;
+		case 'E':
 			action = c;
 			break;
 		case 'f':
@@ -302,6 +306,9 @@ int main(int argc, char **argv) {
 		dctx.dump_classes = 1;
 		dctx.dump_fields = 1;
 		output = dart_pool_dump_classes (&dctx, fmt);
+		break;
+	case 'E':
+		output = dart_pool_dump_entrypoint (&app->dctx, fmt);
 		break;
 	case 'T':
 		dctx.dump_classes = 3;

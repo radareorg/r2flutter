@@ -218,6 +218,24 @@ This recovers real enums in the shipped fixtures on both platforms, for example 
 
 **Finding**: `-j -H` emits the same snapshot/cluster fields as the old dump-snapshot JSON, plus layout metadata (version, tag style, CID table).
 
+## Dart Entrypoint Is The First Code IT Entry, Not The Snapshot Symbol
+
+**Finding**: The loader symbol `_kDartVmSnapshotInstructions` points at the Dart VM instruction image header/data. It is useful as a blob boundary, but it is not a normal executable entrypoint for the app.
+
+On `/tmp/libapp.so`, the isolate InstructionTable decodes to `length=32855` with `first_entry_with_code=24809`. Entries before that are VM stubs; the first real code entry is:
+
+```text
+24809 0xbf150c code method.fn_0
+```
+
+`-E` now reports that first code entry and ignores `-l`, because a user-supplied or default limit can stop before the first code entry on stub-heavy snapshots. `-rE` emits a small r2 script:
+
+- `f dart.entrypoint = ...`
+- `Cd 4 <count> @ dart.vm_instr`
+- `Cd 4 <count> @ dart.iso_instr`
+
+The instruction-image sizes come from the Dart instruction image header (`uint64 size`, `uint64 header_size`) rather than the clustered snapshot header magic used by data snapshots.
+
 This makes the legacy dump-snapshot flag redundant and keeps scripts relying on `cluster` and snapshot addresses intact.
 
 ## Direct-Ref Annotation Prefixes Are Better As Data Than Control Flow
