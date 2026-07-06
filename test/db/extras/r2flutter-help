@@ -25,6 +25,7 @@ Actions:
   -AA                   Analyze with field extraction enabled
   -AAA                  Run Dart-aware code analysis and recover code refs
   -c                    Print extracted class information
+  -E                    Print Dart code entrypoint; with -r, mark instruction snapshots as dword arrays
   -f                    Print all extracted functions (addr name)
   -H                    Print Dart AOT snapshot header info
   -HH                   Print extended snapshot header and cluster layout
@@ -51,6 +52,7 @@ Usage: r2flutter [options] <action>
 | r2flutter -c       dump classes
 | r2flutter -C       apply Dart classes, fields, methods and types
 | r2flutter -D prof  override Dart snapshot profile by hash or version
+| r2flutter -E       dump Dart code entrypoint; with -r, mark instruction snapshots as dword arrays
 | r2flutter -f       dump recovered functions
 | r2flutter -H       dump Dart AOT snapshot header info
 | r2flutter -HH      dump Dart AOT snapshot header and cluster layout
@@ -84,6 +86,7 @@ Usage: r2flutter [options] <action>
 | r2flutter -c       dump classes
 | r2flutter -C       apply Dart classes, fields, methods and types
 | r2flutter -D prof  override Dart snapshot profile by hash or version
+| r2flutter -E       dump Dart code entrypoint; with -r, mark instruction snapshots as dword arrays
 | r2flutter -f       dump recovered functions
 | r2flutter -H       dump Dart AOT snapshot header info
 | r2flutter -HH      dump Dart AOT snapshot header and cluster layout
