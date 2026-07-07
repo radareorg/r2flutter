@@ -69,13 +69,18 @@ static void r2flutter_subcmd_help(RCore *core, char action) {
 	switch (action) {
 	case 'i':
 		r_cons_printf (core->cons,
-			"Usage: r2flutter -i[jr*]  dump instruction table entries (-ii same as -i)\n"
+			"Usage: r2flutter -i[j*]  dump instruction table entries\n"
 			"| -i        plain text output\n"
-			"| -ie       dump Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
+			"| -ie       dump Dart code entrypoint; with -* mark instruction snapshots as dword arrays\n"
 			"| -ij       JSON output\n"
-			"| -ir       r2 commands output\n"
-			"| -i*       r2 commands output (same as -ir)\n"
-			"| -ii       (same as -i, no extra depth)\n");
+			"| -i*       r2 commands output\n");
+		break;
+	case 'e':
+		r_cons_printf (core->cons,
+			"Usage: r2flutter -ie[j*]  dump Dart code entrypoint\n"
+			"| -ie       plain text output\n"
+			"| -iej      JSON output\n"
+			"| -ie*      r2 commands output; mark instruction snapshots as dword arrays\n");
 		break;
 	default:
 		r2flutter_help (core);
@@ -85,31 +90,30 @@ static void r2flutter_subcmd_help(RCore *core, char action) {
 
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [jr*] <action>\n"
-		"| r2flutter          show same -h help message\n"
+		"Usage: r2flutter [j*] <action>\n"
 		"| r2flutter -A[AA]   analyze dart snapshot and apply flags/comments\n"
-		"| r2flutter -c[jr*]  dump classes\n"
+		"| r2flutter -c[j*]   dump classes\n"
 		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
 		"| r2flutter -D prof  override Dart snapshot profile by hash or version\n"
-		"| r2flutter -f[jr*]  dump recovered functions\n"
+		"| r2flutter -f[j*]   dump recovered functions\n"
 		"| r2flutter -H[HH]   dump Dart AOT snapshot header info\n"
-		"| r2flutter -h       show this help\n"
-		"| r2flutter -i[jr*]  dump instruction table entries (-ii same as -i)\n"
+		"| r2flutter -i[j*]   dump instruction table entries\n"
+		"| r2flutter -ie[j*]  dump Dart code entrypoint; with -* mark instruction snapshots as dword arrays\n"
 		"| r2flutter -l N     limit function/instruction-table/xref output\n"
 		"| r2flutter -m file  load Flutter obfuscation map JSON\n"
 		"| r2flutter -n       use heuristic name-pool fallback; names may be wrong\n"
 		"| r2flutter -O addr  decode Dart tagged/object pointer or ObjectPool PP slot\n"
-		"| r2flutter -p[jr*]  print reconstructed ObjectPool PP value\n"
-		"| r2flutter -q       compact output; quiet analysis logs\n"
+		"| r2flutter -p[j*]   print reconstructed ObjectPool PP value\n"
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
-		"| r2flutter -S[jr*]  dump best-effort recovered SBOM/components\n"
-		"| r2flutter -T[jr*]  dump string-based type names\n"
+		"| r2flutter -S[j*]   dump best-effort recovered SBOM/components\n"
+		"| r2flutter -T[j*]   dump string-based type names\n"
+		"| r2flutter -x[j*]   dump metadata/data-image xrefs; with -z, include string refs/ax in -*\n"
+		"| r2flutter -z[j*]   dump reliable ObjectPool-referenced strings\n"
+		"| r2flutter -zz[j*]  dump all fuzzy/carved strings (-xzz includes refs/ax in -*)\n"
+		"| r2flutter -h       show this help\n"
 		"| r2flutter -v       increase parser verbosity\n"
 		"| r2flutter -V       show version\n"
-		"| r2flutter -x[jr*]  dump metadata/data-image xrefs; with -z, include string refs/ax in -r\n"
-		"| r2flutter -z[jr*]  dump reliable ObjectPool-referenced strings (-q prints values only)\n"
-		"| r2flutter -zz[jr*] dump all fuzzy/carved strings (-xzz includes refs/ax in -r)\n"
-		"Modifiers: j=json, r=r2 commands, *=r2 commands\n");
+		"Modifiers: j=json, *=r2 commands\n");
 }
 
 static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
@@ -317,9 +321,6 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				}
 			case 'q':
 				dctx->quiet = 1;
-				break;
-			case 'r':
-				cmd->fmt = 'r';
 				break;
 			case '*':
 				cmd->fmt = 'r';

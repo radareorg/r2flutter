@@ -25,7 +25,7 @@ Actions:
   -c[jr*]               Print extracted class information
   -f[jr*]               Print all extracted functions (addr name)
   -H[HH]                Print Dart AOT snapshot header info
-  -i[jr*]               Print instruction table entries (-ii same as -i)
+  -i[jr*]               Print instruction table entries
   -O <addr|pp+off>      Decode Dart tagged/object pointer or ObjectPool PP slot
   -p[jr*]               Print reconstructed ObjectPool PP value
   -R                    Print radare2 script for snapshot analysis
@@ -39,58 +39,58 @@ Options:
   -l <N>                Limit output to N items
   -m <file>             Load Flutter obfuscation map JSON
 ===
-Usage: r2flutter [jr*] <action>
-| r2flutter          show same -h help message
+Usage: r2flutter [j*] <action>
 | r2flutter -A[AA]   analyze dart snapshot and apply flags/comments
-| r2flutter -c[jr*]  dump classes
+| r2flutter -c[j*]   dump classes
 | r2flutter -C       apply Dart classes, fields, methods and types
 | r2flutter -D prof  override Dart snapshot profile by hash or version
-| r2flutter -f[jr*]  dump recovered functions
+| r2flutter -f[j*]   dump recovered functions
 | r2flutter -H[HH]   dump Dart AOT snapshot header info
 | r2flutter -h       show this help
-| r2flutter -i[jr*]  dump instruction table entries (-ii same as -i)
+| r2flutter -i[j*]   dump instruction table entries
+| r2flutter -ie[j*]  dump Dart code entrypoint; with -* mark instruction snapshots as dword arrays
 | r2flutter -l N     limit function/instruction-table/xref output
 | r2flutter -m file  load Flutter obfuscation map JSON
 | r2flutter -n       use heuristic name-pool fallback; names may be wrong
 | r2flutter -O addr  decode Dart tagged/object pointer or ObjectPool PP slot
-| r2flutter -p[jr*]  print reconstructed ObjectPool PP value
-| r2flutter -q       compact output; quiet analysis logs
+| r2flutter -p[j*]   print reconstructed ObjectPool PP value
 | r2flutter -R       dump full radare2 script (like standalone -R)
-| r2flutter -S[jr*]  dump best-effort recovered SBOM/components
-| r2flutter -T[jr*]  dump string-based type names
+| r2flutter -S[j*]   dump best-effort recovered SBOM/components
+| r2flutter -T[j*]   dump string-based type names
+| r2flutter -x[j*]   dump metadata/data-image xrefs; with -z, include string refs/ax in -*
+| r2flutter -z[j*]   dump reliable ObjectPool-referenced strings
+| r2flutter -zz[j*]  dump all fuzzy/carved strings (-xzz includes refs/ax in -*)
+| r2flutter -h       show this help
 | r2flutter -v       increase parser verbosity
 | r2flutter -V       show version
-| r2flutter -x[jr*]  dump metadata/data-image xrefs; with -z, include string refs/ax in -r
-| r2flutter -z[jr*]  dump reliable ObjectPool-referenced strings (-q prints values only)
-| r2flutter -zz[jr*] dump all fuzzy/carved strings (-xzz includes refs/ax in -r)
-Modifiers: j=json, r=r2 commands, *=r2 commands
+Modifiers: j=json, *=r2 commands
 ===
 Usage: ../bin/r2flutter [-jrv*] <libapp_path_or_dir>
 ===
-Usage: r2flutter [jr*] <action>
-| r2flutter          show same -h help message
+Usage: r2flutter [j*] <action>
 | r2flutter -A[AA]   analyze dart snapshot and apply flags/comments
-| r2flutter -c[jr*]  dump classes
+| r2flutter -c[j*]   dump classes
 | r2flutter -C       apply Dart classes, fields, methods and types
 | r2flutter -D prof  override Dart snapshot profile by hash or version
-| r2flutter -f[jr*]  dump recovered functions
+| r2flutter -f[j*]   dump recovered functions
 | r2flutter -H[HH]   dump Dart AOT snapshot header info
 | r2flutter -h       show this help
-| r2flutter -i[jr*]  dump instruction table entries (-ii same as -i)
+| r2flutter -i[j*]   dump instruction table entries
+| r2flutter -ie[j*]  dump Dart code entrypoint; with -* mark instruction snapshots as dword arrays
 | r2flutter -l N     limit function/instruction-table/xref output
 | r2flutter -m file  load Flutter obfuscation map JSON
 | r2flutter -n       use heuristic name-pool fallback; names may be wrong
 | r2flutter -O addr  decode Dart tagged/object pointer or ObjectPool PP slot
-| r2flutter -p[jr*]  print reconstructed ObjectPool PP value
-| r2flutter -q       compact output; quiet analysis logs
+| r2flutter -p[j*]   print reconstructed ObjectPool PP value
 | r2flutter -R       dump full radare2 script (like standalone -R)
-| r2flutter -S[jr*]  dump best-effort recovered SBOM/components
-| r2flutter -T[jr*]  dump string-based type names
+| r2flutter -S[j*]   dump best-effort recovered SBOM/components
+| r2flutter -T[j*]   dump string-based type names
+| r2flutter -x[j*]   dump metadata/data-image xrefs; with -z, include string refs/ax in -*
+| r2flutter -z[j*]   dump reliable ObjectPool-referenced strings
+| r2flutter -zz[j*]  dump all fuzzy/carved strings (-xzz includes refs/ax in -*)
+| r2flutter -h       show this help
 | r2flutter -v       increase parser verbosity
 | r2flutter -V       show version
-| r2flutter -x[jr*]  dump metadata/data-image xrefs; with -z, include string refs/ax in -r
-| r2flutter -z[jr*]  dump reliable ObjectPool-referenced strings (-q prints values only)
-| r2flutter -zz[jr*] dump all fuzzy/carved strings (-xzz includes refs/ax in -r)
-Modifiers: j=json, r=r2 commands, *=r2 commands
+Modifiers: j=json, *=r2 commands
 EOF
 RUN
