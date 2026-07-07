@@ -2546,6 +2546,53 @@ static bool modern_collect_refs_object_strings(ModernPoolStringRefCollector *col
 	return false;
 }
 
+static bool modern_collect_class_strings(ModernPoolStringRefCollector *collector, const ModernClusterMeta *meta, const ModernFillSpec *spec, ut64 target_ref, int depth) {
+	const ModernRefResolver *resolver = collector? collector->resolver: NULL;
+	if (!collector || !resolver || !meta || !spec || target_ref < meta->start_ref || target_ref >= meta->start_ref + meta->count) {
+		return false;
+	}
+	ClusterStream s = {
+		.ctx = resolver->ctx,
+		.cursor = meta->fill_offset,
+		.end = meta->fill_end,
+};
+	ut64 target_index = target_ref - meta->start_ref;
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut32 class_id = 0;
+		ut32 tmp32 = 0;
+		for (int j = 0; j < spec->num_refs; j++) {
+			ut64 ref = 0;
+			if (!cs_read_ref_id (&s, &ref)) {
+				return false;
+			}
+			if (i == target_index) {
+				(void)modern_collect_ref_strings (collector, ref, "class", (ut64)j, depth + 1);
+			}
+		}
+		if (!cs_read_tagged32 (&s, &class_id) ||
+			!cs_read_tagged32 (&s, &tmp32) ||
+			!cs_read_tagged32 (&s, &tmp32) ||
+			!cs_read_tagged32 (&s, &tmp32) ||
+			!cs_read_tagged32 (&s, &tmp32) ||
+			!cs_read_tagged32 (&s, &tmp32) ||
+			!cs_read_tagged32 (&s, &tmp32)) {
+			return false;
+		}
+		bool is_predefined = i < meta->main_count;
+		bool is_top_level = class_id >= (1U << 20);
+		if (is_predefined || !is_top_level) {
+			ut64 bitmap = 0;
+			if (!cs_read_unsigned (&s, &bitmap)) {
+				return false;
+			}
+		}
+		if (i == target_index) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool modern_collect_instance_strings(ModernPoolStringRefCollector *collector, const ModernClusterMeta *meta, ut64 target_ref, int depth) {
 	const ModernRefResolver *resolver = collector? collector->resolver: NULL;
 	if (!collector || !resolver || !meta || target_ref < meta->start_ref || target_ref >= meta->start_ref + meta->count) {
@@ -2621,7 +2668,11 @@ static bool modern_collect_ref_strings(ModernPoolStringRefCollector *collector, 
 	if (modern_cid_eq (meta->cid, collector->cids->weak_array)) {
 		return modern_collect_array_strings (collector, meta, target_ref, true, depth);
 	}
-	if (meta->fill_kind == MODERN_FILL_REFS || meta->fill_kind == MODERN_FILL_CLASS) {
+	if (meta->fill_kind == MODERN_FILL_CLASS) {
+		ModernFillSpec spec = modern_get_fill_spec (collector->cids, meta->cid);
+		return modern_collect_class_strings (collector, meta, &spec, target_ref, depth);
+	}
+	if (meta->fill_kind == MODERN_FILL_REFS) {
 		ModernFillSpec spec = modern_get_fill_spec (collector->cids, meta->cid);
 		return modern_collect_refs_object_strings (collector, meta, &spec, target_ref, depth);
 	}

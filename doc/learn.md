@@ -911,11 +911,12 @@ PP/ObjectPool work inspectable and feeds the focused `-p` path.
 
 `-p` now builds a synthetic static ObjectPool image from the decoded fill stream
 when the parser can reach a concrete ObjectPool payload. Plain quiet output is
-the address pair (`vaddr=0x100000000 paddr=...` in current builds). JSON output
-marks the result as `kind=synthetic` and reports top-level `vaddr`/`paddr`, plus
-the source cluster/ref/length. `-r -p` emits a radare2 setup script that maps the
-synthetic image with `o malloc://`, writes it with `wx`, and sets both
-`e anal.gp` and `dr x27` to the synthetic `vaddr`.
+the address pair (`vaddr=<bin.baddr+paddr> paddr=...`; when `bin.baddr` is zero,
+`vaddr` equals the serialized payload `paddr`). JSON output marks the result as
+`kind=synthetic` and reports top-level `vaddr`/`paddr`, plus the source
+cluster/ref/length. `-r -p` emits a radare2 setup script that maps the synthetic
+image with `o malloc://`, writes it with `wx`, and sets both `e anal.gp` and
+`dr x27` to the reconstructed `vaddr`.
 
 The runtime PP value itself is not serialized in the snapshot. Dart's VM creates
 the live object pool during deserialization, so tagged entries that point to heap
@@ -965,7 +966,7 @@ Use the shared `dart_cid_get ()` / `DartCidKind` API as the source of truth for 
 
 ## String Xrefs In R2 Scripts
 
-`-z -r -x` and `-zzrx` emit `ax` commands for string references after registering the recovered strings. ObjectPool string references use the reconstructed synthetic PP address space (`0x100000000 + pp_off`), matching the `-r -p` PP mapping. Metadata-only references that have an object ref but no concrete file address use a synthetic object-ref namespace (`0x200000000 + object_ref`) so r2 can still carry the relation as an xref.
+`-z -r -x` and `-zzrx` emit `ax` commands for string references after registering the recovered strings. ObjectPool string references use the reconstructed PP map address (`pp.vaddr + pp_off`), matching the `-r -p` PP mapping. Metadata-only references that have an object ref but no concrete file address use a synthetic object-ref namespace (`0x200000000 + object_ref`) so r2 can still carry the relation as an xref.
 
 ## Recovered Component Reports Are Not Complete SBOMs
 
@@ -1148,18 +1149,14 @@ script behavior for local SDK checkouts.
 
 ## ObjectPool Xrefs Should Resolve From Serialized PP Data
 
-`bin/r2flutter -p` may report a synthetic PP base such as `0x100000000`.
-That address is only useful after the `-r -p` script maps a malloc-backed
-ObjectPool image and sets `anal.gp`/`x27`. It should not be required for xref
-recovery, because standalone CLI analysis would otherwise read unmapped memory.
+`bin/r2flutter -p` reports a reconstructed PP map address derived from the
+serialized ObjectPool payload physical offset plus the current binary base.
+That address is useful after the `-r -p` script maps a malloc-backed ObjectPool
+image and sets `anal.gp`/`x27`, but it should not be required for xref recovery.
 
 For xrefs, prefer resolving collected PP offsets against the serialized
 ObjectPool fill payload (`DartPpInfo.paddr` / `source_addr`) and then walking
 reachable metadata refs to the real serialized string payload address.
-
-On `/tmp/libapp.so`, the string payload at `0x47d3e` is:
-
-`AIzaSyD7NO00edvrm6JbbdbND-6e6BYjDSqVvik`
 
 It is isolate string-cluster ref `6433` (`payload=0x47d3e`, length `39`). A full
 ObjectPool/code xref scan found code-to-string xrefs for nearby serialized

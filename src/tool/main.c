@@ -26,6 +26,7 @@ static const char usage_text[] =
 	"  -f[jr*]               Print all extracted functions (addr name)\n"
 	"  -H[HH]                Print Dart AOT snapshot header info\n"
 	"  -i[jr*]               Print instruction table entries (-ii same as -i)\n"
+	"  -ie[jr*], -E[jr*]     Print Dart code entrypoint\n"
 	"  -O <addr|pp+off>      Decode Dart tagged/object pointer or ObjectPool PP slot\n"
 	"  -p[jr*]               Print reconstructed ObjectPool PP value\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
@@ -114,7 +115,7 @@ int main(int argc, char **argv) {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "AcD:efhHijnm:O:pqrRSzTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "AcD:eEfHhijnm:O:pqrRSzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -126,7 +127,7 @@ int main(int argc, char **argv) {
 			action = c;
 			break;
 		case 'E':
-			action = c;
+			action = 'e';
 			break;
 		case 'f':
 			action = c;
