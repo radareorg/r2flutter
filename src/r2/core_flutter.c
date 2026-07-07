@@ -21,6 +21,8 @@ typedef struct {
 	int string_depth;
 	bool string_refs;
 	bool help;
+	bool subcmd_help;
+	char invalid_flag;
 	char *obf_map_path;
 	char *object_spec;
 } R2FlutterCmd;
@@ -61,39 +63,53 @@ static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 	}
 }
 
+static void r2flutter_help(RCore *core);
+
+static void r2flutter_subcmd_help(RCore *core, char action) {
+	switch (action) {
+	case 'i':
+		r_cons_printf (core->cons,
+			"Usage: r2flutter -i[jr*]  dump instruction table entries (-ii same as -i)\n"
+			"| -i        plain text output\n"
+			"| -ij       JSON output\n"
+			"| -ir       r2 commands output\n"
+			"| -i*       r2 commands output (same as -ir)\n"
+			"| -ii       (same as -i, no extra depth)\n");
+		break;
+	default:
+		r2flutter_help (core);
+		break;
+	}
+}
+
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
-		"Usage: r2flutter [options] <action>\n"
+		"Usage: r2flutter [jr*] <action>\n"
 		"| r2flutter          show same -h help message\n"
-		"| r2flutter -A       analyze dart snapshot and apply flags/comments\n"
-		"| r2flutter -AA      analyze with field extraction enabled\n"
-		"| r2flutter -AAA     run Dart-aware code analysis and recover code refs\n"
-		"| r2flutter -c       dump classes\n"
+		"| r2flutter -A[AA]   analyze dart snapshot and apply flags/comments\n"
+		"| r2flutter -c[jr*]  dump classes\n"
 		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
 		"| r2flutter -D prof  override Dart snapshot profile by hash or version\n"
-		"| r2flutter -E       dump Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
-		"| r2flutter -f       dump recovered functions\n"
-		"| r2flutter -H       dump Dart AOT snapshot header info\n"
-		"| r2flutter -HH      dump Dart AOT snapshot header and cluster layout\n"
-		"| r2flutter -HHH     decode selected cluster payloads for diagnostics\n"
+		"| r2flutter -E[jr*]  dump Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
+		"| r2flutter -f[jr*]  dump recovered functions\n"
+		"| r2flutter -H[HH]   dump Dart AOT snapshot header info\n"
 		"| r2flutter -h       show this help\n"
-		"| r2flutter -i       dump instruction table entries\n"
-		"| r2flutter -j <act> output JSON for dump actions\n"
+		"| r2flutter -i[jr*]  dump instruction table entries (-ii same as -i)\n"
 		"| r2flutter -l N     limit function/instruction-table/xref output\n"
 		"| r2flutter -m file  load Flutter obfuscation map JSON\n"
 		"| r2flutter -n       use heuristic name-pool fallback; names may be wrong\n"
 		"| r2flutter -O addr  decode Dart tagged/object pointer or ObjectPool PP slot\n"
-		"| r2flutter -p       print reconstructed ObjectPool PP value\n"
-		"| r2flutter -q <act> compact output; quiet analysis logs\n"
-		"| r2flutter -r <act> output r2 commands for dump actions\n"
+		"| r2flutter -p[jr*]  print reconstructed ObjectPool PP value\n"
+		"| r2flutter -q       compact output; quiet analysis logs\n"
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
-		"| r2flutter -S       dump best-effort recovered SBOM/components\n"
-		"| r2flutter -T       dump string-based type names\n"
+		"| r2flutter -S[jr*]  dump best-effort recovered SBOM/components\n"
+		"| r2flutter -T[jr*]  dump string-based type names\n"
 		"| r2flutter -v       increase parser verbosity\n"
 		"| r2flutter -V       show version\n"
-		"| r2flutter -x       dump metadata/data-image xrefs; with -z, include string refs/ax in -r\n"
-		"| r2flutter -z       dump reliable ObjectPool-referenced strings (-q prints values only)\n"
-		"| r2flutter -zz      dump all fuzzy/carved strings (-xzz includes refs/ax in -r)\n");
+		"| r2flutter -x[jr*]  dump metadata/data-image xrefs; with -z, include string refs/ax in -r\n"
+		"| r2flutter -z[jr*]  dump reliable ObjectPool-referenced strings (-q prints values only)\n"
+		"| r2flutter -zz[jr*] dump all fuzzy/carved strings (-xzz includes refs/ax in -r)\n"
+		"Modifiers: j=json, r=r2 commands, *=r2 commands\n");
 }
 
 static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
@@ -177,6 +193,8 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 	cmd->string_depth = 0;
 	cmd->string_refs = false;
 	cmd->help = false;
+	cmd->subcmd_help = false;
+	cmd->invalid_flag = 0;
 	cmd->obf_map_path = NULL;
 	cmd->object_spec = NULL;
 	char *dup = strdup (args);
@@ -191,6 +209,10 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 			continue;
 		}
 		if (word[0] != '-') {
+			if (!strcmp (word, "?")) {
+				cmd->subcmd_help = true;
+				break;
+			}
 			continue;
 		}
 		const char *flags = word + 1;
@@ -294,6 +316,9 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 			case 'r':
 				cmd->fmt = 'r';
 				break;
+			case '*':
+				cmd->fmt = 'r';
+				break;
 			case 'R':
 				cmd->action = flag;
 				break;
@@ -324,7 +349,12 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				cmd->action = flag;
 				cmd->string_depth++;
 				break;
-			default:
+			case '?':
+			cmd->subcmd_help = true;
+			cmd->help = true;
+			break;
+		default:
+				cmd->invalid_flag = flag;
 				cmd->help = true;
 				break;
 			}
@@ -446,7 +476,16 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		bool ret = true;
 		R2FlutterCmd cmd = { 0 };
 		if (!r2flutter_parse_cmd (args, &dctx, &cmd) || cmd.help) {
-			r2flutter_help (core);
+			if (cmd.subcmd_help) {
+				r2flutter_subcmd_help (core, cmd.action);
+			} else if (cmd.invalid_flag) {
+				r_core_return_invalid_command (core, "r2flutter", cmd.invalid_flag);
+				ret = false;
+			} else {
+				r2flutter_help (core);
+			}
+		} else if (cmd.subcmd_help) {
+			r2flutter_subcmd_help (core, cmd.action);
 		} else {
 			ret = r2flutter_run_cmd (core, &dctx, &cmd);
 		}
@@ -455,8 +494,8 @@ static bool r_cmd_r2flutter_call(RCorePluginSession *cps, const char *input) {
 		free (cmd.object_spec);
 		return ret;
 	}
-	r2flutter_help (core);
-	return true;
+	r_core_return_invalid_command (core, "r2flutter", ch0);
+	return false;
 }
 
 RCorePlugin r_core_plugin_r2flutter = {

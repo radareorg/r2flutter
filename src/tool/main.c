@@ -10,7 +10,7 @@
 #include "../r2/flutter_analysis.h"
 
 static const char usage_text[] =
-	"Usage: %s [options] <libapp_path_or_dir>\n"
+	"Usage: %s [-jrv*] <libapp_path_or_dir>\n"
 	"Modifiers:\n"
 	"  -h                    Show help\n"
 	"  -j                    Output in JSON format\n"
@@ -21,24 +21,20 @@ static const char usage_text[] =
 	"  -vv                   More verbose (dump headers)\n"
 	"  -V                    Show version\n"
 	"Actions:\n"
-	"  -A                    Analyze Dart snapshot and apply flags/comments\n"
-	"  -AA                   Analyze with field extraction enabled\n"
-	"  -AAA                  Run Dart-aware code analysis and recover code refs\n"
-	"  -c                    Print extracted class information\n"
-	"  -E                    Print Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
-	"  -f                    Print all extracted functions (addr name)\n"
-	"  -H                    Print Dart AOT snapshot header info\n"
-	"  -HH                   Print extended snapshot header and cluster layout\n"
-	"  -HHH                  Decode selected cluster payloads for diagnostics\n"
-	"  -i                    Print instruction table entries to stdout\n"
+	"  -A[AA]                Analyze Dart snapshot and apply flags/comments\n"
+	"  -c[jr*]               Print extracted class information\n"
+	"  -E[jr*]               Print Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
+	"  -f[jr*]               Print all extracted functions (addr name)\n"
+	"  -H[HH]                Print Dart AOT snapshot header info\n"
+	"  -i[jr*]               Print instruction table entries (-ii same as -i)\n"
 	"  -O <addr|pp+off>      Decode Dart tagged/object pointer or ObjectPool PP slot\n"
-	"  -p                    Print reconstructed ObjectPool PP value\n"
+	"  -p[jr*]               Print reconstructed ObjectPool PP value\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
-	"  -S                    Print best-effort recovered SBOM/components\n"
-	"  -T                    Print string-based type names\n"
-	"  -x                    Print metadata/data-image xrefs; with -z, include string refs/ax in -r\n"
-	"  -z                    Print reliable ObjectPool-referenced strings (-q prints values only)\n"
-	"  -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs/ax in -r)\n"
+	"  -S[jr*]               Print best-effort recovered SBOM/components\n"
+	"  -T[jr*]               Print string-based type names\n"
+	"  -x[jr*]               Print metadata/data-image xrefs; with -z, include string refs/ax in -r\n"
+	"  -z[jr*]               Print reliable ObjectPool-referenced strings (-q prints values only)\n"
+	"  -zz[jr*]              Print all fuzzy/carved extracted strings (-xzz includes refs/ax in -r)\n"
 	"Options:\n"
 	"  -D <hash|version>     Override Dart snapshot profile for analysis\n"
 	"  -l <N>                Limit output to N items\n"
@@ -211,6 +207,7 @@ int main(int argc, char **argv) {
 			print_usage (argv[0]);
 			return 1;
 		default:
+			R_LOG_ERROR ("Invalid flag: -%c", opt.opt);
 			return 1;
 		}
 	}

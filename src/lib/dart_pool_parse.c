@@ -1119,7 +1119,7 @@ static char *dump_pp_text(const DartPpInfo *info, bool quiet) {
 	if (quiet) {
 		return r_str_newf ("vaddr=0x%" PFMT64x " paddr=0x%" PFMT64x, info->vaddr, info->paddr);
 	}
-	RStrBuf *sb = r_strbuf_new ("# Dart ObjectPool PP\n\n");
+	RStrBuf *sb = r_strbuf_new ("");
 	r_strbuf_appendf (sb, "pp.vaddr:        0x%" PFMT64x "\n", info->vaddr);
 	r_strbuf_appendf (sb, "pp.paddr:        0x%" PFMT64x "\n", info->paddr);
 	r_strbuf_appendf (sb, "kind:            synthetic\n");
@@ -1132,7 +1132,6 @@ static char *dump_pp_text(const DartPpInfo *info, bool quiet) {
 	r_strbuf_appendf (sb, "image_size:      0x%" PFMT64x "\n", info->size);
 	r_strbuf_appendf (sb, "entries_offset:  0x%" PFMT64x "\n", info->entries_offset);
 	r_strbuf_appendf (sb, "entry_bits_off:  0x%" PFMT64x "\n", info->entry_bits_offset);
-	r_strbuf_appendf (sb, "note:            runtime PP is not serialized; use -r -p to map this reconstructed pool and set anal.gp\n");
 	return r_strbuf_drain (sb);
 }
 

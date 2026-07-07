@@ -7,13 +7,10 @@
     "contains": [
       "Usage:",
       "-i",
-      "-H",
-      "-HH",
-      "-HHH",
+      "-H[HH]",
       "-p",
       "-S",
-      "-AA",
-      "-AAA"
+      "-A[AA]"
     ],
     "not_contains": [
       "--no-stubs"
