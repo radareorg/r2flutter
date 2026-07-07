@@ -2444,6 +2444,266 @@ bool dart_modern_resolve_pp_slot(const DartModernClusterRequest *req, ut64 pp_of
 	return ok;
 }
 
+typedef struct {
+	const ModernRefResolver *resolver;
+	const ModernCidCache *cids;
+	DartModernPoolStringRefCallback cb;
+	void *user;
+	HtUP *seen;
+	ut64 pp_offset;
+	ut64 pool_ref;
+	ut64 pool_index;
+	ut64 entry_index;
+} ModernPoolStringRefCollector;
+
+static void modern_emit_pool_string_ref(ModernPoolStringRefCollector *collector, ut64 target_ref, const char *target_kind, ut64 field_index, ut64 string_ref) {
+	const ModernRefResolver *resolver = collector? collector->resolver: NULL;
+	if (!collector || !resolver || !collector->cb || string_ref >= resolver->refs_count || R_STR_ISEMPTY (resolver->strings_by_ref[string_ref])) {
+		return;
+	}
+	DartModernPoolStringRefInfo info = {
+		.pp_offset = collector->pp_offset,
+		.pool_ref = collector->pool_ref,
+		.pool_index = collector->pool_index,
+		.entry_index = collector->entry_index,
+		.target_ref = target_ref,
+		.target_kind = target_kind,
+		.field_index = field_index,
+		.string_ref = string_ref,
+		.string_addr = resolver->string_addr_by_ref[string_ref],
+		.string_value = resolver->strings_by_ref[string_ref],
+};
+	collector->cb (&info, collector->user);
+}
+
+static bool modern_collect_ref_strings(ModernPoolStringRefCollector *collector, ut64 target_ref, const char *target_kind, ut64 field_index, int depth);
+
+static bool modern_collect_array_strings(ModernPoolStringRefCollector *collector, const ModernClusterMeta *meta, ut64 target_ref, bool weak, int depth) {
+	const ModernRefResolver *resolver = collector? collector->resolver: NULL;
+	if (!collector || !resolver || !meta || target_ref < meta->start_ref || target_ref >= meta->start_ref + meta->count) {
+		return false;
+	}
+	ClusterStream s = {
+		.ctx = resolver->ctx,
+		.cursor = meta->fill_offset,
+		.end = meta->fill_end,
+};
+	ut64 target_index = target_ref - meta->start_ref;
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		ut64 ref = 0;
+		if (!cs_read_unsigned (&s, &length)) {
+			return false;
+		}
+		if (!weak && !cs_read_ref_id (&s, &ref)) {
+			return false;
+		}
+		for (ut64 j = 0; j < length; j++) {
+			if (!cs_read_ref_id (&s, &ref)) {
+				return false;
+			}
+			if (i == target_index) {
+				(void)modern_collect_ref_strings (collector, ref, weak? "weak_array": "array", j, depth + 1);
+			}
+		}
+		if (i == target_index) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool modern_collect_refs_object_strings(ModernPoolStringRefCollector *collector, const ModernClusterMeta *meta, const ModernFillSpec *spec, ut64 target_ref, int depth) {
+	const ModernRefResolver *resolver = collector? collector->resolver: NULL;
+	if (!collector || !resolver || !meta || !spec || target_ref < meta->start_ref || target_ref >= meta->start_ref + meta->count) {
+		return false;
+	}
+	ClusterStream s = {
+		.ctx = resolver->ctx,
+		.cursor = meta->fill_offset,
+		.end = meta->fill_end,
+};
+	ut64 target_index = target_ref - meta->start_ref;
+	for (ut64 i = 0; i < meta->count; i++) {
+		for (int j = 0; j < spec->num_refs; j++) {
+			ut64 ref = 0;
+			if (!cs_read_ref_id (&s, &ref)) {
+				return false;
+			}
+			if (i == target_index) {
+				(void)modern_collect_ref_strings (collector, ref, modern_fill_kind_name (meta->fill_kind), (ut64)j, depth + 1);
+			}
+		}
+		for (int j = 0; j < spec->scalar_count; j++) {
+			if (!modern_skip_scalar (&s, spec->scalars[j])) {
+				return false;
+			}
+		}
+		if (i == target_index) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool modern_collect_instance_strings(ModernPoolStringRefCollector *collector, const ModernClusterMeta *meta, ut64 target_ref, int depth) {
+	const ModernRefResolver *resolver = collector? collector->resolver: NULL;
+	if (!collector || !resolver || !meta || target_ref < meta->start_ref || target_ref >= meta->start_ref + meta->count) {
+		return false;
+	}
+	ClusterStream s = {
+		.ctx = resolver->ctx,
+		.cursor = meta->fill_offset,
+		.end = meta->fill_end,
+};
+	ut64 bitmap = 0;
+	if (!cs_read_unsigned (&s, &bitmap)) {
+		return false;
+	}
+	int header_words = 2;
+	int num_fields = meta->next_field_offset_words - header_words;
+	if (num_fields < 0) {
+		num_fields = 0;
+	}
+	ut64 target_index = target_ref - meta->start_ref;
+	for (ut64 i = 0; i < meta->count; i++) {
+		for (int j = 0; j < num_fields; j++) {
+			int field_word_idx = header_words + j;
+			bool is_unboxed = ((bitmap >> field_word_idx) & 1ULL) != 0;
+			if (is_unboxed) {
+				ut32 tmp32 = 0;
+				if (!cs_read_tagged32 (&s, &tmp32) || !cs_read_tagged32 (&s, &tmp32)) {
+					return false;
+				}
+			} else {
+				ut64 ref = 0;
+				if (!cs_read_ref_id (&s, &ref)) {
+					return false;
+				}
+				if (i == target_index) {
+					(void)modern_collect_ref_strings (collector, ref, "instance", (ut64)j, depth + 1);
+				}
+			}
+		}
+		if (i == target_index) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool modern_collect_ref_strings(ModernPoolStringRefCollector *collector, ut64 target_ref, const char *target_kind, ut64 field_index, int depth) {
+	const ModernRefResolver *resolver = collector? collector->resolver: NULL;
+	if (!collector || !resolver || !target_ref || target_ref >= resolver->refs_count || depth > 2) {
+		return false;
+	}
+	ut64 seen_key = target_ref ^ ((ut64)depth << 56);
+	if (collector->seen && ht_up_find (collector->seen, seen_key, NULL)) {
+		return true;
+	}
+	if (collector->seen) {
+		ht_up_insert (collector->seen, seen_key, (void *)1);
+	}
+	const ModernClusterMeta *meta = modern_resolver_cluster_for_ref (resolver, target_ref);
+	if (!meta) {
+		return false;
+	}
+	if (modern_is_string_cid (collector->cids, meta->cid)) {
+		modern_emit_pool_string_ref (collector, target_ref, target_kind, field_index, target_ref);
+		return true;
+	}
+	if (!meta->fill_parsed || !meta->fill_ok || meta->fill_offset >= meta->fill_end || !meta->count) {
+		return false;
+	}
+	if (modern_is_array_cid (collector->cids, meta->cid)) {
+		return modern_collect_array_strings (collector, meta, target_ref, false, depth);
+	}
+	if (modern_cid_eq (meta->cid, collector->cids->weak_array)) {
+		return modern_collect_array_strings (collector, meta, target_ref, true, depth);
+	}
+	if (meta->fill_kind == MODERN_FILL_REFS || meta->fill_kind == MODERN_FILL_CLASS) {
+		ModernFillSpec spec = modern_get_fill_spec (collector->cids, meta->cid);
+		return modern_collect_refs_object_strings (collector, meta, &spec, target_ref, depth);
+	}
+	if (meta->fill_kind == MODERN_FILL_INSTANCE) {
+		return modern_collect_instance_strings (collector, meta, target_ref, depth);
+	}
+	return false;
+}
+
+bool dart_modern_collect_object_pool_string_refs(const DartModernClusterRequest *req, HtUP *pp_offsets, DartModernPoolStringRefCallback cb, void *user) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	if (!ctx || !cb || !dart_modern_is_supported_snapshot (ctx)) {
+		return false;
+	}
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
+	if (!meta) {
+		return false;
+	}
+	ModernRefResolver resolver = { 0 };
+	bool ok = modern_ref_resolver_init (&resolver, ctx, meta, req->num_clusters, req->num_base_objects);
+	if (!ok) {
+		modern_cluster_meta_free (meta, req->num_clusters);
+		return false;
+	}
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
+	for (ut64 i = 0; i < req->num_clusters; i++) {
+		ModernClusterMeta *m = &meta[i];
+		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
+			continue;
+		}
+		ClusterStream s = {
+			.ctx = ctx,
+			.cursor = m->fill_offset,
+			.end = m->fill_end,
+};
+		for (ut64 pool_index = 0; pool_index < m->count; pool_index++) {
+			ut64 length = 0;
+			if (!cs_read_unsigned (&s, &length)) {
+				ok = false;
+				break;
+			}
+			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
+				ModernPoolEntry entry;
+				if (!modern_read_pool_entry (&s, ctx, entry_index, &entry)) {
+					ok = false;
+					break;
+				}
+				ut64 pp_offset = modern_pool_entry_pp_offset (ctx, entry_index);
+				if (pp_offsets && !ht_up_find (pp_offsets, pp_offset, NULL)) {
+					continue;
+				}
+				if (entry.behavior != 0 || entry.type != 1 || !entry.ref) {
+					continue;
+				}
+				HtUP *seen = ht_up_new0 ();
+				ModernPoolStringRefCollector collector = {
+					.resolver = &resolver,
+					.cids = &cids,
+					.cb = cb,
+					.user = user,
+					.seen = seen,
+					.pp_offset = pp_offset,
+					.pool_ref = m->start_ref + pool_index,
+					.pool_index = pool_index,
+					.entry_index = entry_index,
+};
+				(void)modern_collect_ref_strings (&collector, entry.ref, "object_pool.entry", entry_index, 0);
+				ht_up_free (seen);
+			}
+			if (!ok) {
+				break;
+			}
+		}
+		if (!ok) {
+			break;
+		}
+	}
+	modern_ref_resolver_fini (&resolver);
+	modern_cluster_meta_free (meta, req->num_clusters);
+	return ok;
+}
+
 static bool modern_object_pool_string_ref_exists(RList *refs, ut64 pool_ref, ut64 entry_index) {
 	if (!refs) {
 		return false;

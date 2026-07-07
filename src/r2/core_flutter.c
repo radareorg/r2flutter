@@ -356,10 +356,10 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				cmd->string_depth++;
 				break;
 			case '?':
-			cmd->subcmd_help = true;
-			cmd->help = true;
-			break;
-		default:
+				cmd->subcmd_help = true;
+				cmd->help = true;
+				break;
+			default:
 				cmd->invalid_flag = flag;
 				cmd->help = true;
 				break;

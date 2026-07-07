@@ -1145,3 +1145,24 @@ Older tags `2.10.0` through `2.14.4` do not contain `runtime/vm/app_snapshot.cc`
 or `runtime/vm/app_snapshot.h`. The generator reports those missing hash inputs
 and computes the MD5 from the files present in that tag, matching the existing
 script behavior for local SDK checkouts.
+
+## ObjectPool Xrefs Should Resolve From Serialized PP Data
+
+`bin/r2flutter -p` may report a synthetic PP base such as `0x100000000`.
+That address is only useful after the `-r -p` script maps a malloc-backed
+ObjectPool image and sets `anal.gp`/`x27`. It should not be required for xref
+recovery, because standalone CLI analysis would otherwise read unmapped memory.
+
+For xrefs, prefer resolving collected PP offsets against the serialized
+ObjectPool fill payload (`DartPpInfo.paddr` / `source_addr`) and then walking
+reachable metadata refs to the real serialized string payload address.
+
+On `/tmp/libapp.so`, the string payload at `0x47d3e` is:
+
+`AIzaSyD7NO00edvrm6JbbdbND-6e6BYjDSqVvik`
+
+It is isolate string-cluster ref `6433` (`payload=0x47d3e`, length `39`). A full
+ObjectPool/code xref scan found code-to-string xrefs for nearby serialized
+strings, but no code-reachable ObjectPool path to ref `6433`. Treat that as
+"present in the snapshot string cluster" rather than a proven code reference
+until another metadata container or instruction pattern links to it.

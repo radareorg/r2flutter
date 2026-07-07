@@ -26,6 +26,19 @@ typedef struct {
 	char *fn_name;
 } DartPoolUseInfo;
 
+typedef struct {
+	ut64 pp_off;
+	RList *uses;
+} DartPpUseBucket;
+
+typedef struct {
+	DartCtx *ctx;
+	RList *buckets;
+	RList *xrefs;
+	ut64 *count;
+	ut64 limit;
+} DartSerializedPoolXrefCtx;
+
 static void dart_xref_info_free(void *p) {
 	DartXrefInfo *xi = (DartXrefInfo *)p;
 	if (xi) {
@@ -43,6 +56,12 @@ static void dart_pool_use_info_free(void *p) {
 	DartPoolUseInfo *ui = (DartPoolUseInfo *)p;
 	free (ui->fn_name);
 	free (ui);
+}
+
+static void dart_pp_use_bucket_free(void *p) {
+	DartPpUseBucket *bucket = (DartPpUseBucket *)p;
+	r_list_free (bucket->uses);
+	free (bucket);
 }
 
 static char *xref_join_names(const char *owner, const char *name) {
@@ -240,6 +259,191 @@ static bool xref_parse_pp_offset(const char *opstr, ut64 *out) {
 	return true;
 }
 
+static char *xref_lower_dup(const char *s) {
+	if (R_STR_ISEMPTY (s)) {
+		return NULL;
+	}
+	char *d = strdup (s);
+	for (char *p = d; *p; p++) {
+		*p = (char)tolower ((ut8)*p);
+		if (*p == '#') {
+			*p = ' ';
+		}
+	}
+	return d;
+}
+
+static void xref_skip_spaces(const char **p) {
+	while (p && *p && (**p == ' ' || **p == '\t')) {
+		(*p)++;
+	}
+}
+
+static bool xref_parse_reg_token(const char **p, int *out) {
+	if (!p || !*p || !out) {
+		return false;
+	}
+	xref_skip_spaces (p);
+	if (**p != 'x' && **p != 'w') {
+		return false;
+	}
+	(*p)++;
+	if (!isdigit ((ut8) * *p)) {
+		return false;
+	}
+	int reg = 0;
+	while (isdigit ((ut8) * *p)) {
+		reg = (reg * 10) + (**p - '0');
+		(*p)++;
+	}
+	if (reg < 0 || reg > 30) {
+		return false;
+	}
+	*out = reg;
+	return true;
+}
+
+static bool xref_parse_comma(const char **p) {
+	xref_skip_spaces (p);
+	if (!p || !*p || **p != ',') {
+		return false;
+	}
+	(*p)++;
+	return true;
+}
+
+static bool xref_parse_number_token(const char **p, ut64 *out) {
+	if (!p || !*p || !out) {
+		return false;
+	}
+	xref_skip_spaces (p);
+	bool neg = false;
+	if (**p == '-') {
+		neg = true;
+		(*p)++;
+	}
+	const char *start = *p;
+	int base = 10;
+	if (r_str_startswith (start, "0x")) {
+		base = 16;
+		*p += 2;
+		start = *p;
+		while (isxdigit ((ut8) * *p)) {
+			(*p)++;
+		}
+	} else {
+		while (isdigit ((ut8) * *p)) {
+			(*p)++;
+		}
+	}
+	if (*p == start) {
+		return false;
+	}
+	ut64 v = strtoull (start, NULL, base);
+	*out = neg? (ut64) (- (st64)v): v;
+	return true;
+}
+
+static bool xref_parse_add_pp_offset(const char *text, const bool reg_valid[31], const ut64 reg_off[31], int *dst_out, ut64 *off_out) {
+	char *lower = xref_lower_dup (text);
+	if (!lower) {
+		return false;
+	}
+	const char *p = lower;
+	if (r_str_startswith (p, "add ")) {
+		p += 4;
+	}
+	int dst = -1;
+	int src = -1;
+	ut64 imm = 0;
+	bool ok = xref_parse_reg_token (&p, &dst) &&
+		xref_parse_comma (&p) &&
+		xref_parse_reg_token (&p, &src) &&
+		xref_parse_comma (&p) &&
+		xref_parse_number_token (&p, &imm);
+	if (ok) {
+		xref_skip_spaces (&p);
+		if (*p == ',') {
+			p++;
+			xref_skip_spaces (&p);
+		}
+		if (r_str_startswith (p, "lsl")) {
+			p += 3;
+			ut64 shift = 0;
+			if (xref_parse_number_token (&p, &shift) && shift < 64) {
+				imm <<= shift;
+			}
+		}
+		ut64 base = 0;
+		if (src == 27) {
+			base = 0;
+		} else if (src >= 0 && src < 31 && reg_valid[src]) {
+			base = reg_off[src];
+		} else {
+			ok = false;
+		}
+		if (ok) {
+			if (dst_out) {
+				*dst_out = dst;
+			}
+			if (off_out) {
+				*off_out = base + imm;
+			}
+		}
+	}
+	free (lower);
+	return ok;
+}
+
+static bool xref_parse_mem_pp_offset(const char *text, const bool reg_valid[31], const ut64 reg_off[31], ut64 *off_out) {
+	char *lower = xref_lower_dup (text);
+	if (!lower) {
+		return false;
+	}
+	bool ok = false;
+	const char *b = strchr (lower, '[');
+	while (b && !ok) {
+		const char *p = b + 1;
+		int reg = -1;
+		if (xref_parse_reg_token (&p, &reg)) {
+			ut64 base = 0;
+			if (reg == 27) {
+				ok = true;
+			} else if (reg >= 0 && reg < 31 && reg_valid[reg]) {
+				base = reg_off[reg];
+				ok = true;
+			}
+			if (ok) {
+				ut64 imm = 0;
+				if (xref_parse_comma (&p)) {
+					(void)xref_parse_number_token (&p, &imm);
+				}
+				if (off_out) {
+					*off_out = base + imm;
+				}
+			}
+		}
+		b = strchr (b + 1, '[');
+	}
+	free (lower);
+	return ok;
+}
+
+static int xref_parse_dest_reg(const char *text) {
+	char *lower = xref_lower_dup (text);
+	if (!lower) {
+		return -1;
+	}
+	const char *p = lower;
+	while (isalpha ((ut8)*p)) {
+		p++;
+	}
+	int reg = -1;
+	(void)xref_parse_reg_token (&p, &reg);
+	free (lower);
+	return reg;
+}
+
 static ut64 xref_object_pool_base(DartCtx *ctx) {
 	if (!ctx || !ctx->core || !ctx->core->config) {
 		return 0;
@@ -320,32 +524,52 @@ static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTabl
 	}
 	const RJson *ops = r_json_get (j, "ops");
 	const RJson *arr = ops? ops: j;
+	bool reg_valid[31] = { false };
+	ut64 reg_off[31] = { 0 };
 	for (size_t i = 0;; i++) {
 		const RJson *item = r_json_item (arr, i);
 		if (!item) {
 			break;
 		}
 		const char *opstr = r_json_get_str (item, "opstr");
+		const char *opcode = r_json_get_str (item, "opcode");
 		if (R_STR_ISEMPTY (opstr)) {
-			opstr = r_json_get_str (item, "opcode");
+			opstr = opcode;
 		}
 		ut64 pp_off = 0;
-		if (!xref_parse_pp_offset (opstr, &pp_off)) {
-			continue;
+		bool have_pp = xref_parse_pp_offset (opstr, &pp_off) ||
+			xref_parse_mem_pp_offset (opstr, reg_valid, reg_off, &pp_off) ||
+			xref_parse_mem_pp_offset (opcode, reg_valid, reg_off, &pp_off);
+		if (have_pp) {
+			ut64 at = (ut64)r_json_get_num (item, "offset");
+			if (!at) {
+				at = entry->address;
+			}
+			if (!xref_pool_use_seen (seen, at, pp_off)) {
+				DartPoolUseInfo *ui = R_NEW0 (DartPoolUseInfo);
+				ui->at = at;
+				ui->fn_index = entry->index;
+				ui->pp_off = pp_off;
+				ui->fn_name = R_STR_ISNOTEMPTY (entry->name)? strdup (entry->name): xref_it_label (entry->index);
+				r_list_append (uses, ui);
+			}
 		}
-		ut64 at = (ut64)r_json_get_num (item, "offset");
-		if (!at) {
-			at = entry->address;
+		int add_dst = -1;
+		ut64 add_off = 0;
+		bool have_add = xref_parse_add_pp_offset (opcode, reg_valid, reg_off, &add_dst, &add_off) ||
+			xref_parse_add_pp_offset (opstr, reg_valid, reg_off, &add_dst, &add_off);
+		if (have_add && add_dst >= 0 && add_dst < 31) {
+			reg_valid[add_dst] = true;
+			reg_off[add_dst] = add_off;
+		} else {
+			int dst = xref_parse_dest_reg (opcode);
+			if (dst < 0) {
+				dst = xref_parse_dest_reg (opstr);
+			}
+			if (dst >= 0 && dst < 31) {
+				reg_valid[dst] = false;
+			}
 		}
-		if (xref_pool_use_seen (seen, at, pp_off)) {
-			continue;
-		}
-		DartPoolUseInfo *ui = R_NEW0 (DartPoolUseInfo);
-		ui->at = at;
-		ui->fn_index = entry->index;
-		ui->pp_off = pp_off;
-		ui->fn_name = R_STR_ISNOTEMPTY (entry->name)? strdup (entry->name): xref_it_label (entry->index);
-		r_list_append (uses, ui);
 	}
 	r_json_free (j);
 	free (s);
@@ -428,15 +652,112 @@ static bool resolve_pool_entry_xref(DartCtx *ctx, DartRecoveryModel *model, RLis
 	return false;
 }
 
+static DartPpUseBucket *xref_bucket_by_pp(RList *buckets, ut64 pp_off) {
+	RListIter *it;
+	DartPpUseBucket *bucket;
+	r_list_foreach (buckets, it, bucket) {
+		if (bucket && bucket->pp_off == pp_off) {
+			return bucket;
+		}
+	}
+	return NULL;
+}
+
+static void xref_serialized_pool_string_cb(const DartModernPoolStringRefInfo *info, void *user) {
+	DartSerializedPoolXrefCtx *ux = (DartSerializedPoolXrefCtx *)user;
+	if (!info || !ux || !ux->buckets || !ux->xrefs || !ux->count || xref_limit_reached (*ux->count, ux->limit)) {
+		return;
+	}
+	if (!info->string_addr || R_STR_ISEMPTY (info->string_value)) {
+		return;
+	}
+	DartPpUseBucket *bucket = xref_bucket_by_pp (ux->buckets, info->pp_offset);
+	if (!bucket || !bucket->uses) {
+		return;
+	}
+	RListIter *it;
+	DartPoolUseInfo *use;
+	r_list_foreach (bucket->uses, it, use) {
+		if (!use || xref_limit_reached (*ux->count, ux->limit)) {
+			continue;
+		}
+		append_xref_info (ux->xrefs, ux->count, ux->limit, "code", "code.string", "code", use->fn_name, use->fn_index, use->at, "string", info->string_value, info->string_ref, info->string_addr);
+	}
+}
+
+static bool collect_serialized_object_pool_xrefs(DartCtx *ctx, RList *uses, RList *xrefs, ut64 *count, ut64 limit) {
+	if (!ctx || !ctx->core || !uses || !xrefs || xref_limit_reached (*count, limit)) {
+		return false;
+	}
+	if (find_snapshots (ctx) != 0) {
+		return false;
+	}
+	HtUP *wanted = ht_up_new0 ();
+	RList *buckets = r_list_newf (dart_pp_use_bucket_free);
+	RListIter *it;
+	DartPoolUseInfo *use;
+	r_list_foreach (uses, it, use) {
+		if (!use) {
+			continue;
+		}
+		DartPpUseBucket *bucket = xref_bucket_by_pp (buckets, use->pp_off);
+		if (!bucket) {
+			bucket = R_NEW0 (DartPpUseBucket);
+			bucket->pp_off = use->pp_off;
+			bucket->uses = r_list_new ();
+			r_list_append (buckets, bucket);
+			ht_up_insert (wanted, use->pp_off, (void *)1);
+		}
+		r_list_append (bucket->uses, use);
+	}
+	DartVerLayout layout_tmp;
+	DartVerLayout *layout_owned = ctx->layout? NULL: dart_ctx_init_layout (ctx, &layout_tmp);
+	DartSerializedPoolXrefCtx ux = {
+		.ctx = ctx,
+		.buckets = buckets,
+		.xrefs = xrefs,
+		.count = count,
+		.limit = limit,
+};
+	bool ok = false;
+	const ut64 snapshots[] = {
+		ctx->vm_data,
+		ctx->iso_data
+	};
+	for (size_t i = 0; i < R_ARRAY_SIZE (snapshots) && !xref_limit_reached (*count, limit); i++) {
+		ut64 base = snapshots[i];
+		DartSnapshotHeader sh = { 0 };
+		if (!base || !dart_snapshot_header_read (ctx, base, &sh) || !sh.ok) {
+			continue;
+		}
+		const DartModernClusterRequest req = {
+			.ctx = ctx,
+			.cluster_start = sh.cluster_start,
+			.cluster_end = base + sh.total_len,
+			.num_clusters = sh.nc,
+			.num_base_objects = sh.nb,
+};
+		ok |= dart_modern_collect_object_pool_string_refs (&req, wanted, xref_serialized_pool_string_cb, &ux);
+	}
+	if (layout_owned) {
+		dart_ctx_fini_layout (ctx, layout_owned);
+	}
+	r_list_free (buckets);
+	ht_up_free (wanted);
+	return ok;
+}
+
 static void collect_object_pool_xrefs(DartCtx *ctx, DartRecoveryModel *model, RList *xrefs, ut64 *count, ut64 limit) {
 	if (!ctx || !ctx->core || !model || !model->it_entries || !xrefs || xref_limit_reached (*count, limit)) {
 		return;
 	}
+	RList *uses = collect_pool_uses (ctx, model->it_entries, limit);
+	(void)collect_serialized_object_pool_xrefs (ctx, uses, xrefs, count, limit);
 	ut64 pool_base = xref_object_pool_base (ctx);
 	if (!pool_base) {
+		r_list_free (uses);
 		return;
 	}
-	RList *uses = collect_pool_uses (ctx, model->it_entries, limit);
 	ut64 heap_base = xref_flag_addr (ctx->core, "app.heap_base");
 	RListIter *it;
 	DartPoolUseInfo *use;

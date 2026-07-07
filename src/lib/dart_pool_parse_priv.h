@@ -187,6 +187,21 @@ typedef struct {
 	ut64 resolved_code_index;
 } DartModernPoolSlotInfo;
 
+typedef struct {
+	ut64 pp_offset;
+	ut64 pool_ref;
+	ut64 pool_index;
+	ut64 entry_index;
+	ut64 target_ref;
+	const char *target_kind;
+	ut64 field_index;
+	ut64 string_ref;
+	ut64 string_addr;
+	const char *string_value;
+} DartModernPoolStringRefInfo;
+
+typedef void(*DartModernPoolStringRefCallback)(const DartModernPoolStringRefInfo *info, void *user);
+
 typedef void(*DartInstructionTableEntryCallback)(const DartInstructionTableEntry *entry, void *user);
 
 typedef struct {
@@ -271,6 +286,7 @@ bool dart_modern_emit_cluster_summary(const DartModernClusterSummaryRequest *req
 bool dart_modern_build_synthetic_pp(const DartModernClusterRequest *req, ut64 snapshot_base, const char *snapshot_label, ut64 data_image_base, DartPpInfo *out);
 bool dart_modern_resolve_pp_slot(const DartModernClusterRequest *req, ut64 pp_offset, DartModernPoolSlotInfo *out);
 void dart_modern_pool_slot_info_fini(DartModernPoolSlotInfo *info);
+bool dart_modern_collect_object_pool_string_refs(const DartModernClusterRequest *req, HtUP *pp_offsets, DartModernPoolStringRefCallback cb, void *user);
 bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClusterRequest *req, RList *strings, HtUP *seen_refs, ut64 *ref_counter);
 bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen);
 bool dart_modern_extract_classes_from_clusters(const DartModernClusterRequest *req, RList *class_list);
