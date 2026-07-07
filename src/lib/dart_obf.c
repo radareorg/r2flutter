@@ -101,6 +101,12 @@ void dart_obf_fini(DartCtx *ctx) {
 	ht_pp_free (ctx->obf_by_obfuscated);
 	ctx->obf_by_obfuscated = NULL;
 	ctx->obf_map_tried = false;
+	// Release the read_mem window cache (scoped to one command invocation).
+	free (ctx->rmem_cache);
+	ctx->rmem_cache = NULL;
+	ctx->rmem_cache_addr = 0;
+	ctx->rmem_cache_len = 0;
+	ctx->rmem_cache_cap = 0;
 }
 
 char *dart_obf_resolve(DartCtx *ctx, const char *name) {

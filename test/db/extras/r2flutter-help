@@ -25,7 +25,8 @@ Actions:
   -c[jr*]               Print extracted class information
   -f[jr*]               Print all extracted functions (addr name)
   -H[HH]                Print Dart AOT snapshot header info
-  -i[jr*]               Print instruction table entries
+  -i[jr*]               Print instruction table entries (-ii same as -i)
+  -ie[jr*], -E[jr*]     Print Dart code entrypoint
   -O <addr|pp+off>      Decode Dart tagged/object pointer or ObjectPool PP slot
   -p[jr*]               Print reconstructed ObjectPool PP value
   -R                    Print radare2 script for snapshot analysis
@@ -46,7 +47,6 @@ Usage: r2flutter [j*] <action>
 | r2flutter -D prof  override Dart snapshot profile by hash or version
 | r2flutter -f[j*]   dump recovered functions
 | r2flutter -H[HH]   dump Dart AOT snapshot header info
-| r2flutter -h       show this help
 | r2flutter -i[j*]   dump instruction table entries
 | r2flutter -ie[j*]  dump Dart code entrypoint; with -* mark instruction snapshots as dword arrays
 | r2flutter -l N     limit function/instruction-table/xref output
@@ -74,7 +74,6 @@ Usage: r2flutter [j*] <action>
 | r2flutter -D prof  override Dart snapshot profile by hash or version
 | r2flutter -f[j*]   dump recovered functions
 | r2flutter -H[HH]   dump Dart AOT snapshot header info
-| r2flutter -h       show this help
 | r2flutter -i[j*]   dump instruction table entries
 | r2flutter -ie[j*]  dump Dart code entrypoint; with -* mark instruction snapshots as dword arrays
 | r2flutter -l N     limit function/instruction-table/xref output

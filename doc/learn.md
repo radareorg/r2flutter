@@ -1166,3 +1166,30 @@ ObjectPool/code xref scan found code-to-string xrefs for nearby serialized
 strings, but no code-reachable ObjectPool path to ref `6433`. Treat that as
 "present in the snapshot string cluster" rather than a proven code reference
 until another metadata container or instruction pattern links to it.
+
+## Performance: `-p` was CPU-bound on per-byte IO and RBin string scanning
+
+`bin/r2flutter -p` (and every cluster-stream walker) used to burn ~100% CPU for
+several seconds on large `libapp.so` / `App` images. Two bottlenecks:
+
+1. `read_mem()` issued one `r_io_read_at()` through the full radare2 IO stack
+   (banks, caches, interval trees, mmap seek/lseek) for *every byte*, because
+   the cluster stream decoders (`cs_read_u8`, `cs_read_ref_id`,
+   `cs_read_tagged32/64`, `cs_read_unsigned`) read one byte at a time while
+   walking the whole `modern_parse_cluster_meta` stream twice. `read_mem()` now
+   keeps a forward-sliding 1 MiB window cache in `DartCtx`, collapsing millions
+   of IO calls into a handful. It is scoped to a single command invocation and
+   released in `dart_obf_fini()`. The window is only served when the whole
+   request is contained in it; a windowed refill that fails (e.g. near the end
+   of a mapped region) falls back to an exact read, so semantics are identical.
+
+2. `r_core_bin_load()` in the standalone tool ran RBin's `string_scan_range`
+   over the entire binary at load time (the single largest profile entry).
+   r2flutter never consumes RBin's string list — it has its own Dart-aware
+   string extraction — so the CLI now sets `bin.strings=false` before loading.
+   The r2 core plugin path is left untouched (it runs inside the user session).
+
+Net effect on `test/bins/android/mafia/libapp.so` (14 MB): `-p` dropped from
+~2.6s to ~0.05s (~50x), with byte-identical output across all actions and the
+whole custom testsuite still green. The shared read cache also speeds up the
+heavier `-x`/`-z` walkers.
