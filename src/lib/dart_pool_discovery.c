@@ -48,6 +48,18 @@ static void pick_vm_iso_by_size(const ut64 *addrs, const ut64 *lens, int count, 
 	}
 }
 
+static ut64 rebase_bin_addr(DartCtx *ctx, ut64 addr) {
+	if (!ctx || !ctx->core || !ctx->core->bin || !ctx->core->io || !addr) {
+		return addr;
+	}
+	ut64 baddr = r_bin_get_baddr (ctx->core->bin);
+	if (!baddr || addr >= baddr || baddr > UT64_MAX - addr) {
+		return addr;
+	}
+	ut64 rebased = baddr + addr;
+	return r_io_v2p (ctx->core->io, rebased) != UT64_MAX? rebased: addr;
+}
+
 static int collect_snapshot_magics_in_range(DartCtx *ctx, ut64 start, ut64 size, ut64 *found_addrs, int found_cap, int found_cnt) {
 	if (!ctx || !found_addrs || found_cap <= 0 || found_cnt >= found_cap || size < 4) {
 		return found_cnt;
@@ -108,7 +120,7 @@ int find_snapshots(DartCtx *ctx) {
 				for (int k = 0; k < 8; k++) {
 					if (!strcmp (nm, names[k])) {
 						int idx = k / 2;
-						*outs[idx] = sym->vaddr? sym->vaddr: 0;
+						*outs[idx] = sym->vaddr? rebase_bin_addr (ctx, sym->vaddr): 0;
 					}
 				}
 			}
@@ -127,7 +139,7 @@ int find_snapshots(DartCtx *ctx) {
 			if (!sec || !sec->vaddr || !sec->vsize) {
 				continue;
 			}
-			ut64 vaddr = sec->vaddr;
+			ut64 vaddr = rebase_bin_addr (ctx, sec->vaddr);
 			ut64 size = sec->vsize;
 			if (ctx->verbose > 0) {
 				fprintf (stderr, "[r2flutter] scanning section '%s' vaddr=0x%" PFMT64x " size=0x%" PFMT64x "\n", sec->name? sec->name: "(null)", (ut64)vaddr, (ut64)size);

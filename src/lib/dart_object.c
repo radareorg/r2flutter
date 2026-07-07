@@ -684,6 +684,15 @@ char *dart_pool_dump_object(DartCtx *ctx, const char *spec, int fmt) {
 		if (raw >= DART_SYNTHETIC_PP_BASE) {
 			pp_offset = raw - DART_SYNTHETIC_PP_BASE;
 			is_pp = true;
+		} else {
+			DartPpInfo pp_info = { 0 };
+			if (dart_resolve_pp_info (ctx, &pp_info)) {
+				if (raw >= pp_info.base && raw - pp_info.base < pp_info.size) {
+					pp_offset = raw - pp_info.base;
+					is_pp = true;
+				}
+				dart_pp_info_fini (&pp_info);
+			}
 		}
 	}
 	DartValueInfo value;

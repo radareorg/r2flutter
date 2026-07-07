@@ -157,6 +157,7 @@ typedef struct {
 	ut64 cluster_index;
 	ut64 pool_index;
 	ut64 pool_ref;
+	ut64 pp_base;
 	int limit;
 	int detail;
 } ModernEmitCtx;
@@ -2188,12 +2189,27 @@ static void modern_write_target_word(ut8 *buf, ut64 off, int word_size, ut64 val
 	r_write_le64 (buf + off, value);
 }
 
-static ut64 modern_vaddr_to_paddr(DartCtx *ctx, ut64 vaddr) {
-	if (!ctx || !ctx->core || !ctx->core->io) {
-		return vaddr;
+static bool modern_vaddr_to_paddr(DartCtx *ctx, ut64 vaddr, ut64 *out) {
+	if (out) {
+		*out = vaddr;
+	}
+	if (!ctx || !ctx->core || !ctx->core->io || !out) {
+		return false;
 	}
 	ut64 paddr = r_io_v2p (ctx->core->io, vaddr);
-	return paddr == UT64_MAX? vaddr: paddr;
+	if (paddr == UT64_MAX) {
+		return false;
+	}
+	*out = paddr;
+	return true;
+}
+
+static ut64 modern_pp_vaddr_from_paddr(DartCtx *ctx, ut64 paddr, bool has_paddr) {
+	if (!has_paddr || !ctx || !ctx->core || !ctx->core->bin) {
+		return paddr;
+	}
+	ut64 baddr = r_bin_get_baddr (ctx->core->bin);
+	return baddr <= UT64_MAX - paddr? baddr + paddr: paddr;
 }
 
 static bool modern_skip_pool_payload_for_pp(ClusterStream *s) {
@@ -2257,10 +2273,13 @@ static bool modern_build_pp_image_from_pool(const ModernEmitCtx *emit, const Mod
 		modern_write_target_word (image, entries_offset + (j *(ut64)word_size), word_size, value);
 		image[entry_bits_offset + j] = entry.bits;
 	}
+	ut64 paddr = pool_stream;
+	bool has_paddr = modern_vaddr_to_paddr (ctx, pool_stream, &paddr);
+	ut64 vaddr = modern_pp_vaddr_from_paddr (ctx, paddr, has_paddr);
 	memset (out, 0, sizeof (*out));
-	out->base = DART_SYNTHETIC_PP_BASE;
-	out->vaddr = DART_SYNTHETIC_PP_BASE;
-	out->paddr = modern_vaddr_to_paddr (ctx, pool_stream);
+	out->base = vaddr;
+	out->vaddr = vaddr;
+	out->paddr = paddr;
 	out->size = image_size;
 	out->source_vaddr = pool_stream;
 	out->source_paddr = out->paddr;
@@ -2769,13 +2788,13 @@ static bool modern_object_pool_string_ref_exists(RList *refs, ut64 pool_ref, ut6
 	return false;
 }
 
-static void modern_add_object_pool_string_ref(DartStringInfo *si, ut64 pool_ref, ut64 pool_index, ut64 entry_index, ut64 pp_off) {
+static void modern_add_object_pool_string_ref(DartStringInfo *si, ut64 pool_ref, ut64 pool_index, ut64 entry_index, ut64 pp_base, ut64 pp_off) {
 	if (!si || !si->references || modern_object_pool_string_ref_exists (si->references, pool_ref, entry_index)) {
 		return;
 	}
 	DartStringRef *sr = R_NEW0 (DartStringRef);
 	sr->object_ref = pool_ref;
-	sr->source_addr = DART_SYNTHETIC_PP_BASE + pp_off;
+	sr->source_addr = pp_base + pp_off;
 	sr->object_type = DART_REF_OTHER;
 	sr->field_offset = (ut32)entry_index;
 	sr->kind = strdup ("object_pool.entry");
@@ -2801,7 +2820,7 @@ static void modern_append_object_pool_string(RList *strings, HtUP *seen_refs, ut
 		r_list_append (strings, si);
 		ht_up_insert (seen_refs, string_ref, si);
 	}
-	modern_add_object_pool_string_ref (si, emit->pool_ref, emit->pool_index, entry->index, modern_pool_entry_pp_offset (resolver->ctx, entry->index));
+	modern_add_object_pool_string_ref (si, emit->pool_ref, emit->pool_index, entry->index, emit->pp_base, modern_pool_entry_pp_offset (resolver->ctx, entry->index));
 }
 
 bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClusterRequest *req, RList *strings, HtUP *seen_refs, ut64 *ref_counter) {
@@ -2834,6 +2853,9 @@ bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClust
 		for (ut64 pool_index = 0; pool_index < m->count; pool_index++) {
 			emit.pool_index = pool_index;
 			emit.pool_ref = m->start_ref + pool_index;
+			ut64 pool_paddr = s.cursor;
+			bool has_paddr = modern_vaddr_to_paddr (ctx, s.cursor, &pool_paddr);
+			emit.pp_base = modern_pp_vaddr_from_paddr (ctx, pool_paddr, has_paddr);
 			ut64 length = 0;
 			if (!cs_read_unsigned (&s, &length)) {
 				ok = false;
