@@ -2,9 +2,43 @@
 
 #include "dart_pool_parse_priv.h"
 
+// Window size for the read cache. Cluster streams are decoded one byte at a
+// time, so serving those reads from a prefetched window turns millions of
+// r_io_read_at calls into a handful.
+#define RMEM_WINDOW (1024 * 1024)
+
 bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len) {
 	if (!ctx || !ctx->core || !buf || len <= 0) {
 		return false;
+	}
+	// Fast path: request fully contained in the cached window.
+	if (ctx->rmem_cache && addr >= ctx->rmem_cache_addr) {
+		ut64 off = addr - ctx->rmem_cache_addr;
+		if (off + (ut64)len <= (ut64)ctx->rmem_cache_len) {
+			memcpy (buf, ctx->rmem_cache + off, (size_t)len);
+			return true;
+		}
+	}
+	// Reads larger than the window bypass the cache.
+	if (len > RMEM_WINDOW) {
+		return r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
+	}
+	if (!ctx->rmem_cache) {
+		ctx->rmem_cache = malloc (RMEM_WINDOW);
+		if (!ctx->rmem_cache) {
+			return r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
+		}
+		ctx->rmem_cache_cap = RMEM_WINDOW;
+	}
+	// Refill the window at addr. r_io_read_at only succeeds when the whole
+	// range is readable, so a successful window read means every byte in it is
+	// valid and safe to serve. On failure (e.g. near the end of a mapped
+	// region) fall back to an exact read and keep any previous window intact.
+	if (r_io_read_at (ctx->core->io, addr, ctx->rmem_cache, ctx->rmem_cache_cap)) {
+		ctx->rmem_cache_addr = addr;
+		ctx->rmem_cache_len = ctx->rmem_cache_cap;
+		memcpy (buf, ctx->rmem_cache, (size_t)len);
+		return true;
 	}
 	return r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
 }

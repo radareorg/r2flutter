@@ -253,6 +253,11 @@ int main(int argc, char **argv) {
 		free_resolved_path (libapp_path, extracted_inner);
 		return 1;
 	}
+	// r2flutter does its own Dart-aware string/symbol extraction and never
+	// consumes RBin's string list, so skip the costly RBin string scan that
+	// r_core_bin_load runs over the whole binary (dominant load-time cost on
+	// large libapp.so / App images).
+	r_config_set_b (core->config, "bin.strings", false);
 	r_core_bin_load (core, NULL, 0);
 
 	dctx.core = core;

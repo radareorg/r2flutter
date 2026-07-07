@@ -79,6 +79,13 @@ typedef struct {
 	const char *obf_map_path;
 	HtPP *obf_by_obfuscated;
 	bool obf_map_tried;
+	// Windowed read cache for read_mem, to avoid one r_io_read_at syscall per
+	// byte while decoding cluster streams (which read one byte at a time).
+	// Scoped to a single command invocation and released by dart_obf_fini.
+	ut8 *rmem_cache;
+	ut64 rmem_cache_addr;
+	int rmem_cache_len;
+	int rmem_cache_cap;
 } DartCtx;
 
 #endif
