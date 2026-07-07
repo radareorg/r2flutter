@@ -71,6 +71,7 @@ static void r2flutter_subcmd_help(RCore *core, char action) {
 		r_cons_printf (core->cons,
 			"Usage: r2flutter -i[jr*]  dump instruction table entries (-ii same as -i)\n"
 			"| -i        plain text output\n"
+			"| -ie       dump Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
 			"| -ij       JSON output\n"
 			"| -ir       r2 commands output\n"
 			"| -i*       r2 commands output (same as -ir)\n"
@@ -90,7 +91,6 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -c[jr*]  dump classes\n"
 		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
 		"| r2flutter -D prof  override Dart snapshot profile by hash or version\n"
-		"| r2flutter -E[jr*]  dump Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
 		"| r2flutter -f[jr*]  dump recovered functions\n"
 		"| r2flutter -H[HH]   dump Dart AOT snapshot header info\n"
 		"| r2flutter -h       show this help\n"
@@ -251,6 +251,14 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 				dctx->dump_it = true;
 				cmd->action = flag;
 				break;
+			case 'e':
+				if (cmd->action == 'i') {
+					cmd->action = flag;
+				} else {
+					cmd->invalid_flag = flag;
+					cmd->help = true;
+				}
+				break;
 			case 'O':
 				{
 					const char *arg = r2flutter_opt_arg (tail, words, nwords, &i);
@@ -277,9 +285,6 @@ static bool r2flutter_parse_cmd(const char *args, DartCtx *dctx, R2FlutterCmd *c
 					j += strlen (tail);
 					break;
 				}
-			case 'E':
-				cmd->action = flag;
-				break;
 			case 'j':
 				cmd->fmt = 'j';
 				break;
@@ -399,7 +404,7 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		dctx->dump_fields = 1;
 		out = dart_pool_dump_classes (dctx, cmd->fmt);
 		break;
-	case 'E':
+	case 'e':
 		out = dart_pool_dump_entrypoint (dctx, cmd->fmt);
 		break;
 	case 'f':

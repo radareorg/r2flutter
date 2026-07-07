@@ -23,7 +23,6 @@ static const char usage_text[] =
 	"Actions:\n"
 	"  -A[AA]                Analyze Dart snapshot and apply flags/comments\n"
 	"  -c[jr*]               Print extracted class information\n"
-	"  -E[jr*]               Print Dart code entrypoint; with -r, mark instruction snapshots as dword arrays\n"
 	"  -f[jr*]               Print all extracted functions (addr name)\n"
 	"  -H[HH]                Print Dart AOT snapshot header info\n"
 	"  -i[jr*]               Print instruction table entries (-ii same as -i)\n"
@@ -115,7 +114,7 @@ int main(int argc, char **argv) {
 		.no_stubs = true
 	};
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "AcD:EfhHijnm:O:pqrRSzTvVxl:");
+	r_getopt_init (&opt, argc, (const char **)argv, "AcD:efhHijnm:O:pqrRSzTvVxl:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -142,6 +141,14 @@ int main(int argc, char **argv) {
 		case 'i':
 			action = c;
 			dctx.dump_it = true;
+			break;
+		case 'e':
+			if (action == 'i') {
+				action = c;
+			} else {
+				R_LOG_ERROR ("Invalid flag: -%c", c);
+				return 1;
+			}
 			break;
 		case 'O':
 			action = c;
@@ -304,7 +311,7 @@ int main(int argc, char **argv) {
 		dctx.dump_fields = 1;
 		output = dart_pool_dump_classes (&dctx, fmt);
 		break;
-	case 'E':
+	case 'e':
 		output = dart_pool_dump_entrypoint (&app->dctx, fmt);
 		break;
 	case 'T':
