@@ -32,7 +32,7 @@ DEP_FILES = $(LIB_OBJ:.o=.d) $(MAIN_OBJ:.o=.d) $(ANALYSIS_OBJ:.o=.d)
 # Artifacts
 BIN_FILE = $(BIN_DIR)/r2flutter
 STATIC_LIB = $(BUILD_DIR)/libr2flutter.a
-INC_VER = $(SRC_DIR)/../include/r2flutter/r2flutter_version.h
+INC_VER = include/r2flutter/r2flutter_version.h
 
 all: $(BIN_FILE) $(INC_VER)
 

@@ -26,9 +26,7 @@ EOF
 EXPECT=<<EOF
 o malloc://0x66548 0x385154 rw
 e anal.gp=0x385154
-dr anal.roregs=
 dr x27=0x385154
-dr anal.roregs=x27,gp,zero
 f PP = 0x385154
 f dart.pp 0x66548 @ 0x385154
 EOF

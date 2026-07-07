@@ -75,7 +75,7 @@ EXPECT=<<EOF
 iz+ 0x00049d81 25
 f str.useShouldInterceptRequest.0x49d81 25 @ 0x00049d81
 Cs8 25 @ 0x00049d81
-ax 0x49d81 0x100056cd0
+ax 0x49d81 0x3dbe24
 EOF
 RUN
 
