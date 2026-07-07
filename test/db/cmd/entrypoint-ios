@@ -1,0 +1,38 @@
+NAME=entrypoint-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -qE bins/ios/Runner.app 2>/dev/null
+EOF
+EXPECT=<<EOF
+0xe768
+EOF
+RUN
+
+NAME=json-entrypoint-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -jE bins/ios/Runner.app 2>/dev/null
+EOF
+EXPECT=<<EOF
+{"entrypoint":59240,"index":0,"code_index":0,"kind":"code","name":"func.0000e768","vm_instr":16384,"vm_instr_size":42736,"iso_instr":59136,"iso_instr_size":1712608}
+EOF
+RUN
+
+NAME=r2-entrypoint-ios
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -rE bins/ios/Runner.app 2>/dev/null
+EOF
+EXPECT=<<EOF
+# Dart AOT entrypoint and instruction snapshot data
+fs dart
+f dart.entrypoint = 0xe768
+CC Dart code entrypoint it[0] func.0000e768 @ 0xe768
+f dart.vm_instr = 0x4000
+Cd 4 10684 @ 0x4000
+CC Dart vm_instr snapshot instructions dword array size=0xa6f0 @ 0x4000
+f dart.iso_instr = 0xe700
+Cd 4 428152 @ 0xe700
+CC Dart iso_instr snapshot instructions dword array size=0x1a21e0 @ 0xe700
+EOF
+RUN
