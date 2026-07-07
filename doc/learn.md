@@ -1153,6 +1153,9 @@ script behavior for local SDK checkouts.
 serialized ObjectPool payload physical offset plus the current binary base.
 That address is useful after the `-r -p` script maps a malloc-backed ObjectPool
 image and sets `anal.gp`/`x27`, but it should not be required for xref recovery.
+The r2 setup script must clear `anal.roregs` before `dr x27=...` and then
+restore `anal.roregs=x27,gp,zero`; otherwise radare2 refuses to update `x27`
+when it is already marked read-only.
 
 For xrefs, prefer resolving collected PP offsets against the serialized
 ObjectPool fill payload (`DartPpInfo.paddr` / `source_addr`) and then walking

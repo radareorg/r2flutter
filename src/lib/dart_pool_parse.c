@@ -1103,7 +1103,9 @@ static char *dump_pp_r2(const DartPpInfo *info, bool quiet) {
 	r_strbuf_appendf (sb, "s 0x%" PFMT64x "\n", info->base);
 	r_strbuf_appendf (sb, "wx %s\n", hex);
 	r_strbuf_appendf (sb, "e anal.gp=0x%" PFMT64x "\n", info->base);
+	r_strbuf_append (sb, "e anal.roregs=\n");
 	r_strbuf_appendf (sb, "dr x27=0x%" PFMT64x "\n", info->base);
+	r_strbuf_append (sb, "e anal.roregs=x27,gp,zero\n");
 	r_strbuf_appendf (sb, "f PP = 0x%" PFMT64x "\n", info->base);
 	r_strbuf_appendf (sb, "f dart.pp 0x%" PFMT64x " @ 0x%" PFMT64x "\n", info->size, info->base);
 	r_strbuf_appendf (sb, "f dart.pp.entries 0x%" PFMT64x " @ 0x%" PFMT64x "\n", info->entry_bits_offset - info->entries_offset, info->base + info->entries_offset);

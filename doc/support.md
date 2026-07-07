@@ -452,8 +452,8 @@ The `-R` path emits:
 - `PP=x27`; per-function PP offset helper scanning is intentionally skipped by
   default in script output because it is too slow on large apps
 - `-r -p` is the focused PP setup path: it opens a malloc map at the synthetic
-  PP base, writes the reconstructed ObjectPool image, and sets `e anal.gp` plus
-  `dr x27`
+  PP base, writes the reconstructed ObjectPool image, sets `e anal.gp`, clears
+  `anal.roregs` before assigning `x27`, then restores `anal.roregs=x27,gp,zero`
 
 ## Practical Limits
 
