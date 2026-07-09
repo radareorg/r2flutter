@@ -9,9 +9,10 @@ version : '0.2.0',
 r2 = find_program('r2', required: true)
 r2_cflags_res = run_command(r2, '-H', 'R2_CFLAGS', check: true)
 r2_ldflags_res = run_command(r2, '-H', 'R2_LDFLAGS', check: true)
+r2_libs_res = run_command(r2, '-H', 'R2_LIBS', check: true)
 r_core_dep = declare_dependency(
   compile_args: r2_cflags_res.stdout().strip().split(),
-  link_args: r2_ldflags_res.stdout().strip().split(),
+  link_args: r2_ldflags_res.stdout().strip().split() + r2_libs_res.stdout().strip().split(),
 )
 r2flutter_inc = include_directories('include')
 

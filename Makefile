@@ -1,10 +1,12 @@
 CC ?= gcc
 R2_CFLAGS  ?= $(shell r2 -H R2_CFLAGS)
 R2_LDFLAGS ?= $(shell r2 -H R2_LDFLAGS)
+R2_LIBS    ?= $(shell r2 -H R2_LIBS)
 CFLAGS ?= -Wall -Wextra -O2 -fPIC
 CFLAGS += -Iinclude -Iinclude/r2flutter
 CFLAGS += $(R2_CFLAGS)
 LDFLAGS += $(R2_LDFLAGS)
+LDLIBS += $(R2_LIBS)
 DEPFLAGS = -MMD -MP
 R2R_JOBS ?= 1
 R2R_TIMEOUT ?= 30
@@ -47,7 +49,7 @@ $(STATIC_LIB): $(LIB_OBJ)
 	ar rcs $@ $^
 
 $(BIN_FILE): $(STATIC_LIB) $(MAIN_OBJ) $(ANALYSIS_OBJ) | $(shell mkdir -p $(BIN_DIR))
-	$(CC) $(CFLAGS) -o $@ $(MAIN_OBJ) $(ANALYSIS_OBJ) -L$(BUILD_DIR) -lr2flutter $(LDFLAGS) -Wl,-rpath,$(PREFIX)/lib -g
+	$(CC) $(CFLAGS) -o $@ $(MAIN_OBJ) $(ANALYSIS_OBJ) -L$(BUILD_DIR) -lr2flutter $(LDFLAGS) $(LDLIBS) -Wl,-rpath,$(PREFIX)/lib -g
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)

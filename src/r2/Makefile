@@ -3,9 +3,11 @@ CFLAGS += -Wall -Wextra -O2 -fPIC
 CFLAGS += -I../../include -I../../include/r2flutter
 R2_CFLAGS  ?= $(shell r2 -H R2_CFLAGS 2>/dev/null)
 R2_LDFLAGS ?= $(shell r2 -H R2_LDFLAGS 2>/dev/null)
+R2_LIBS    ?= $(shell r2 -H R2_LIBS 2>/dev/null)
 R2_PLUGDIR ?= $(shell r2 -H R2_USER_PLUGINS)
 CFLAGS += $(R2_CFLAGS)
 LDFLAGS += $(R2_LDFLAGS)
+LDLIBS += $(R2_LIBS)
 DEPFLAGS = -MMD -MP
 
 # Detect platform for shared library extension
@@ -27,11 +29,12 @@ CORE_PLUGIN = core_flutter.$(EXT_SO)
 # Library
 R2FLUTTER_LIB_DIR = ../../build
 R2FLUTTER_LIB = $(R2FLUTTER_LIB_DIR)/libr2flutter.a
+R2FLUTTER_LIB_TARGET = build/libr2flutter.a
 
 all: $(CORE_PLUGIN)
 
 $(CORE_PLUGIN): $(CORE_OBJ) $(R2FLUTTER_LIB)
-	$(CC) $(LDFLAGS) -o $@ $(CORE_OBJ) $(R2FLUTTER_LIB)
+	$(CC) $(LDFLAGS) -o $@ $(CORE_OBJ) $(R2FLUTTER_LIB) $(LDLIBS)
 
 core_flutter.o: core_flutter.c
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
@@ -40,7 +43,7 @@ flutter_analysis.o: flutter_analysis.c flutter_analysis.h
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 $(R2FLUTTER_LIB):
-	$(MAKE) -C ../.. $(R2FLUTTER_LIB_DIR)/libr2flutter.a
+	$(MAKE) -C ../.. $(R2FLUTTER_LIB_TARGET)
 
 user-install: $(CORE_PLUGIN)
 	mkdir -p $(R2_PLUGDIR)
