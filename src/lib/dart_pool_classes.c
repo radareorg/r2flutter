@@ -2484,14 +2484,26 @@ static void core_apply_type(RCore *core, const DartClassInfo *ci, const char *cl
 				.name = field_name,
 				.type = strdup (field_c_type (fi)),
 				.offset = fi->offset,
+#if R2_ABIVERSION >= 125
+				.bitsize = 64,
+#else
 				.size = 64,
-};
+#endif
+			};
+#if R2_ABIVERSION >= 125
+			RAnalStructMember *slot = RVecAnalTypeMember_emplace_back (&type->struct_data.members);
+#else
 			RAnalStructMember *slot = RVecAnalStructMember_emplace_back (&type->struct_data.members);
+#endif
 			if (slot) {
 				*slot = member;
 				(*field_count)++;
 			} else {
+#if R2_ABIVERSION >= 125
+				anal_type_member_fini (&member);
+#else
 				anal_struct_member_fini (&member);
+#endif
 			}
 		}
 	}
