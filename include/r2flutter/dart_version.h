@@ -19,6 +19,15 @@ typedef enum {
 	DART_TAG_STYLE_OBJECT_HEADER = 2 // v3.4.3+ and known 2.18.2 exception
 } DartTagStyle;
 
+// How the Dart version/layout for a snapshot was determined. Reported so users
+// can tell whether decoding rests on an exact match or a best-effort guess.
+typedef enum {
+	DART_VERSION_SOURCE_EXACT = 0, // snapshot hash matched a known SDK release
+	DART_VERSION_SOURCE_OVERRIDE = 1, // user forced a profile via -D
+	DART_VERSION_SOURCE_FINGERPRINT = 2, // unknown hash, layout inferred from evidence
+	DART_VERSION_SOURCE_UNKNOWN = 3 // no snapshot available
+} DartVersionSource;
+
 // Version layout information for Dart snapshots
 // CID values are stored in dart_cid.c's cid_tables[] and accessed via dart_cid_get()
 typedef struct {
@@ -42,8 +51,15 @@ const DartVerLayout *dart_profile_from_version(const char *version);
 
 // Pick a layout structure based on hash, with fallback to defaults
 // Returns a newly allocated DartVerLayout (caller must free)
-// If hash is unknown, uses v3.9.2 defaults
+// If hash is unknown, fingerprints against the newest known layout profile
 DartVerLayout *dart_pick_layout_by_hash(const char *hash);
+
+// Newest known layout profile (used as the fingerprint baseline for unknown
+// git/dev builds, whose snapshot format tracks the latest release).
+const DartVerLayout *dart_newest_profile(void);
+
+// Human-readable name for a DartVersionSource value.
+const char *dart_version_source_str(int source);
 
 // Free a DartVerLayout allocated by dart_pick_layout_by_hash
 void dart_ver_layout_free(DartVerLayout *layout);

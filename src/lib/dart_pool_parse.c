@@ -69,6 +69,37 @@ const char *dart_ctx_effective_version(DartCtx *ctx) {
 	return dart_version_from_hash (dart_ctx_effective_hash (ctx));
 }
 
+// Classify how the layout was determined, for honest reporting: exact hash
+// match, user override, best-effort fingerprint (unknown hash), or no snapshot.
+static void dart_ctx_set_version_source(DartCtx *ctx) {
+	if (!ctx) {
+		return;
+	}
+	if (R_STR_ISNOTEMPTY (ctx->dart_version_override)) {
+		ctx->version_source = DART_VERSION_SOURCE_OVERRIDE;
+	} else if (dart_version_from_hash (dart_ctx_effective_hash (ctx))) {
+		ctx->version_source = DART_VERSION_SOURCE_EXACT;
+	} else if (R_STR_ISNOTEMPTY (dart_ctx_effective_hash (ctx))) {
+		ctx->version_source = DART_VERSION_SOURCE_FINGERPRINT;
+	} else {
+		ctx->version_source = DART_VERSION_SOURCE_UNKNOWN;
+	}
+}
+
+// Effective version label including a marker when the layout was fingerprinted
+// from an unknown (git/dev build) hash rather than matched exactly.
+static const char *dart_ctx_version_label(DartCtx *ctx, char *buf, size_t bufsz) {
+	const char *v = dart_ctx_effective_version (ctx);
+	if (v) {
+		return v;
+	}
+	if (ctx && ctx->version_source == DART_VERSION_SOURCE_FINGERPRINT && ctx->layout && ctx->layout->dart_version) {
+		snprintf (buf, bufsz, "~%s+ (fingerprint)", ctx->layout->dart_version);
+		return buf;
+	}
+	return "unknown";
+}
+
 static const char *dart_tag_style_names[] = {
 	"CID_INT32", // DART_TAG_STYLE_CID_INT32 = 0
 	"CID_SHIFT1", // DART_TAG_STYLE_CID_SHIFT1 = 1
@@ -103,12 +134,13 @@ static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayou
 	}
 	const char *version = dart_version_from_hash (hash);
 	const DartVerLayout *base_profile = version? dart_profile_from_version (version): NULL;
-	if (base_profile) {
-		memcpy (out, base_profile, sizeof (*out));
-	} else {
-		memset (out, 0, sizeof (*out));
-		out->tag_style = DART_TAG_STYLE_OBJECT_HEADER;
+	if (!base_profile) {
+		// Unknown hash: fingerprint against the newest known profile so the
+		// decode path (-f/-A) uses the same real layout the -H report shows,
+		// not a degenerate zeroed struct. cws is still refined from the flags.
+		base_profile = dart_newest_profile ();
 	}
+	memcpy (out, base_profile, sizeof (*out));
 	r_str_ncpy (out->hash, hash, sizeof (out->hash));
 	for (int i = 0; i < DART_HASH_ENTRIES_COUNT; i++) {
 		if (!strcmp (dart_hash_entries[i].hash, hash)) {
@@ -206,6 +238,7 @@ DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp) {
 		ctx->layout = owned;
 	}
 	derive_layout_from_flags (ctx);
+	dart_ctx_set_version_source (ctx);
 	return owned;
 }
 
@@ -583,6 +616,7 @@ static int prepare_header_data(DartCtx *ctx) {
 	extract_snapshot_hash_flags (ctx, ctx->vm_data);
 	ctx->layout = dart_pick_layout_owned_for_ctx (ctx);
 	derive_layout_from_flags (ctx);
+	dart_ctx_set_version_source (ctx);
 	return 0;
 }
 
@@ -594,7 +628,9 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		return fmt == 'r'? strdup ("# Error: Dart snapshots not found\n"): strdup ("Error: Dart snapshots not found\n");
 	}
 	const bool quiet = ctx && ctx->quiet;
-	const char *version = dart_ctx_effective_version (ctx);
+	char vbuf[48];
+	const char *version = dart_ctx_version_label (ctx, vbuf, sizeof (vbuf));
+	const char *version_source = dart_version_source_str (ctx? ctx->version_source: DART_VERSION_SOURCE_UNKNOWN);
 	if (fmt == 'j') {
 		ut64 header_addr = ctx->iso_data? ctx->iso_data: ctx->vm_data;
 		DartSnapshotHeader sh = { 0 };
@@ -630,7 +666,8 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		pj_kn (pj, "total", sh.total_len);
 		pj_end (pj);
 		pj_ki (pj, "cws", ctx->compressed_word_size);
-		pj_ks (pj, "dart_version", version? version: "unknown");
+		pj_ks (pj, "dart_version", version);
+		pj_ks (pj, "version_source", version_source);
 		if (ctx->layout) {
 			const DartVerLayout *l = ctx->layout;
 			pj_ks (pj, "tag_style", dart_tag_style_to_string (l->tag_style));
@@ -669,7 +706,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		if (!quiet) {
 			// Add comments with metadata
 			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart snapshot hash: %s\n", (ut64)ctx->vm_data, ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
-			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart version: %s\n", (ut64)ctx->vm_data, version? version: "unknown");
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart version: %s (%s)\n", (ut64)ctx->vm_data, version, version_source);
 			if (ctx->layout) {
 				const DartVerLayout *l = ctx->layout;
 				r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", (ut64)ctx->vm_data, dart_tag_style_to_string (l->tag_style));
@@ -681,7 +718,7 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 
 	RStrBuf *sb = r_strbuf_new ("");
 	if (quiet) {
-		r_strbuf_appendf (sb, "snapshot_hash=%s dart_version=%s vm_data=0x%" PFMT64x " vm_instr=0x%" PFMT64x " iso_data=0x%" PFMT64x " iso_instr=0x%" PFMT64x " cws=%d", ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)", version? version: "unknown", (ut64)ctx->vm_data, (ut64)ctx->vm_instr, (ut64)ctx->iso_data, (ut64)ctx->iso_instr, ctx->compressed_word_size);
+		r_strbuf_appendf (sb, "snapshot_hash=%s dart_version=%s version_source=%s vm_data=0x%" PFMT64x " vm_instr=0x%" PFMT64x " iso_data=0x%" PFMT64x " iso_instr=0x%" PFMT64x " cws=%d", ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)", version, version_source, (ut64)ctx->vm_data, (ut64)ctx->vm_instr, (ut64)ctx->iso_data, (ut64)ctx->iso_instr, ctx->compressed_word_size);
 		if (ctx->layout) {
 			const DartVerLayout *l = ctx->layout;
 			r_strbuf_appendf (sb, " tag_style=%s alignment=%d", dart_tag_style_to_string (l->tag_style), l->max_alignment);
@@ -690,7 +727,8 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	}
 	r_strbuf_appendf (sb, "# Dart AOT Snapshot Header\n\n");
 	r_strbuf_appendf (sb, "snapshot_hash: %s\n", ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
-	r_strbuf_appendf (sb, "dart_version:  %s\n", version? version: "unknown");
+	r_strbuf_appendf (sb, "dart_version:  %s\n", version);
+	r_strbuf_appendf (sb, "version_source: %s\n", version_source);
 	if (ctx->layout) {
 		const DartVerLayout *l = ctx->layout;
 		r_strbuf_appendf (sb, "tag_style:     %s\n", dart_tag_style_to_string_verbose (l->tag_style));
@@ -811,7 +849,8 @@ static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, u
 }
 
 static char *dump_header_ext_json(DartCtx *ctx, int detail) {
-	const char *version = dart_ctx_effective_version (ctx);
+	char vbuf[48];
+	const char *version = dart_ctx_version_label (ctx, vbuf, sizeof (vbuf));
 	DartSnapshotHeader iso = { 0 };
 	if (ctx->iso_data) {
 		dart_snapshot_header_read (ctx, ctx->iso_data, &iso);
@@ -828,7 +867,8 @@ static char *dump_header_ext_json(DartCtx *ctx, int detail) {
 	pj_kn (pj, "iso_data", ctx->iso_data);
 	pj_kn (pj, "iso_instr", ctx->iso_instr);
 	pj_ki (pj, "cws", ctx->compressed_word_size);
-	pj_ks (pj, "dart_version", version? version: "unknown");
+	pj_ks (pj, "dart_version", version);
+	pj_ks (pj, "version_source", dart_version_source_str (ctx? ctx->version_source: DART_VERSION_SOURCE_UNKNOWN));
 	pj_ki (pj, "detail", detail);
 	if (ctx->container_kind[0]) {
 		pj_k (pj, "container");

@@ -17,8 +17,8 @@ instruction tables, and strings directly.
 | Mach-O details | Thin Mach-O64 and fat Mach-O/fat64; arm64 slice is preferred. LC_NOTE owner `__dart_app_snap` is detected and the embedded Dart Mach-O payload is extracted to a temporary file. |
 | Architecture | ARM64/AArch64 is the real target. Instruction-table entrypoints are based on ARM64 code offsets, PP tracking uses `x27`, and the radare2 analysis pass understands AArch64 registers/op metadata. |
 | Snapshot kind | Clustered Dart AOT snapshots with magic `0xdcdcf5f5`, 32-byte snapshot hashes, feature strings, and unsigned varint header fields. |
-| Dart layouts | In-tree profiles cover Dart `2.10.0` through `3.12.1`, roughly Flutter `1.22.x` through `3.41.x`. |
-| Unknown hashes | Falls back to hardcoded default offsets (8/24/16/32 for entry points, 56 for owner, 24/8 for names) + v3.9.2-shaped ObjectHeader defaults while reporting the Dart version as `unknown`. |
+| Dart layouts | In-tree profiles cover Dart `2.10.0` through `3.12.1`, roughly Flutter `1.22.x` through `3.41.x`. Profiles are keyed at layout-change boundaries and resolved by floor: e.g. `3.7`/`3.8` share the `3.6.0` CID layout and `3.10`–`3.12` share the `3.9.0` layout. Verified byte-for-byte against every release's `runtime/vm/class_id.h` (2.10.0–3.12.1). |
+| Unknown hashes | Git/dev builds carry an unlisted snapshot hash. r2flutter **fingerprints** them: it applies the newest known layout profile (snapshot formats only change at release boundaries, so a fresh git build matches the latest release) and refines the compressed word size from the feature flags. The Dart version is reported as `~<version>+ (fingerprint)` and `version_source` is set to `fingerprint` (vs `exact-hash` / `override`) so the result is never silently presented as an exact match. |
 | Obfuscation maps | Flutter/Dart `--save-obfuscation-map` JSON arrays are supported with `-m <file>` or `e r2flutter.mapfile=<file>` in the plugin. |
 
 ## Layout Profiles

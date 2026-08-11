@@ -47,6 +47,7 @@ typedef struct {
 	char dart_version_override[32];
 	const DartVerLayout *layout;
 	int compressed_word_size;
+	int version_source; // DartVersionSource: how the layout/version was chosen
 	HtUP *name_by_ep;
 	char **name_by_code_index;
 	ut64 name_by_code_index_count;

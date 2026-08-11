@@ -163,6 +163,27 @@ const char *dart_version_from_hash(const char *hash) {
 	return NULL;
 }
 
+const DartVerLayout *dart_newest_profile(void) {
+	const DartVerLayout *newest = version_profiles;
+	for (int i = 0; version_profiles[i].dart_version; i++) {
+		newest = &version_profiles[i];
+	}
+	return newest;
+}
+
+const char *dart_version_source_str(int source) {
+	switch (source) {
+	case DART_VERSION_SOURCE_EXACT:
+		return "exact-hash";
+	case DART_VERSION_SOURCE_OVERRIDE:
+		return "override";
+	case DART_VERSION_SOURCE_FINGERPRINT:
+		return "fingerprint";
+	default:
+		return "unknown";
+	}
+}
+
 const DartVerLayout *dart_profile_from_version(const char *version) {
 	if (!version) {
 		return NULL;
@@ -195,16 +216,17 @@ DartVerLayout *dart_pick_layout_by_hash(const char *hash) {
 		}
 		return dvl;
 	}
-	// Default to v3.9.2 layout for unknown hashes
-	dvl->compressed_word_size = 4;
-	dvl->heap_object_tag = 1;
-	dvl->max_alignment = 16;
-	dvl->it_cap = 20000;
-	dvl->tag_style = DART_TAG_STYLE_OBJECT_HEADER;
-	dvl->header_fields = 5;
-	dvl->dart_version = "unknown";
+	// Unknown hash: fingerprint against the newest known profile. Snapshot
+	// formats (CID tables, tag style) only change at release boundaries, so an
+	// unlisted git/dev build almost always matches the most recent release; the
+	// caller still refines compressed_word_size from the feature flags.
+	const DartVerLayout *newest = dart_newest_profile ();
+	memcpy (dvl, newest, sizeof (DartVerLayout));
+	if (hash && *hash) {
+		r_str_ncpy (dvl->hash, hash, sizeof (dvl->hash));
+	}
 	if (G_VERBOSE > 0) {
-		fprintf (stderr, "[r2flutter] Unknown snapshot hash, using v3.9.2 defaults (hash=%s)\n", hash? hash: "(null)");
+		fprintf (stderr, "[r2flutter] Unknown snapshot hash, fingerprinting as newest known profile %s (hash=%s)\n", newest->dart_version, hash? hash: "(null)");
 	}
 	return dvl;
 }
