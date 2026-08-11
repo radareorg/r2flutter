@@ -1428,12 +1428,21 @@ static bool modern_walk_fail(const ModernWalk *w, const char *phase, ut64 cluste
 	return false;
 }
 
-// One- and two-byte string clusters carry their characters inline in the
-// cluster stream only while pointer compression is on. Without it the payload
-// lives in the read-only data image and the cluster is a plain rodata record
-// (Dart's RODataDeserializationCluster, whose ReadFill is a no-op).
+// With pointer compression off, Dart moves six classes into the read-only data
+// image -- the three code-metadata blobs and the three string classes, exactly
+// Serializer::ReadOnlyObjectType(). Their bytes live in the image, so the
+// cluster carries image offsets in its alloc record and emits no fill records
+// at all. With compression on the same classes are ordinary clusters carrying
+// their bytes inline, which is why this cannot be decided from the class id.
+static bool modern_walk_is_rodata(const ModernWalk *w, int cid) {
+	if (w->ctx->compressed_word_size != 8) {
+		return false;
+	}
+	return modern_is_string_cid (&w->cids, cid) || modern_is_rodata_cid (&w->cids, cid);
+}
+
 static bool modern_walk_strings_inline(const ModernWalk *w, int cid) {
-	return modern_is_string_cid (&w->cids, cid) && w->ctx->compressed_word_size != 8;
+	return modern_is_string_cid (&w->cids, cid) && !modern_walk_is_rodata (w, cid);
 }
 
 static ModernAllocFn modern_walk_alloc_reader(const ModernWalk *w, int cid) {
@@ -1461,6 +1470,9 @@ static ModernFillFn modern_walk_fill_reader(const ModernWalk *w, int cid) {
 }
 
 static bool modern_walk_read_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+	if (modern_walk_is_rodata (w, m->cid)) {
+		return true;
+	}
 	const ModernFillFn read = modern_walk_fill_reader (w, m->cid);
 	if (read) {
 		return read (w, s, m, spec);
@@ -1505,6 +1517,9 @@ static bool modern_walk_fill(ModernWalk *w, ClusterStream *s) {
 		m->fill_kind = spec.kind;
 		m->fill_offset = s->cursor;
 		bool ok = true;
+		if (modern_walk_is_rodata (w, m->cid)) {
+			m->fill_kind = MODERN_FILL_NONE;
+		}
 		if (spec.kind == MODERN_FILL_UNKNOWN && !m->count) {
 			// An empty cluster of an unrecognised class contributes no bytes,
 			// so not knowing its layout costs nothing.

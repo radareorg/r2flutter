@@ -23,7 +23,7 @@ rank; each item states the concrete failure it causes.
 | `cd6b655` | Discovery hardening: removed the **bogus instruction-blob classification** (only data snapshots carry magic `0xf5f5dcdc`; a stray hit could poison `iso_instr`); symbol-derived addresses are no longer clobbered by scan guesses; `vaddr==0` duplicates can't erase a good address; magic hits deduped; Mach-O segments skipped. |
 | `0716a95` | **Structural instruction-image location** for symbol-less Mach-O: `vm_instr` = first executable section, `iso_instr = align_up(vm_instr + ImageSize, 64)` from the Dart Image header, with cross-checks that fall back to `0` rather than emit junk. Verified on stripped Runner (`0x4000`/`0xe700`, full 7671 IT entries) and AuthPass (`0x5a80`/`0xfdc0`). Adds `scripts/strip_macho_symbols.py` + `discovery-stripped-ios`. |
 | `d11ebc3` | **P0.1**: `modern_get_fill_spec`'s fallback `rules[]` is keyed by `DartCidKind` and resolved through a per-layout `by_kind[]` table built once in `modern_cid_cache_init`, instead of literal 3.6-era CIDs. Fixes a whole-block off-by-one on 3.2–3.5 layouts (36 CIDs from `SENTINEL` upward got the neighbouring class's ref/scalar layout) and `MonomorphicSmiableCall`/`UnlinkedCall` on 3.9+, where the two swapped places. Abstract classes that never form a cluster (`CallSiteData`, `AbstractType`, `TypedDataBase`) no longer claim a spec. |
-| *(uncommitted)* | **P2.5**: one shared cluster walker (`ModernWalk`) replaces the five hand-rolled tag→cid→alloc→fill loops. Consumers register readers in a `DartCidKind`-keyed table and the walker skips every class they don't claim, so tag decoding, alloc/fill skipping, `start_ref` bookkeeping and the inline-string decision each exist **once** (were 4–5× each). `modern_walk_fill_recorded` serves the resolver, which reads each cluster from its own recorded offset. Verified behaviour-preserving: output byte-identical on 5 samples × 21 actions. |
+| *(uncommitted)* | **P2.5 + part of P0.2**: one shared cluster walker (`ModernWalk`) replaces the five hand-rolled tag→cid→alloc→fill loops. Consumers register readers in a `DartCidKind`-keyed table and the walker skips every class they don't claim, so tag decoding, alloc/fill skipping, `start_ref` bookkeeping and the inline-string decision each exist **once** (were 4–5× each). `modern_walk_fill_recorded` serves the resolver, which reads each cluster from its own recorded offset. Verified behaviour-preserving: output byte-identical on 5 samples × 21 actions. Also lands the **P0.2 read-only-data rule** (`modern_walk_is_rodata`): the six classes Dart moves into the data image when pointer compression is off now correctly have no fill records. Inert until the gate opens. |
 
 Corrections to earlier assumptions, worth remembering:
 - **The CID tables are not the problem.** Flooring is exactly correct 2.10→3.12,
@@ -70,15 +70,51 @@ Two consequences drive the P0 items below:
 ## P0 — correctness bugs with no test coverage
 
 ### P0.2 Extend the modern decoder to uncompressed (`cws == 8`) snapshots
-`dart_pool_modern.c:207`. The `cws == 4` half of the gate is an implementation
-limit, not a format boundary: 2.18.2, 3.4.3 and 3.11.5 samples are all
-OBJECT_HEADER but uncompressed, so they never reach the good decoder.
-**Failure:** name/class recovery on those binaries falls back to heuristic
-data-image scanning — i.e. most iOS apps and all macOS standalone builds get the
-weaker path. **Fix:** parameterise the ref/pointer width in the modern reader
-(the compressed-vs-native pointer read is already understood — see
-`doc/learn.md` on `heap_base | stored32`) and drop `cws == 4` from the gate.
-This is the single largest *quality* win available.
+`dart_pool_modern.c` gate + `modern_can_extract_classes`. The `cws == 4` half of
+the gate is an implementation limit, not a format boundary: 2.18.2, 3.4.3 and
+3.11.5 samples are all OBJECT_HEADER but uncompressed, so they never reach the
+good decoder. **Failure:** name/class recovery on those binaries falls back to
+heuristic data-image scanning — i.e. most iOS apps and all macOS standalone
+builds get the weaker path. Still the single largest *quality* win available.
+
+**Investigated; partially landed. Do not re-derive the following.**
+
+*The format delta is small and now known exactly.* `Serializer::ReadOnlyObjectType`
+(`app_snapshot.cc`) is the whole of it: with pointer compression off, six classes
+move into the read-only data image — `PcDescriptors`, `CodeSourceMap`,
+`CompressedStackMaps`, `String`, `OneByteString`, `TwoByteString`. Their clusters
+carry image offsets in the alloc record and emit **no fill records at all**
+(`RODataDeserializationCluster::ReadFill` is a no-op). Nothing else in the cluster
+stream depends on pointer compression — it is varint/ref-id encoded throughout,
+and the *target* word size is 64-bit either way. This rule is implemented in
+`modern_walk_is_rodata` and is live for both gates.
+
+*The alloc phase already works uncompressed.* Verified on `hello.aot` (3.11.5) and
+iOS `Runner` (3.4.3): the walk yields a complete, sane cluster list — 501 `Class`,
+1 `ObjectPool`, 24 `PcDescriptors`, 946 `CodeSourceMap`, `Field`/`Script`/`Library`
+all present — and the allocated-object total sits the same small distance below the
+header's `num_objects` as it does on the known-good compressed sample. No width
+parameterisation was needed for it.
+
+*What still blocks the gate: the fill phase desyncs, for a reason unrelated to
+`cws`.* On `hello.aot` fill dies at cluster 12 with ~14 KB of stream still
+unconsumed (a genuine decode failure, not a bounds problem), having already read
+an implausible `Array` length of 11039 at cluster 11. All six RO-data clusters sit
+*after* the failure, so the RO-data rule alone does not unblock it. The suspicion
+is that one or more **fill shapes are version-dependent** and `rules[]` encodes a
+single era: P0.1 fixed which *cid* each rule applies to, not the *shape* of the
+rule. Concrete evidence that shapes do move: `ClosureDeserializationCluster`
+changed between 3.9 and current from `ReadAllocFixedSize` to a per-object length
+varint in **both** ReadAlloc and ReadFill. Ruled out already: `Map`/`Set` are 5
+refs (`to_snapshot()` stops at `deleted_keys_`, `index` is not serialized) and
+`Array` matches the SDK exactly.
+
+**Next step:** bisect the first divergent cluster on `hello.aot` by diffing the
+per-class `ReadFill` bodies between `third_party/blutter/dartsdk/v3.9.0` and
+`third_party/dart-sdk` (both are checked in, and the byte-per-object figures per
+cluster make a good oracle), then make the affected rules version-aware. **Do not
+open the gate until fill lands exactly on `cluster_end`** — with it open the
+decoder emits confidently wrong class names instead of falling back.
 
 ### P0.3 Test corpus does not cover the decoders we ship
 Add samples that exercise the untested combinations, then wire them into the
@@ -251,8 +287,9 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 ## Suggested execution order
 
 1. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
-   win; makes most iOS/macOS samples use the good path. P2.5 has landed, so the
-   string-payload decision now lives in `modern_walk_strings_inline` alone.
+   win; makes most iOS/macOS samples use the good path. The RO-data half is
+   already implemented and the alloc phase is proven correct; what remains is
+   version-dependent *fill* shapes — see the P0.2 notes before starting.
 2. **P0.3** — grow the corpus alongside 1 so it is actually verified, and to give
    the landed P0.1 fix an end-to-end regression test.
 3. **P2.1 + P3.1** — delete the legacy walker; one cluster walk, one data scan.
