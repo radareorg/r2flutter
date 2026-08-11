@@ -14,7 +14,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: Installing radare2 ${{ env.R2V }}
-      uses: radareorg/github-actions@v2
+      uses: radareorg/github-actions@v3
       with:
         version: ${{ env.R2V }}
         from-git: false
@@ -35,7 +35,7 @@ jobs:
     - name: Install build dependencies
       run: sudo apt-get update -y && sudo apt-get install -y build-essential meson ninja-build
     - name: Installing radare2 ${{ env.R2V }}
-      uses: radareorg/github-actions@v2
+      uses: radareorg/github-actions@v3
       with:
         version: ${{ env.R2V }}
         from-git: false
@@ -51,7 +51,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: Installing radare2 ${{ env.R2V }}
-      uses: radareorg/github-actions@v2
+      uses: radareorg/github-actions@v3
       with:
         version: ${{ env.R2V }}
         from-git: false
