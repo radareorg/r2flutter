@@ -65,23 +65,6 @@ typedef enum {
 	kNumPredefinedCids = 128
 } DartCid;
 
-typedef struct {
-	ut64 ref_id;
-	ut64 name_ref;
-	ut64 library_ref;
-	char *name;
-	int instance_size;
-} DartClass;
-
-typedef struct {
-	ut64 ref_id;
-	ut64 name_ref;
-	ut64 owner_ref;
-	ut64 code_ref;
-	ut64 entry_point;
-	char *name;
-} DartPoolFunction;
-
 #define DART_SNAPSHOT_MAGIC 0xdcdcf5f5
 #define DART_SNAPSHOT_FIXED_SIZE (4 + 8 + 8)
 #define DART_SNAPSHOT_HASH_SIZE 32
@@ -290,8 +273,6 @@ bool cs_read_bytes(ClusterStream *s, ut8 *buf, int len);
 void free_dart_string(void *p);
 int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, bool is_canonical);
 void skip_generic_cluster(ClusterStream *stream);
-int deserialize_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 iso_instr);
-void resolve_names(DartCtx *ctx);
 
 bool modern_skip_n_bytes(ClusterStream *s, ut64 len);
 bool dart_modern_is_supported_snapshot(DartCtx *ctx);

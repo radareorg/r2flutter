@@ -56,8 +56,6 @@ typedef struct {
 	RList *name_pool;
 	int name_pool_idx;
 	RList *strings;
-	RList *classes;
-	RList *functions;
 	void **refs;
 	ut64 refs_count;
 	ut64 num_base_objects;

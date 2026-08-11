@@ -23,8 +23,10 @@ rank; each item states the concrete failure it causes.
 | `cd6b655` | Discovery hardening: removed the **bogus instruction-blob classification** (only data snapshots carry magic `0xf5f5dcdc`; a stray hit could poison `iso_instr`); symbol-derived addresses are no longer clobbered by scan guesses; `vaddr==0` duplicates can't erase a good address; magic hits deduped; Mach-O segments skipped. |
 | `0716a95` | **Structural instruction-image location** for symbol-less Mach-O: `vm_instr` = first executable section, `iso_instr = align_up(vm_instr + ImageSize, 64)` from the Dart Image header, with cross-checks that fall back to `0` rather than emit junk. Verified on stripped Runner (`0x4000`/`0xe700`, full 7671 IT entries) and AuthPass (`0x5a80`/`0xfdc0`). Adds `scripts/strip_macho_symbols.py` + `discovery-stripped-ios`. |
 | `d11ebc3` | **P0.1**: `modern_get_fill_spec`'s fallback `rules[]` is keyed by `DartCidKind` and resolved through a per-layout `by_kind[]` table built once in `modern_cid_cache_init`, instead of literal 3.6-era CIDs. Fixes a whole-block off-by-one on 3.2–3.5 layouts (36 CIDs from `SENTINEL` upward got the neighbouring class's ref/scalar layout) and `MonomorphicSmiableCall`/`UnlinkedCall` on 3.9+, where the two swapped places. Abstract classes that never form a cluster (`CallSiteData`, `AbstractType`, `TypedDataBase`) no longer claim a spec. |
-| *(uncommitted)* | **P2.5 + part of P0.2**: one shared cluster walker (`ModernWalk`) replaces the five hand-rolled tag→cid→alloc→fill loops. Consumers register readers in a `DartCidKind`-keyed table and the walker skips every class they don't claim, so tag decoding, alloc/fill skipping, `start_ref` bookkeeping and the inline-string decision each exist **once** (were 4–5× each). `modern_walk_fill_recorded` serves the resolver, which reads each cluster from its own recorded offset. Verified behaviour-preserving: output byte-identical on 5 samples × 21 actions. Also lands the **P0.2 read-only-data rule** (`modern_walk_is_rodata`): the six classes Dart moves into the data image when pointer compression is off now correctly have no fill records. Inert until the gate opens. |
-| *(uncommitted)* | **P1.1**: one `dart_cid_from_tags` helper now decodes `CID_INT32`, `CID_SHIFT1`, and `OBJECT_HEADER` tags for object inspection, modern and legacy cluster walks, data-image scanners, and InstructionTable discovery. This removes the duplicate decoders and fixes `CID_INT32` being treated as `OBJECT_HEADER` in two paths. |
+| `33bb19b` | **P2.5**: one shared cluster walker (`ModernWalk`) replaces the five hand-rolled tag→cid→alloc→fill loops. Consumers register readers in a `DartCidKind`-keyed table and the walker skips every class they don't claim, so tag decoding, alloc/fill skipping, `start_ref` bookkeeping and the inline-string decision each exist **once** (were 4–5× each). `modern_walk_fill_recorded` serves the resolver, which reads each cluster from its own recorded offset. Verified behaviour-preserving: output byte-identical on 5 samples × 21 actions. |
+| `e9fa905` | **Part of P0.2**: the read-only-data rule (`modern_walk_is_rodata`) — the six classes Dart moves into the data image when pointer compression is off (exactly `Serializer::ReadOnlyObjectType`) now correctly emit no fill records. Inert until the gate opens; see P0.2 for what still blocks it. |
+| `897a98d` | **P1.1**: one `dart_cid_from_tags` helper now decodes `CID_INT32`, `CID_SHIFT1`, and `OBJECT_HEADER` tags for object inspection, modern and legacy cluster walks, data-image scanners, and InstructionTable discovery. This removes the duplicate decoders and fixes `CID_INT32` being treated as `OBJECT_HEADER` in two paths. |
+| *(uncommitted)* | **P2.1**: deleted the legacy cluster walker — `deserialize_clusters`, `decode_class_cluster`, `decode_function_cluster`, `resolve_names`, the `DartClass`/`DartPoolFunction` types and the `DartCtx.classes`/`.functions` fields that only it wrote (244 lines). It had been running on every `-f`/`-A` alongside the modern scanner while contributing nothing: verified before removal by stubbing it out (50/50 outputs identical), and after by diffing 95 sample×action outputs against the previous commit. `decode_string_cluster`/`skip_generic_cluster`/`free_dart_string` stay — the legacy **class** parser in `dart_pool_classes.c` still uses them for CID_SHIFT1 samples. |
 
 Corrections to earlier assumptions, worth remembering:
 - **The CID tables are not the problem.** Flooring is exactly correct 2.10→3.12,
@@ -177,22 +179,21 @@ snapshot is the isolate, leave `vm_data = 0`) and updating that test.
 
 ## P2 — duplication, dead code, structural debt
 
-### P2.1 Two cluster decoders, both run on every enumeration
-`decode_pool_and_emit` (`dart_pool_parse.c:323, :386`) runs the legacy
-`deserialize_clusters` **and** the modern scanner over the same stream, then scans
-the data image again (`scan_code_names`, `collect_data_names`, + optional r2 pass).
-The legacy walker compares raw cluster CIDs against the **fake** `kXxxCid` enum
-(P2.2), so it silently never decodes strings (`kStringCid=72` vs real ~92) and
-misreads the cluster CID as a tagged `>>12` header.
-**Fix:** once P0.2 widens the modern gate, delete the legacy walker (or reduce it
-to a documented fallback). Also the biggest **perf** win — see P3.1.
-
 ### P2.2 Delete the fake `kXxxCid` enum
 `dart_pool_parse_priv.h:20-52` hardcodes a CID set matching **no real Dart
 version** (`kStringCid=72`, `kOneByteStringCid=73`, `kCodeCid=40`,
 `kTypeCid=110`; real ≈ 92/94/17/48), plus `dart_pool_classes.c:51-52` adds
 `kFieldCid_extract=10`, `kLibraryCid_extract=12`. Used ~35× in the legacy paths.
-**Fix:** route every consumer through `dart_cid_get(layout, …)` and remove the enum.
+Worse than dead: two sites use a fake CID as the **fallback** when real
+resolution fails — `dart_pool_data_image.c:161` (`resolved_function_cid >= 0?
+resolved_function_cid: kFunctionCid`) and `dart_pool_it.c:152` (same shape with
+`kOneByteStringCid`). Falling back to a fabricated CID silently compares against
+a value wrong for every Dart version; these should fail closed instead.
+**Fix:** route every consumer through `dart_cid_get(layout, …)`, make the two
+fallbacks bail, and remove the enum. P2.1 removed the legacy *cluster* walker,
+which cut the uses from ~35 to 27; the rest sit in the legacy **class** parser
+(`dart_pool_classes.c`), which is still live for CID_SHIFT1 samples like
+AuthPass, so they must be converted rather than deleted.
 
 ### P2.3 Two different "newest" baselines (introduced by `d387c0b`)
 `dart_pick_layout_by_hash` now fingerprints unknown hashes to
@@ -227,9 +228,14 @@ Read caching (`read_mem`, `dart_pool_snapshot.c:10-44`) already turns per-byte
 varint reads into a 1 MB sliding window. Remaining hotspots, largest first:
 
 ### P3.1 Redundant full passes over the same regions
-Per P2.1 a single `-f`/`-A` walks the cluster stream twice and the data image 2–3
-times. Collapsing to one cluster walk + one data-image scan is the biggest win on
-large inputs (`mafia/libapp.so` ~15 MB, `AuthPass.app` ~38 MB). Falls out of P2.1.
+A single `-f`/`-A` walks the cluster stream twice and the data image 2–3 times.
+
+**This was claimed to be the biggest perf win; measured, it is not.** Removing
+the whole legacy cluster walk changes runtime by ~1%, inside noise (mafia `-f`
+993 → 1005 ms; AuthPass `-f` 616 → 618 ms) — it bails out early rather than
+re-walking the stream. Collapsing the remaining data-image scans may still help,
+but **profile before spending time here**: the real cost is elsewhere, and P3.2's
+brute-force InstructionTable search is the better first suspect.
 
 ### P3.2 Brute-force InstructionTable header search
 `dart_pool_it.c:233-330` probes `{16,0,8,12} × delta -64..64 step 4`, then scans
@@ -275,16 +281,21 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## Suggested execution order
 
-1. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
+1. **P2.2** — the fake `kXxxCid` enum and the two fabricated-CID fallbacks.
+   P2.1 is done; the 27 remaining uses are in the legacy class parser, which is
+   still live, so convert them to `dart_cid_get` rather than deleting.
+2. **P2.3** — one-liner: make the CID fallback use `dart_newest_profile()` rather
+   than the literal `"3.9.2"`. Maintainer priority #1.
+3. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
    win; makes most iOS/macOS samples use the good path. The RO-data half is
    already implemented and the alloc phase is proven correct; what remains is
    version-dependent *fill* shapes — see the P0.2 notes before starting.
-2. **P0.3** — grow the corpus alongside 1 so it is actually verified, and to give
+4. **P0.3** — grow the corpus alongside 3 so it is actually verified, and to give
    the landed P0.1 fix an end-to-end regression test.
-3. **P2.1 + P3.1** — delete the legacy walker; one cluster walk, one data scan.
-4. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
-5. **P1.2** — arch gating.
-6. **P3.2–P3.4**, remaining P1/P2 cleanups, test hardening.
+5. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
+6. **P1.2** — arch gating.
+7. **P3.2** (profile first — see the P3.1 note), remaining P2 cleanups, test
+   hardening.
 
 `COMMIT2.md` tracks the narrower follow-ups left over from the discovery work
 (gapped layouts, more iOS fixtures, stripped ELF, P1.5 semantics).

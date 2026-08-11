@@ -319,36 +319,6 @@ static int decode_pool_and_emit(DartItEmitRequest *req) {
 
 	const ut64 cluster_start = sh.cluster_start;
 	const ut64 cluster_end = base + total_len;
-	if (nc > 0 && nc < 5000 && no < 500000 && cluster_start < cluster_end) {
-		const int deser_rc = deserialize_clusters (ctx, cluster_start, cluster_end, nc, ctx->iso_instr);
-		if (deser_rc == 0) {
-			resolve_names (ctx);
-			if (ctx->functions && req->on_fn) {
-				RListIter *fit;
-				DartPoolFunction *df;
-				r_list_foreach (ctx->functions, fit, df) {
-					if (!df || df->entry_point == 0) {
-						continue;
-					}
-					char *clean_name = r_name_filter_dup (R_STR_ISEMPTY (df->name)? "method.unknown": df->name);
-					req->on_fn (clean_name, df->entry_point, 0, req->fn_user);
-					free (clean_name);
-				}
-			}
-			if (ctx->verbose > 1 && ctx->strings) {
-				RListIter *sit;
-				DartString *ds;
-				int str_count = 0;
-				r_list_foreach (ctx->strings, sit, ds) {
-					if (ds && ds->value && str_count < 50) {
-						fprintf (stderr, "[r2flutter] String[%" PRIu64 "]: %s\n", ds->ref_id, ds->value);
-						str_count++;
-					}
-				}
-			}
-		}
-	}
-
 	HtUP *sym_by_addr = ht_up_new0 ();
 	if (ctx->core && ctx->core->bin && sym_by_addr) {
 		RVecRBinSymbol *v = r_bin_get_symbols_vec (ctx->core->bin);
