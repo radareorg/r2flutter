@@ -1,7 +1,7 @@
 NAME=discovery-stripped-ios-structural-instr
 FILE=-
 CMDS=<<EOF
-!!sh -c 'A=bins/ios/Runner.app/Frameworks/App.framework/App; T=$(mktemp); python3 ../scripts/strip_macho_symbols.py "$A" "$T" >/dev/null 2>&1 && printf "kdart=%s\n" "$(r2 -qc "is~kDart" "$T" 2>/dev/null | grep -c kDart)" && ../bin/r2flutter -q -H "$T" 2>/dev/null | grep -oE "vm_instr=\S+ iso_data=\S+ iso_instr=\S+"; rm -f "$T"'
+!!sh ../scripts/discovery_stripped_ios.sh
 EOF
 EXPECT=<<EOF
 kdart=0
