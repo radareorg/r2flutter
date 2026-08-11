@@ -1,0 +1,9 @@
+NAME=header-fingerprint-unknown-hash
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -j -D ffffffffffffffffffffffffffffffff -H bins/android/first 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print("version=%s source=%s tag=%s" % (d["dart_version"], d["version_source"], d["tag_style"]))'
+EOF
+EXPECT=<<EOF
+version=~3.12.0+ (fingerprint) source=fingerprint tag=OBJECT_HEADER
+EOF
+RUN
