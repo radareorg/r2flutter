@@ -1149,6 +1149,14 @@ tag read was only the first bug. Production snapshots serialize all cluster
 alloc records before all fill records, so interleaving alloc/fill parsing can
 never stay synchronized.
 
+The zero-hash synthetic field snapshot is a deliberate exception to the iOS
+tag rule. Its compatibility format stores each cluster tag as a fixed
+little-endian object-header `u32`; for example, `0x0005e000` encodes CID 94.
+Reading that word with `cs_read_tagged32()` produces CID 1 and consumes only two
+of its four bytes, desynchronizing every later cluster. Keep fixed-width reads
+confined to the existing `synthetic_legacy_parse` predicate and use tagged
+reads for real legacy snapshots.
+
 The modern two-pass walker now handles both tag styles and both compressed word
 sizes. The old iOS path additionally required these layout corrections:
 

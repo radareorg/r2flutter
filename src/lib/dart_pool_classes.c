@@ -1559,7 +1559,10 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		const LegacyClusterCids lc = legacy_cluster_cids (ctx->layout);
 		for (ut64 ci2 = 0; ci2 < sh.nc && stream.cursor < stream.end; ci2++) {
 			ut32 tags = 0;
-			if (!cs_read_tagged32 (&stream, &tags)) {
+			bool tags_read = synthetic_legacy_parse
+				? cs_read_u32 (&stream, &tags)
+				: cs_read_tagged32 (&stream, &tags);
+			if (!tags_read) {
 				break;
 			}
 			const ut32 cid = dart_cid_from_tags (ctx, tags);
