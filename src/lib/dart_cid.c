@@ -151,7 +151,12 @@ static const DartCidTable *cid_table_for_layout(const DartVerLayout *layout) {
 	}
 	const DartCidTable *table = cid_table_for_version (layout? layout->dart_version: NULL);
 	if (!table) {
-		table = cid_table_for_version ("3.9.2");
+		// Fall back to the same profile the version fingerprinter picks for an
+		// unknown hash, so a layout it guessed cannot then be decoded with CIDs
+		// from a different release. Identical tables today; they diverge the
+		// moment a release shifts the numbering.
+		const DartVerLayout *newest = dart_newest_profile ();
+		table = cid_table_for_version (newest? newest->dart_version: NULL);
 	}
 	if (layout && table) {
 		memo_layout = layout;

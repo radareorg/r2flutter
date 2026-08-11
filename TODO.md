@@ -27,8 +27,9 @@ rank; each item states the concrete failure it causes.
 | `e9fa905` | **Part of P0.2**: the read-only-data rule (`modern_walk_is_rodata`) — the six classes Dart moves into the data image when pointer compression is off (exactly `Serializer::ReadOnlyObjectType`) now correctly emit no fill records. Inert until the gate opens; see P0.2 for what still blocks it. |
 | `897a98d` | **P1.1**: one `dart_cid_from_tags` helper now decodes `CID_INT32`, `CID_SHIFT1`, and `OBJECT_HEADER` tags for object inspection, modern and legacy cluster walks, data-image scanners, and InstructionTable discovery. This removes the duplicate decoders and fixes `CID_INT32` being treated as `OBJECT_HEADER` in two paths. |
 | `833f89a` | **P2.1**: deleted the legacy cluster walker — `deserialize_clusters`, `decode_class_cluster`, `decode_function_cluster`, `resolve_names`, the `DartClass`/`DartPoolFunction` types and the `DartCtx.classes`/`.functions` fields that only it wrote (244 lines). It had been running on every `-f`/`-A` alongside the modern scanner while contributing nothing: verified before removal by stubbing it out (50/50 outputs identical), and after by diffing 95 sample×action outputs against the previous commit. `decode_string_cluster`/`skip_generic_cluster`/`free_dart_string` stay — the legacy **class** parser in `dart_pool_classes.c` still uses them for CID_SHIFT1 samples. |
-| *(uncommitted)* | **P2.2**: the fake `kXxxCid` enum is gone. Only 3 of its 28 values (`Class`, `PatchClass`, `Function`) matched any real Dart release, so the legacy class parser decoded Class/Function clusters and silently skipped String/Array/Type/Mint/Double — the ones it needed for names. Its `switch` is now an `if` chain over `LegacyClusterCids`, resolved per layout via `dart_cid_get`. The two sites that fell back to a *fabricated* id when resolution failed (`dart_pool_data_image.c`, `dart_pool_it.c`) now fail closed, and a third raw `kFieldCid` comparison was resolved the same way. `builtin_type_name` keeps working on `Type.type_class_id` — a class id packed in the type flags, not a ref despite the field name — but against real ids. The `ti->kind` discriminator, which was never a snapshot id, became `DartTypeKind`. |
-| *(uncommitted)* | **Perf, found via P2.2**: `cid_table_for_layout` resolved the CID table by comparing version *strings* against every row on **every** `dart_cid_get` call, and that call sits per-object on some paths. A one-entry memo keyed on the layout pointer makes it a pointer compare. Synthetic `-x` 4862 → **37 ms** (131×), mafia `-f` 1008 → 550 ms, mafia `-c` 756 → 312 ms. Output unchanged on all 95 comparisons. This was already the dominant cost *before* P2.2 — more evidence for the P3.1 note that the double cluster walk was the wrong suspect. |
+| `f10d30d` | **P2.2**: the fake `kXxxCid` enum is gone. Only 3 of its 28 values (`Class`, `PatchClass`, `Function`) matched any real Dart release, so the legacy class parser decoded Class/Function clusters and silently skipped String/Array/Type/Mint/Double — the ones it needed for names. Its `switch` is now an `if` chain over `LegacyClusterCids`, resolved per layout via `dart_cid_get`. The two sites that fell back to a *fabricated* id when resolution failed (`dart_pool_data_image.c`, `dart_pool_it.c`) now fail closed, and a third raw `kFieldCid` comparison was resolved the same way. `builtin_type_name` keeps working on `Type.type_class_id` — a class id packed in the type flags, not a ref despite the field name — but against real ids. The `ti->kind` discriminator, which was never a snapshot id, became `DartTypeKind`. |
+| `f10d30d` | **Perf, found via P2.2**: `cid_table_for_layout` resolved the CID table by comparing version *strings* against every row on **every** `dart_cid_get` call, and that call sits per-object on some paths. A one-entry memo keyed on the layout pointer makes it a pointer compare. Synthetic `-x` 4862 → **37 ms** (131×), mafia `-f` 1008 → 550 ms, mafia `-c` 756 → 312 ms. Output unchanged on all 95 comparisons. This was already the dominant cost *before* P2.2 — more evidence for the P3.1 note that the double cluster walk was the wrong suspect. |
+| *(uncommitted)* | **P2.3**: `cid_table_for_layout`'s fallback for a layout with no usable version now goes through `dart_newest_profile()` instead of the literal `"3.9.2"`, so it agrees with the baseline the version fingerprinter picks for an unknown hash. Verified a no-op today by diffing the two tables directly — the literal floors to the 3.9.0 row, the newest profile selects 3.12.0, and they have **zero** differing CIDs and identical typed-data base/limit/stride. It stops being a no-op the moment a release shifts the numbering, which is the whole point. |
 
 Corrections to earlier assumptions, worth remembering:
 - **The CID tables are not the problem.** Flooring is exactly correct 2.10→3.12,
@@ -181,14 +182,6 @@ snapshot is the isolate, leave `vm_data = 0`) and updating that test.
 
 ## P2 — duplication, dead code, structural debt
 
-### P2.3 Two different "newest" baselines (introduced by `d387c0b`)
-`dart_pick_layout_by_hash` now fingerprints unknown hashes to
-`dart_newest_profile()` = **3.12.0**, but `cid_table_for_layout`
-(`dart_cid.c:147`) still falls back to `cid_table_for_version ("3.9.2")` when a
-layout carries no version. Harmless today (3.9 and 3.12 CIDs are identical) but
-they will diverge the moment a future release shifts CIDs. **Fix:** have the CID
-fallback use the same newest-profile accessor instead of a literal string.
-
 ### P2.4 CID/layout data still lives in three places
 `offsets.json` (source of truth, generated from SDK), `dart_cid.c` `cid_tables[]`
 (generated ✔), and `dart_offsets.h` `dart_hash_entries[]` — which only carries
@@ -228,6 +221,21 @@ Memoising it took mafia `-f` from 1008 → 550 ms and the synthetic `-x` from 48
 time here.** `-x` is now the slowest action by a wide margin (mafia 7.8 s,
 AuthPass 6.5 s) and is the next thing worth measuring; P3.2's brute-force
 InstructionTable search is the other suspect.
+
+### P3.5 `-x` renders disassembly to text and JSON only to parse it back
+`collect_pool_uses_from_entry` (`dart_pool_xrefs.c:515`) runs
+`pdj 96 @ <addr>` — a full JSON disassembly of 96 instructions — once per
+InstructionTable entry, up to the 4096 scan cap, then string-matches `opstr`
+for `PP+N` operands.
+
+**Profiled** (gdb stack sampling; `perf` is blocked in the dev sandbox): 7 of 8
+samples sit in `AArch64_printInst`/`printAliasInstr` (capstone *text* rendering)
+and `pj_kn`/`snprintf` (JSON serialisation). After the `dart_cid_get` memo, `-x`
+is by far the slowest action: mafia `-f` 550 ms, `-c` 312 ms, **`-x` 7783 ms**;
+AuthPass `-x` 6460 ms.
+**Fix:** decode with `r_anal_op` and inspect operands directly; the text and
+JSON round-trip is pure overhead. Note this also retires P3.2 as the prime
+suspect — the IT header search never appeared in the samples.
 
 ### P3.2 Brute-force InstructionTable header search
 `dart_pool_it.c:233-330` probes `{16,0,8,12} × delta -64..64 step 4`, then scans
@@ -282,8 +290,8 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## Suggested execution order
 
-1. **P2.3** — one-liner: make the CID fallback use `dart_newest_profile()` rather
-   than the literal `"3.9.2"`. Maintainer priority #1.
+1. **`-x` disassembly round-trip** (new, profiled — see P3.5). Biggest remaining
+   perf item and maintainer priority #2.
 2. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
    win; makes most iOS/macOS samples use the good path. The RO-data half is
    already implemented and the alloc phase is proven correct; what remains is
@@ -292,8 +300,8 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
    the landed P0.1 fix an end-to-end regression test.
 4. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
 5. **P1.2** — arch gating.
-6. **P3.2** (profile first — see the P3.1 note), remaining P2 cleanups, test
-   hardening.
+6. **P3.2** — now a *lower* suspect than it looked; it never showed up in the
+   `-x` profile. Remaining P2 cleanups and test hardening.
 
 `COMMIT2.md` tracks the narrower follow-ups left over from the discovery work
 (gapped layouts, more iOS fixtures, stripped ELF, P1.5 semantics).
