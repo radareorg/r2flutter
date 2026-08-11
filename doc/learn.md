@@ -1128,6 +1128,16 @@ formula in one helper prevents object, cluster, data-image, and InstructionTable
 parsers from silently disagreeing. This only centralizes tag decoding; older
 cluster fill layouts still need validation before the modern parser gate opens.
 
+On the iOS fixtures (`test/bins/ios/Runner.app` and `AuthPass.app`), the
+snapshot profile is `CID_SHIFT1` / no-compressed-pointers. The legacy class
+extraction loop must read cluster tags with `cs_read_tagged32()`, not a fixed
+little-endian `u32`: raw bytes such as `0x82 0x82 0x82...` are serialized tagged
+values, and treating the first four bytes as a fixed word yields garbage CIDs
+like `277897372`. Reading the tag correctly recovers plausible CIDs, but the
+legacy string/fill layout still desynchronizes on AuthPass, so semantic method
+name recovery for old iOS snapshots remains incomplete. Do not use `func.*`
+fallbacks as evidence for SSL/certificate patch points.
+
 ## Dart SDK Stable Tag Refresh
 
 Running `scripts/update-dart-version --sync-stable-tags --min-version 2.10.0`
