@@ -22,7 +22,8 @@ rank; each item states the concrete failure it causes.
 | `2391781` | Explicit **3.7/3.8/3.10/3.11/3.12 CID + layout profiles** (parsed from each release's real `class_id.h`). Also **verified**: the floored tables were already byte-for-byte correct for *every* release 2.10.0–3.12.1, so no CID value changed — the rows are explicit coverage + a regression anchor. |
 | `cd6b655` | Discovery hardening: removed the **bogus instruction-blob classification** (only data snapshots carry magic `0xf5f5dcdc`; a stray hit could poison `iso_instr`); symbol-derived addresses are no longer clobbered by scan guesses; `vaddr==0` duplicates can't erase a good address; magic hits deduped; Mach-O segments skipped. |
 | `0716a95` | **Structural instruction-image location** for symbol-less Mach-O: `vm_instr` = first executable section, `iso_instr = align_up(vm_instr + ImageSize, 64)` from the Dart Image header, with cross-checks that fall back to `0` rather than emit junk. Verified on stripped Runner (`0x4000`/`0xe700`, full 7671 IT entries) and AuthPass (`0x5a80`/`0xfdc0`). Adds `scripts/strip_macho_symbols.py` + `discovery-stripped-ios`. |
-| *(uncommitted)* | **P0.1**: `modern_get_fill_spec`'s fallback `rules[]` is keyed by `DartCidKind` and resolved through a per-layout `by_kind[]` table built once in `modern_cid_cache_init`, instead of literal 3.6-era CIDs. Fixes a whole-block off-by-one on 3.2–3.5 layouts (36 CIDs from `SENTINEL` upward got the neighbouring class's ref/scalar layout) and `MonomorphicSmiableCall`/`UnlinkedCall` on 3.9+, where the two swapped places. Abstract classes that never form a cluster (`CallSiteData`, `AbstractType`, `TypedDataBase`) no longer claim a spec. |
+| `d11ebc3` | **P0.1**: `modern_get_fill_spec`'s fallback `rules[]` is keyed by `DartCidKind` and resolved through a per-layout `by_kind[]` table built once in `modern_cid_cache_init`, instead of literal 3.6-era CIDs. Fixes a whole-block off-by-one on 3.2–3.5 layouts (36 CIDs from `SENTINEL` upward got the neighbouring class's ref/scalar layout) and `MonomorphicSmiableCall`/`UnlinkedCall` on 3.9+, where the two swapped places. Abstract classes that never form a cluster (`CallSiteData`, `AbstractType`, `TypedDataBase`) no longer claim a spec. |
+| *(uncommitted)* | **P2.5**: one shared cluster walker (`ModernWalk`) replaces the five hand-rolled tag→cid→alloc→fill loops. Consumers register readers in a `DartCidKind`-keyed table and the walker skips every class they don't claim, so tag decoding, alloc/fill skipping, `start_ref` bookkeeping and the inline-string decision each exist **once** (were 4–5× each). `modern_walk_fill_recorded` serves the resolver, which reads each cluster from its own recorded offset. Verified behaviour-preserving: output byte-identical on 5 samples × 21 actions. |
 
 Corrections to earlier assumptions, worth remembering:
 - **The CID tables are not the problem.** Flooring is exactly correct 2.10→3.12,
@@ -31,6 +32,14 @@ Corrections to earlier assumptions, worth remembering:
 - **The `kDart*` snapshot symbols survive `strip`** — they are external/global and
   load-bearing (the engine resolves them at runtime). Symbol-less iOS is an edge
   case (obfuscators/repackagers), not the norm.
+- **The VM snapshot's canonical string cluster carries no canonical-set table**,
+  unlike the isolate's. Measured on `android/mafia`: skipping one there consumes
+  the next cluster's bytes and desynchronises the whole walk. This contradicts
+  the SDK, where `StringDeserializationCluster::ReadAlloc` always calls
+  `BuildCanonicalSetFromLayout` and both snapshots are read with
+  `is_non_root_unit=false`. Unexplained; `modern_vm_strings_alloc` encodes the
+  measured behaviour. Worth revisiting — it may mean the VM cluster range is
+  being located slightly wrong and the strings we recover are a happy accident.
 
 ---
 
@@ -91,9 +100,10 @@ app samples need collecting.
 ### P1.1 Tag-style CID decode applied inconsistently
 `dart_object.c:88-99` honours all three `DartTagStyle` variants, but cluster/CID
 decode hardcodes the OBJECT_HEADER form `(tags>>12)&0xFFFFF` in
-`dart_pool_clusters.c:226`, `dart_pool_modern.c:2328/3160/3529/3688`,
-`dart_pool_data_image.c:82`; and `dart_pool_it.c:158-160` routes **CID_INT32**
-into the OBJECT_HEADER formula (should be `header & 0xffffffff`).
+`dart_pool_clusters.c:226`, `modern_cid_from_tags` (`dart_pool_modern.c`, now the
+decoder's single site after P2.5), `dart_pool_data_image.c:82`; and
+`dart_pool_it.c:158-160` routes **CID_INT32** into the OBJECT_HEADER formula
+(should be `header & 0xffffffff`).
 **Failure:** pre-2.14 (CID_INT32) and 2.14–3.3 (CID_SHIFT1) snapshots are
 mis-decoded by every cluster walker. Mitigated today only because those eras also
 fail the modern gate and fall back to scanners.
@@ -174,14 +184,6 @@ fallback use the same newest-profile accessor instead of a literal string.
 overridden by the feature flags anyway (cws is decided three times, flags win).
 **Fix:** drop the hash→cws table or derive it.
 
-### P2.5 alloc/fill cluster walk reimplemented 5× in the modern decoder
-`modern_parse_cluster_meta` (`:2307`), `modern_load_vm_base_strings` (`:3131`),
-`dart_modern_extract_classes_from_clusters` (`:3489`),
-`dart_modern_scan_names_from_clusters` (`:3616`), resolver init (`:1609`) — each
-re-runs tag→cid→alloc→fill with subtly different special-casing, so a layout fix
-must be made in all five. **Fix:** one shared walker with callbacks. (Do this
-*before* P0.2, which otherwise has to be applied five times.)
-
 ### P2.6 `data_image_base` recomputed in ≥3 places with a magic-16 fallback
 `dart_object.c:304-305`, `dart_pool_classes.c:1646-1655`, plus IT callers each do
 `snapshot + align_up(total_len, layout->max_alignment ?: 16)`. Extract one helper
@@ -248,16 +250,16 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## Suggested execution order
 
-1. **P2.5** — unify the modern alloc/fill walker (prerequisite: makes P0.2 a
-   one-place change instead of five).
-2. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
-   win; makes most iOS/macOS samples use the good path.
-3. **P0.3** — grow the corpus alongside 2 so it is actually verified, and to give
+1. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
+   win; makes most iOS/macOS samples use the good path. P2.5 has landed, so the
+   string-payload decision now lives in `modern_walk_strings_inline` alone.
+2. **P0.3** — grow the corpus alongside 1 so it is actually verified, and to give
    the landed P0.1 fix an end-to-end regression test.
-4. **P2.1 + P3.1** — delete the legacy walker; one cluster walk, one data scan.
-5. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
-6. **P1.1, P1.2** — tag-style helper; arch gating.
-7. **P3.2–P3.4**, remaining P1/P2 cleanups, test hardening.
+3. **P2.1 + P3.1** — delete the legacy walker; one cluster walk, one data scan.
+4. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
+5. **P1.1, P1.2** — tag-style helper (now a one-line change in the modern decoder
+   thanks to P2.5); arch gating.
+6. **P3.2–P3.4**, remaining P1/P2 cleanups, test hardening.
 
 `COMMIT2.md` tracks the narrower follow-ups left over from the discovery work
 (gapped layouts, more iOS fixtures, stripped ELF, P1.5 semantics).
