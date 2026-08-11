@@ -22,6 +22,7 @@ rank; each item states the concrete failure it causes.
 | `2391781` | Explicit **3.7/3.8/3.10/3.11/3.12 CID + layout profiles** (parsed from each release's real `class_id.h`). Also **verified**: the floored tables were already byte-for-byte correct for *every* release 2.10.0–3.12.1, so no CID value changed — the rows are explicit coverage + a regression anchor. |
 | `cd6b655` | Discovery hardening: removed the **bogus instruction-blob classification** (only data snapshots carry magic `0xf5f5dcdc`; a stray hit could poison `iso_instr`); symbol-derived addresses are no longer clobbered by scan guesses; `vaddr==0` duplicates can't erase a good address; magic hits deduped; Mach-O segments skipped. |
 | `0716a95` | **Structural instruction-image location** for symbol-less Mach-O: `vm_instr` = first executable section, `iso_instr = align_up(vm_instr + ImageSize, 64)` from the Dart Image header, with cross-checks that fall back to `0` rather than emit junk. Verified on stripped Runner (`0x4000`/`0xe700`, full 7671 IT entries) and AuthPass (`0x5a80`/`0xfdc0`). Adds `scripts/strip_macho_symbols.py` + `discovery-stripped-ios`. |
+| *(uncommitted)* | **P0.1**: `modern_get_fill_spec`'s fallback `rules[]` is keyed by `DartCidKind` and resolved through a per-layout `by_kind[]` table built once in `modern_cid_cache_init`, instead of literal 3.6-era CIDs. Fixes a whole-block off-by-one on 3.2–3.5 layouts (36 CIDs from `SENTINEL` upward got the neighbouring class's ref/scalar layout) and `MonomorphicSmiableCall`/`UnlinkedCall` on 3.9+, where the two swapped places. Abstract classes that never form a cluster (`CallSiteData`, `AbstractType`, `TypedDataBase`) no longer claim a spec. |
 
 Corrections to earlier assumptions, worth remembering:
 - **The CID tables are not the problem.** Flooring is exactly correct 2.10→3.12,
@@ -51,32 +52,13 @@ Two consequences drive the P0 items below:
 1. The 4000-line modern decoder is **skipped for most binaries**, including
    modern-era ones that merely lack pointer compression (iOS Runner 3.4.3,
    hello 3.11.5). Those rely on the data-image scanners for names.
-2. The single modern-path sample is 3.9.2, which **happens to match** the
-   hardcoded CID table in `modern_get_fill_spec` — so the P0.1 bug below is
-   invisible to CI.
+2. The single modern-path sample is 3.9.2, which **nearly matched** the CID table
+   `modern_get_fill_spec` used to hardcode — which is why the P0.1 bug was
+   invisible to CI, and why its fix still has no end-to-end test (P0.3).
 
 ---
 
 ## P0 — correctness bugs with no test coverage
-
-### P0.1 `modern_get_fill_spec` fallback keyed on absolute 3.6/3.9-era CIDs
-`dart_pool_modern.c:888-946`. The named checks use the layout (good), but the
-fallback `rules[]` hardcodes literal CIDs spanning **6–89** — straight through the
-range that shifted between 3.5 and 3.6. Proven divergence:
-
-| cid | real meaning in 3.5.x | rule assumes (3.6/3.9) |
-|-----|----------------------|------------------------|
-| 46 | `TYPE_ARGUMENTS` | `LIBRARY_PREFIX` |
-| 49 | `FUNCTION_TYPE` | `TYPE` |
-| 89 | `ARRAY` | `CONST_SET` |
-| 24 | `CODE_SOURCE_MAP` | `PC_DESCRIPTORS` |
-
-**Failure:** on a Dart 3.4/3.5-era *compressed* snapshot (Flutter 3.19–3.24, very
-common) an object gets the wrong ref/scalar layout, the fill stream desyncs, and
-**every subsequent cluster misparses** — silently, with no error.
-**Fix:** drive `rules[]` from `dart_cid_get(layout, …)` keyed by `DartCidKind`
-instead of literal numbers. **Test:** needs a 3.4/3.5-era compressed-pointer
-sample (see P0.3).
 
 ### P0.2 Extend the modern decoder to uncompressed (`cws == 8`) snapshots
 `dart_pool_modern.c:207`. The `cws == 4` half of the gate is an implementation
@@ -92,7 +74,9 @@ This is the single largest *quality* win available.
 ### P0.3 Test corpus does not cover the decoders we ship
 Add samples that exercise the untested combinations, then wire them into the
 suite:
-- a **Dart 3.4/3.5-era compressed-pointer** app (unblocks P0.1's regression test);
+- a **Dart 3.4/3.5-era compressed-pointer** app (P0.1 is fixed but still has no
+  end-to-end regression test; it was verified only by resolving `rules[]` against
+  each layout in isolation);
 - an **uncompressed modern** app through the modern path (validates P0.2);
 - more **iOS** binaries generally, ideally real obfuscated/stripped release
   `App`s (also broadens the `0716a95` structural path, per `COMMIT2.md`);
@@ -264,16 +248,16 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## Suggested execution order
 
-1. **P2.5** — unify the modern alloc/fill walker (prerequisite: makes P0.1/P0.2
-   one-place changes instead of five).
-2. **P0.1** — layout-driven `rules[]`. Correctness bug on common Flutter versions.
-3. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
+1. **P2.5** — unify the modern alloc/fill walker (prerequisite: makes P0.2 a
+   one-place change instead of five).
+2. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
    win; makes most iOS/macOS samples use the good path.
-4. **P0.3** — grow the corpus alongside 2–3 so both are actually verified.
-5. **P2.1 + P3.1** — delete the legacy walker; one cluster walk, one data scan.
-6. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
-7. **P1.1, P1.2** — tag-style helper; arch gating.
-8. **P3.2–P3.4**, remaining P1/P2 cleanups, test hardening.
+3. **P0.3** — grow the corpus alongside 2 so it is actually verified, and to give
+   the landed P0.1 fix an end-to-end regression test.
+4. **P2.1 + P3.1** — delete the legacy walker; one cluster walk, one data scan.
+5. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
+6. **P1.1, P1.2** — tag-style helper; arch gating.
+7. **P3.2–P3.4**, remaining P1/P2 cleanups, test hardening.
 
 `COMMIT2.md` tracks the narrower follow-ups left over from the discovery work
 (gapped layouts, more iOS fixtures, stripped ELF, P1.5 semantics).
