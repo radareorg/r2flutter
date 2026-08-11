@@ -1509,7 +1509,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 			if (!cs_read_u32 (&stream, &tags)) {
 				break;
 			}
-			uint32_t cid = (tags >> 12) & 0xFFFFF;
+			const uint32_t cid = dart_cid_from_tags (ctx, tags);
 			bool is_canonical = ((tags >> 1) & 1) != 0;
 			(void)is_canonical;
 			if (ctx->verbose > 1) {

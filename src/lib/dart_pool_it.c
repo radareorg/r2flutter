@@ -147,19 +147,7 @@ static bool read_it_data_header_from_string_object(DartCtx *ctx, ut64 obj_addr, 
 		return false;
 	}
 	ut64 tags = r_read_le64 (objhdr);
-	ut32 cid = 0;
-	switch (ctx->layout->tag_style) {
-	case DART_TAG_STYLE_OBJECT_HEADER:
-		cid = (ut32) ((tags >> 12) & 0xFFFFF);
-		break;
-	case DART_TAG_STYLE_CID_SHIFT1:
-		cid = (ut32) (tags >> 1);
-		break;
-	case DART_TAG_STYLE_CID_INT32:
-	default:
-		cid = (ut32) ((tags >> 12) & 0xFFFFF);
-		break;
-	}
+	const ut32 cid = dart_cid_from_tags (ctx, tags);
 	const int resolved_string_cid = dart_cid_get (ctx->layout, DART_CID_ONE_BYTE_STRING);
 	const int string_cid = resolved_string_cid >= 0? resolved_string_cid: kOneByteStringCid;
 	if ((int)cid != string_cid) {

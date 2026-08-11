@@ -85,19 +85,6 @@ static int dart_object_heap_tag(DartCtx *ctx) {
 	return tag;
 }
 
-static int dart_object_cid_from_header(DartCtx *ctx, ut64 header) {
-	DartTagStyle style = ctx && ctx->layout? ctx->layout->tag_style: DART_TAG_STYLE_OBJECT_HEADER;
-	switch (style) {
-	case DART_TAG_STYLE_CID_INT32:
-		return (int) (header & 0xffffffffU);
-	case DART_TAG_STYLE_CID_SHIFT1:
-		return (int) ((header >> 1) & 0xffffffffU);
-	case DART_TAG_STYLE_OBJECT_HEADER:
-	default:
-		return (int) ((header >> 12) & 0xfffffU);
-	}
-}
-
 static const char *dart_object_cid_name(DartCtx *ctx, int cid) {
 	const DartVerLayout *layout = ctx? ctx->layout: NULL;
 	for (int i = 0; i < DART_CID_KIND_COUNT; i++) {
@@ -265,7 +252,7 @@ static bool dart_object_decode_at(DartCtx *ctx, ut64 addr, DartObjectInfo *out) 
 	}
 	out->addr = addr;
 	out->header = r_read_le64 (hdr);
-	out->cid = dart_object_cid_from_header (ctx, out->header);
+	out->cid = (int)dart_cid_from_tags (ctx, out->header);
 	if (out->cid <= 0 || out->cid >= 0xfffff) {
 		return false;
 	}

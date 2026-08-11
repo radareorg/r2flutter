@@ -21,21 +21,6 @@ void init_function_layout(DartCtx *ctx, DartFunctionLayout *fl) {
 	}
 }
 
-static ut32 extract_cid_from_header(DartCtx *ctx, ut64 header) {
-	if (!ctx || !ctx->layout) {
-		return 0;
-	}
-	switch (ctx->layout->tag_style) {
-	case DART_TAG_STYLE_OBJECT_HEADER:
-		return (ut32) ((header >> 12) & 0xFFFFF);
-	case DART_TAG_STYLE_CID_SHIFT1:
-		return (ut32) (header >> 1);
-	case DART_TAG_STYLE_CID_INT32:
-	default:
-		return (ut32) ((header >> 12) & 0xFFFFF);
-	}
-}
-
 static bool read_object_pointer(DartCtx *ctx, const ut8 *buf, ut32 off, bool use_compressed, ut64 data_base, ut64 data_end, bool restrict_range, ut64 *out_addr) {
 	(void)ctx;
 	if (use_compressed) {
@@ -79,7 +64,7 @@ bool read_data_image_field(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_en
 		return false;
 	}
 	ut64 header = r_read_le64 (hdr);
-	if ((int) ((header >> 12) & 0xFFFFF) != kFieldCid) {
+	if ((int)dart_cid_from_tags (ctx, header) != kFieldCid) {
 		return false;
 	}
 	bool use_compressed = ctx->compressed_word_size == 4;
@@ -174,7 +159,7 @@ bool read_data_image_method(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_e
 	}
 	const int resolved_function_cid = dart_cid_get (ctx->layout, DART_CID_FUNCTION);
 	const int cid_function = resolved_function_cid >= 0? resolved_function_cid: kFunctionCid;
-	if ((int)extract_cid_from_header (ctx, r_read_le64 (buf)) != cid_function) {
+	if ((int)dart_cid_from_tags (ctx, r_read_le64 (buf)) != cid_function) {
 		return false;
 	}
 	ut64 entry = r_read_le64 (buf + fl->entry_off);

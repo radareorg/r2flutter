@@ -223,7 +223,7 @@ int deserialize_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut6
 			}
 			break;
 		}
-		uint32_t cid = (tags >> 12) & 0xFFFFF;
+		const uint32_t cid = dart_cid_from_tags (ctx, tags);
 		bool is_canonical = ((tags >> 1) & 1) != 0;
 		if (ctx->verbose > 1) {
 			fprintf (stderr, "[r2flutter] Cluster %" PRIu64 ": cid=%u canonical=%d cursor=0x%" PFMT64x "\n", ci, cid, is_canonical, stream.cursor);

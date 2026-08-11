@@ -1361,10 +1361,6 @@ static bool modern_read_cluster_tags(ClusterStream *s, DartCtx *ctx, ut32 *out) 
 	return cs_read_tagged32 (s, out);
 }
 
-static int modern_cid_from_tags(ut32 tags) {
-	return (int) ((tags >> 12) & 0xFFFFF);
-}
-
 // Shared alloc/fill cluster walker.
 //
 // Every consumer below reads the same stream the same way: for each cluster a
@@ -1492,7 +1488,7 @@ static bool modern_walk_alloc(ModernWalk *w, ClusterStream *s) {
 		if (!modern_read_cluster_tags (s, w->ctx, &tags)) {
 			return modern_walk_fail (w, "alloc tag", i, s->cursor, -1);
 		}
-		m->cid = modern_cid_from_tags (tags);
+		m->cid = (int)dart_cid_from_tags (w->ctx, tags);
 		m->is_canonical = ((tags >> 1) & 1) != 0;
 		m->is_immutable = (tags & (1 << 6)) != 0;
 		m->start_ref = next_ref;

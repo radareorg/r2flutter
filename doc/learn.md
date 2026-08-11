@@ -1121,6 +1121,13 @@ so the generator keeps `2.18.2` on the `3.9.2`-shaped fallback CID table used by
 the sample. This is documented as a Flutter-engine snapshot quirk, not as
 standalone Dart SDK `2.18.2` CID data.
 
+CID extraction must go through `dart_cid_from_tags()`. Serialized snapshots use
+three encodings: a raw 32-bit CID through Dart 2.13, a CID shifted left by one
+through Dart 3.3, and the ObjectHeader bitfield from Dart 3.4 onward. Keeping the
+formula in one helper prevents object, cluster, data-image, and InstructionTable
+parsers from silently disagreeing. This only centralizes tag decoding; older
+cluster fill layouts still need validation before the modern parser gate opens.
+
 ## Dart SDK Stable Tag Refresh
 
 Running `scripts/update-dart-version --sync-stable-tags --min-version 2.10.0`

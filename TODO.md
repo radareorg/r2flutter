@@ -24,6 +24,7 @@ rank; each item states the concrete failure it causes.
 | `0716a95` | **Structural instruction-image location** for symbol-less Mach-O: `vm_instr` = first executable section, `iso_instr = align_up(vm_instr + ImageSize, 64)` from the Dart Image header, with cross-checks that fall back to `0` rather than emit junk. Verified on stripped Runner (`0x4000`/`0xe700`, full 7671 IT entries) and AuthPass (`0x5a80`/`0xfdc0`). Adds `scripts/strip_macho_symbols.py` + `discovery-stripped-ios`. |
 | `d11ebc3` | **P0.1**: `modern_get_fill_spec`'s fallback `rules[]` is keyed by `DartCidKind` and resolved through a per-layout `by_kind[]` table built once in `modern_cid_cache_init`, instead of literal 3.6-era CIDs. Fixes a whole-block off-by-one on 3.2–3.5 layouts (36 CIDs from `SENTINEL` upward got the neighbouring class's ref/scalar layout) and `MonomorphicSmiableCall`/`UnlinkedCall` on 3.9+, where the two swapped places. Abstract classes that never form a cluster (`CallSiteData`, `AbstractType`, `TypedDataBase`) no longer claim a spec. |
 | *(uncommitted)* | **P2.5 + part of P0.2**: one shared cluster walker (`ModernWalk`) replaces the five hand-rolled tag→cid→alloc→fill loops. Consumers register readers in a `DartCidKind`-keyed table and the walker skips every class they don't claim, so tag decoding, alloc/fill skipping, `start_ref` bookkeeping and the inline-string decision each exist **once** (were 4–5× each). `modern_walk_fill_recorded` serves the resolver, which reads each cluster from its own recorded offset. Verified behaviour-preserving: output byte-identical on 5 samples × 21 actions. Also lands the **P0.2 read-only-data rule** (`modern_walk_is_rodata`): the six classes Dart moves into the data image when pointer compression is off now correctly have no fill records. Inert until the gate opens. |
+| *(uncommitted)* | **P1.1**: one `dart_cid_from_tags` helper now decodes `CID_INT32`, `CID_SHIFT1`, and `OBJECT_HEADER` tags for object inspection, modern and legacy cluster walks, data-image scanners, and InstructionTable discovery. This removes the duplicate decoders and fixes `CID_INT32` being treated as `OBJECT_HEADER` in two paths. |
 
 Corrections to earlier assumptions, worth remembering:
 - **The CID tables are not the problem.** Flooring is exactly correct 2.10→3.12,
@@ -132,18 +133,6 @@ app samples need collecting.
 ---
 
 ## P1 — correctness, lower prevalence or already-guarded
-
-### P1.1 Tag-style CID decode applied inconsistently
-`dart_object.c:88-99` honours all three `DartTagStyle` variants, but cluster/CID
-decode hardcodes the OBJECT_HEADER form `(tags>>12)&0xFFFFF` in
-`dart_pool_clusters.c:226`, `modern_cid_from_tags` (`dart_pool_modern.c`, now the
-decoder's single site after P2.5), `dart_pool_data_image.c:82`; and
-`dart_pool_it.c:158-160` routes **CID_INT32** into the OBJECT_HEADER formula
-(should be `header & 0xffffffff`).
-**Failure:** pre-2.14 (CID_INT32) and 2.14–3.3 (CID_SHIFT1) snapshots are
-mis-decoded by every cluster walker. Mitigated today only because those eras also
-fail the modern gate and fall back to scanners.
-**Fix:** one tag-style-aware extractor, called everywhere.
 
 ### P1.2 Hardcoded 8-byte target word / arm64 assumptions
 - `modern_target_word_size()` (`dart_pool_modern.c:1196-1199`) **ignores `ctx` and
@@ -294,8 +283,7 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
    the landed P0.1 fix an end-to-end regression test.
 3. **P2.1 + P3.1** — delete the legacy walker; one cluster walk, one data scan.
 4. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
-5. **P1.1, P1.2** — tag-style helper (now a one-line change in the modern decoder
-   thanks to P2.5); arch gating.
+5. **P1.2** — arch gating.
 6. **P3.2–P3.4**, remaining P1/P2 cleanups, test hardening.
 
 `COMMIT2.md` tracks the narrower follow-ups left over from the discovery work

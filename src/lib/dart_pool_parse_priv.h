@@ -17,6 +17,19 @@ typedef struct {
 	ut64 end;
 } ClusterStream;
 
+static inline ut32 dart_cid_from_tags(const DartCtx *ctx, ut64 tags) {
+	const DartTagStyle style = ctx && ctx->layout? ctx->layout->tag_style: DART_TAG_STYLE_OBJECT_HEADER;
+	switch (style) {
+	case DART_TAG_STYLE_CID_INT32:
+		return (ut32)tags;
+	case DART_TAG_STYLE_CID_SHIFT1:
+		return (ut32) (tags >> 1);
+	case DART_TAG_STYLE_OBJECT_HEADER:
+	default:
+		return (ut32) ((tags >> 12) & 0xfffffU);
+	}
+}
+
 typedef enum {
 	kIllegalCid = 0,
 	kClassCid = 5,
