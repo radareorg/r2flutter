@@ -4,7 +4,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -j -f -l 3 bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"addr":59240,"name":"func.0000e768"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"func.0000e7a0"}]
+[{"addr":59240,"name":"method.PointerEvent.get:radiusMinor"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"method.PointerEvent.get:distance"}]
 EOF
 RUN
 
@@ -14,8 +14,8 @@ CMDS=<<EOF
 !!../bin/r2flutter -r -f -l 2 bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
-f method.func.0000e768 = 0xe768
-'@0xe768'CC func.0000e768
+f method.PointerEvent.get:radiusMinor = 0xe768
+'@0xe768'CC method.PointerEvent.get:radiusMinor
 f method.func.0000e770 = 0xe770
 '@0xe770'CC func.0000e770
 EOF

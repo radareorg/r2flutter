@@ -100,4 +100,3 @@ void skip_generic_cluster(ClusterStream *stream) {
 		}
 	}
 }
-

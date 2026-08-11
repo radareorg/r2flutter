@@ -7,8 +7,8 @@
     "contains": [
       "snapshot_hash=78da37fed6bf1489361a312568249f3f dart_version=3.11.5",
       "detail: object_pool_entries",
-      "34 cid=23 alloc=object_pool fill=none count=1",
-      "object_pool_decode: fill_not_parsed"
+      "34 cid=23 alloc=object_pool fill=object_pool count=1",
+      "object_pool ref=9145 index=0 length=1380"
     ]
   }
 }

@@ -649,7 +649,7 @@ _Uint16List\x00\x00\x00\x00\x00...
 
 Blutter (in `third_party/blutter`) currently only supports Android ELF (arm64). It compiles the actual Dart VM runtime for the target version and walks live ClassTable/ObjectPool structures via `Dart_Initialize`. iOS support is listed as a TODO. The key difference: Blutter's `ElfHelper::MapLibAppSo()` has incomplete Mach-O handling.
 
-## String Object Storage in ROData Image (Dart 3.4.3+)
+## String Object Storage in No-Compressed-Pointer ROData Images
 
 **Finding**: In AOT snapshots without compressed pointers, canonical strings are stored as raw Dart heap objects in the ROData image section, NOT as serialized cluster data.
 
@@ -665,7 +665,7 @@ Offset 0x08: [8 bytes] Length (SMI-tagged: actual_length << 1)
 Offset 0x10: [variable] String data (1 byte per char for OneByteString)
 ```
 
-Objects are aligned to 8 bytes.
+Objects in the tested 64-bit AOT images are aligned to 16 bytes.
 
 ### RODataSerializationCluster
 
@@ -686,10 +686,17 @@ Strings in compressed-pointer snapshots are serialized inline in the cluster str
 
 ### ROData Location
 
-The ROData image follows the isolate snapshot data, aligned to `kMaxObjectAlignment` (16 bytes):
+The ROData image follows the snapshot stream at Dart's fixed
+`kObjectStartAlignment` (64 bytes). Do not reuse the 16-byte heap-object
+alignment for this boundary:
 ```
-rodata_start = iso_data + align16(iso_snapshot_length)
+rodata_start = iso_data + align64(iso_snapshot_length)
 ```
+
+AuthPass demonstrates why the distinction matters: its isolate stream ends at
+`0xa0a3c2`, so the image starts at `0xa0a400`, not `0xa0a3d0`. The deltas inside
+each `RODataSerializationCluster::WriteAlloc` record are still measured in
+16-byte object-alignment units.
 
 The ROData section extends to the end of the `.rodata` (Android) or `__TEXT.__const` (iOS) section.
 
@@ -834,7 +841,7 @@ Current r2 command export is split across the standalone `-R` script mode, the p
 
 ## Parser Split Boundaries
 
-The modern object-header cluster naming code now lives in `src/lib/dart_pool_modern.c`. Snapshot header parsing, Dart unsigned decoding, UTF-16 decoding, bounded memory reads, and the shared cluster stream reader live in `src/lib/dart_pool_snapshot.c`. Snapshot discovery lives in `src/lib/dart_pool_discovery.c`. Code-name and name-pool discovery lives in `src/lib/dart_pool_names.c`. String extraction and string dump formatting live in `src/lib/dart_pool_strings.c`. Raw data-image `Field` / `Function` object scanning lives in `src/lib/dart_pool_data_image.c`. InstructionTable fixed/varint/linear decoding lives in `src/lib/dart_pool_it.c`. Cross-reference collection and dump formatting lives in `src/lib/dart_pool_xrefs.c`. Legacy clustered snapshot decoding lives in `src/lib/dart_pool_clusters.c`. Class extraction, enum recovery, and class dump formatting live in `src/lib/dart_pool_classes.c`. These are intentionally separated from the public parser API through `src/lib/dart_pool_parse_priv.h`.
+The modern two-pass cluster naming code now lives in `src/lib/dart_pool_modern.c`. Snapshot header parsing, Dart unsigned decoding, UTF-16 decoding, bounded memory reads, and the shared cluster stream reader live in `src/lib/dart_pool_snapshot.c`. Snapshot discovery lives in `src/lib/dart_pool_discovery.c`. Code-name and name-pool discovery lives in `src/lib/dart_pool_names.c`. String extraction and string dump formatting live in `src/lib/dart_pool_strings.c`. Raw data-image `Field` / `Function` object scanning lives in `src/lib/dart_pool_data_image.c`. InstructionTable fixed/varint/linear decoding lives in `src/lib/dart_pool_it.c`. Cross-reference collection and dump formatting lives in `src/lib/dart_pool_xrefs.c`. Legacy clustered snapshot decoding lives in `src/lib/dart_pool_clusters.c`. Class extraction, enum recovery, and class dump formatting live in `src/lib/dart_pool_classes.c`. These are intentionally separated from the public parser API through `src/lib/dart_pool_parse_priv.h`.
 
 Keep future splits on the same boundary: move whole parser subsystems behind private headers first, then reduce the remaining orchestration in `dart_pool_parse.c`. The remaining parser file should mostly be public API orchestration and header rendering.
 
@@ -867,7 +874,11 @@ The fallback class-name scanner reads fixed-size chunks that are not guaranteed 
 
 Validate the CLI obfuscation map only after `dart_app_new_from_core ()` copies the initial `DartCtx`; loading it before that copy would share one hash table across two independently finalized contexts. After validation, keep the map loaded in the context that will use it instead of immediately forcing a second lazy parse.
 
-Modern object-header cluster helpers run only after `dart_modern_is_supported_snapshot ()` succeeds. Past that public gate, `ctx`, `ctx->layout`, and compressed 32-bit pointer mode are invariants for `src/lib/dart_pool_modern.c`, so private CID accessors should read layout fields directly and stay `static inline`. Keep null/layout fallback checks on the public gate, not inside every CID comparison or fill-skip path.
+Modern cluster helpers run only after `dart_modern_is_supported_snapshot ()`
+succeeds. Past that public gate, `ctx`, `ctx->layout`, a validated
+`CID_SHIFT1`/`OBJECT_HEADER` style, and a 4- or 8-byte compressed-word size are
+invariants for `src/lib/dart_pool_modern.c`. Keep null/layout fallback checks on
+the public gate rather than duplicating them inside every CID comparison.
 
 ## 2026-06-01: Class and Field Cluster Recovery
 
@@ -884,10 +895,10 @@ section to collect cluster ref ranges and Smi/Mint values, then walks fill to
 recover Class, Field, Function, and String metadata. This populates `ic` with
 real class members and avoids the old `0fields` class-only result.
 
-Non-compressed ObjectHeader snapshots (`cws=8`, e.g. Android first and the iOS
-sample) still need a separate ROData string/ref path. Until that exists, the
-class extractor skips the legacy alloc-phase decoder and reports string-based
-fallback classes explicitly instead of logging bogus huge CIDs.
+Non-compressed snapshots (`cws=8`) now have the separate ROData string/ref path
+needed for semantic function naming. Full structured class/field extraction is
+still gated independently; when unavailable, `-c` reports string-based fallback
+classes rather than running the invalid alloc-phase legacy decoder.
 
 ## Extended Header Cluster Walk
 
@@ -1121,22 +1132,50 @@ so the generator keeps `2.18.2` on the `3.9.2`-shaped fallback CID table used by
 the sample. This is documented as a Flutter-engine snapshot quirk, not as
 standalone Dart SDK `2.18.2` CID data.
 
-CID extraction must go through `dart_cid_from_tags()`. Serialized snapshots use
+Serialized-cluster CID extraction must go through `dart_cid_from_tags()`.
+Serialized snapshots use
 three encodings: a raw 32-bit CID through Dart 2.13, a CID shifted left by one
 through Dart 3.3, and the ObjectHeader bitfield from Dart 3.4 onward. Keeping the
-formula in one helper prevents object, cluster, data-image, and InstructionTable
-parsers from silently disagreeing. This only centralizes tag decoding; older
-cluster fill layouts still need validation before the modern parser gate opens.
+formula in one helper prevents cluster parsers from silently disagreeing. Raw
+heap objects are a separate tag domain: data-image strings, fields, functions,
+and InstructionTable backing objects always decode CID bits 12..31 from their
+ObjectHeader, even when the surrounding serialized cluster stream uses
+`CID_SHIFT1`.
 
 On the iOS fixtures (`test/bins/ios/Runner.app` and `AuthPass.app`), the
-snapshot profile is `CID_SHIFT1` / no-compressed-pointers. The legacy class
-extraction loop must read cluster tags with `cs_read_tagged32()`, not a fixed
-little-endian `u32`: raw bytes such as `0x82 0x82 0x82...` are serialized tagged
-values, and treating the first four bytes as a fixed word yields garbage CIDs
-like `277897372`. Reading the tag correctly recovers plausible CIDs, but the
-legacy string/fill layout still desynchronizes on AuthPass, so semantic method
-name recovery for old iOS snapshots remains incomplete. Do not use `func.*`
-fallbacks as evidence for SSL/certificate patch points.
+snapshot has no compressed pointers; AuthPass uses `CID_SHIFT1` (Dart 3.2.5)
+and Runner uses `OBJECT_HEADER` (Dart 3.4.3). The legacy class loop's fixed-u32
+tag read was only the first bug. Production snapshots serialize all cluster
+alloc records before all fill records, so interleaving alloc/fill parsing can
+never stay synchronized.
+
+The modern two-pass walker now handles both tag styles and both compressed word
+sizes. The old iOS path additionally required these layout corrections:
+
+- `CID_SHIFT1` uses bit 0 as the canonical flag.
+- Dart 3.2/3.8 `FunctionType` fill is six references, one byte of flags, a
+  serialized `uint32_t` packed parameter count, and a serialized `uint16_t`
+  packed type-parameter count. Both integer writes go through Dart's tagged
+  `BaseWriteStream::Raw` encoding rather than occupying fixed byte widths.
+- `Instance::NextFieldOffset()` is one compressed word when cws=8 and two when
+  cws=4. Each unboxed machine-word field is emitted as two serialized 32-bit
+  chunks in both modes.
+- ROData alloc values are cumulative image offsets in object-alignment units;
+  the associated string bytes are not in the fill stream.
+- A later unsupported ObjectPool fill must not invalidate already decoded Code,
+  Function, Class, PatchClass, and Library fills.
+
+With those fixes, AuthPass resolves VM/isolate ROData string refs and maps
+35,928 semantic code-slot names. It recovers
+`_RawSecureSocket._secureHandshake`, both bad-certificate registration methods,
+and `_RawSecureSocket._onBadCertificateWrapper` at `0x3199d4`. Runner resolves
+its VM and isolate ROData through the same path and maps 7,271 slots. Keep matching
+stable name substrings because numeric Dart private-name suffixes vary by
+snapshot.
+
+Finally, a loader-generated Mach-O name such as `func.003199d4` is a fallback,
+not a higher-quality source. RBin names must not overwrite a semantic name
+already joined from `Code.owner -> Function -> String`.
 
 ## Dart SDK Stable Tag Refresh
 

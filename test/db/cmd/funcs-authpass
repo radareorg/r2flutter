@@ -4,9 +4,9 @@ CMDS=<<EOF
 !!../bin/r2flutter -f -l 3 bins/ios/AuthPass.app
 EOF
 EXPECT=<<EOF
-0xfe28 func.0000fe28
-0xfed4 func.0000fed4
-0xff50 func.0000ff50
+0xfe28 method._HashMap_3220832.addAll
+0xfed4 method._HashMap_3220832.dyn:forEach
+0xff50 method.MapBase.dyn:map
 EOF
 RUN
 
@@ -16,6 +16,6 @@ CMDS=<<EOF
 !!../bin/r2flutter -j -f -l 3 bins/ios/AuthPass.app
 EOF
 EXPECT=<<EOF
-[{"addr":65064,"name":"func.0000fe28"},{"addr":65236,"name":"func.0000fed4"},{"addr":65360,"name":"func.0000ff50"}]
+[{"addr":65064,"name":"method._HashMap_3220832.addAll"},{"addr":65236,"name":"method._HashMap_3220832.dyn:forEach"},{"addr":65360,"name":"method.MapBase.dyn:map"}]
 EOF
 RUN

@@ -1671,15 +1671,14 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 	r_list_free (method_list);
 	r_list_free (field_list);
 	if (ctx->dump_fields && r_list_length (class_list) > 0) {
-		ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
-		ut64 data_image_base = snapshot_base + ((sh.total_len + (kAlign - 1)) & ~ (kAlign - 1));
+		ut64 data_image_base = dart_snapshot_data_image_base (snapshot_base, sh.total_len);
 		ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: (data_image_base + (4ULL << 20));
 		scan_fields_from_data_image (ctx, class_list, data_image_base, data_image_end);
 		scan_methods_from_data_image (ctx, class_list, data_image_base, data_image_end);
 		if (ctx->vm_data) {
 			DartSnapshotHeader vm_sh;
 			if (dart_snapshot_header_read (ctx, ctx->vm_data, &vm_sh)) {
-				ut64 vm_data_base = ctx->vm_data + ((vm_sh.total_len + (kAlign - 1)) & ~ (kAlign - 1));
+				ut64 vm_data_base = dart_snapshot_data_image_base (ctx->vm_data, vm_sh.total_len);
 				ut64 vm_data_end = ctx->vm_instr? ctx->vm_instr: (vm_data_base + (4ULL << 20));
 				scan_fields_from_data_image (ctx, class_list, vm_data_base, vm_data_end);
 				scan_methods_from_data_image (ctx, class_list, vm_data_base, vm_data_end);

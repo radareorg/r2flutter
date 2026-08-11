@@ -52,12 +52,12 @@ vaddr=0x70385154 paddr=0x385154
 EOF
 RUN
 
-NAME=pp-json-ios-unresolved
+NAME=pp-json-ios
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -q -j -p bins/ios/Runner.app 2>/dev/null
+!!../bin/r2flutter -q -j -p bins/ios/Runner.app 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); print ("base=%d vaddr=%d paddr=%d kind=%s cluster=%d pool=%d length=%d size=%d word=%d source_paddr=%d" % (j["base"], j["vaddr"], j["paddr"], j["kind"], j["cluster_index"], j["pool_ref"], j["length"], j["size"], j["word_size"], j["source_addr"]["paddr"]))'
 EOF
 EXPECT=<<EOF
-{"error":"PP not resolved","reason":"ObjectPool fill payload was not decoded"}
+base=2282193 vaddr=2282193 paddr=2282193 kind=synthetic cluster=320 pool=41741 length=8435 size=75936 word=8 source_paddr=2282193
 EOF
 RUN

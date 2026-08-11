@@ -31,7 +31,10 @@ static char *resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_im
 			out = strdup (ns);
 		}
 	}
-	if (sym_by_addr) {
+	// A stripped Mach-O/ELF often contributes synthetic func.<address>
+	// symbols for every function start. Keep a Dart-derived name when the
+	// cluster graph supplied one; RBin is only a fallback for unmapped slots.
+	if (!out && sym_by_addr) {
 		RBinSymbol *bs = (RBinSymbol *)ht_up_find (sym_by_addr, entry->address, NULL);
 		if (bs && bs->name) {
 			const char *resolved = r_bin_name_tostring (bs->name);
@@ -147,7 +150,7 @@ static bool read_it_data_header_from_string_object(DartCtx *ctx, ut64 obj_addr, 
 		return false;
 	}
 	ut64 tags = r_read_le64 (objhdr);
-	const ut32 cid = dart_cid_from_tags (ctx, tags);
+	const ut32 cid = dart_cid_from_object_header (tags);
 	const int string_cid = dart_cid_get (ctx->layout, DART_CID_ONE_BYTE_STRING);
 	if (string_cid < 0 || (int)cid != string_cid) {
 		return false;

@@ -42,6 +42,15 @@ typedef enum {
 #define DART_SNAPSHOT_FIXED_SIZE (4 + 8 + 8)
 #define DART_SNAPSHOT_HASH_SIZE 32
 #define DART_SNAPSHOT_FEATURES_SCAN_MAX 2048
+#define DART_IMAGE_ALIGNMENT 64
+
+static inline ut32 dart_cid_from_object_header(ut64 tags) {
+	return (ut32) ((tags >> 12) & 0xfffffU);
+}
+
+static inline ut64 dart_snapshot_data_image_base(ut64 snapshot_base, ut64 snapshot_len) {
+	return snapshot_base + ((snapshot_len + (DART_IMAGE_ALIGNMENT - 1)) & ~ (DART_IMAGE_ALIGNMENT - 1));
+}
 
 typedef struct {
 	bool ok;

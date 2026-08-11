@@ -252,7 +252,7 @@ static bool dart_object_decode_at(DartCtx *ctx, ut64 addr, DartObjectInfo *out) 
 	}
 	out->addr = addr;
 	out->header = r_read_le64 (hdr);
-	out->cid = (int)dart_cid_from_tags (ctx, out->header);
+	out->cid = (int)dart_cid_from_object_header (out->header);
 	if (out->cid <= 0 || out->cid >= 0xfffff) {
 		return false;
 	}

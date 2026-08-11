@@ -211,7 +211,11 @@ static const ModernOpNameMap modern_op_name_map[] = {
 };
 
 bool dart_modern_is_supported_snapshot(DartCtx *ctx) {
-	return ctx && ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER && ctx->compressed_word_size == 4;
+	if (!ctx || !ctx->layout || (ctx->compressed_word_size != 4 && ctx->compressed_word_size != 8)) {
+		return false;
+	}
+	return ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER ||
+		ctx->layout->tag_style == DART_TAG_STYLE_CID_SHIFT1;
 }
 
 static const char *modern_alloc_kind_name(ModernAllocKind kind) {
@@ -932,7 +936,9 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 		{ DART_CID_LIBRARY_PREFIX, MODERN_FILL_REFS, 2, 0, -1, 2, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL } },
 		{ DART_CID_TYPE_ARGUMENTS, MODERN_FILL_TYPE_ARGUMENTS, 0, -1, -1, 0, { 0 } },
 		{ DART_CID_TYPE, MODERN_FILL_REFS, 3, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
-		{ DART_CID_FUNCTION_TYPE, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_UINT8 } },
+		// Serializer::Write<uint32_t/uint16_t> both use the Dart tagged
+		// integer stream through BaseWriteStream::Raw.
+		{ DART_CID_FUNCTION_TYPE, MODERN_FILL_REFS, 6, -1, -1, 3, { MODERN_SCALAR_UINT8, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32 } },
 		{ DART_CID_RECORD_TYPE, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_UINT8 } },
 		{ DART_CID_TYPE_PARAMETER, MODERN_FILL_REFS, 3, -1, -1, 3, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8 } },
 		{ DART_CID_CLOSURE, MODERN_FILL_REFS, 6, -1, -1, 0, { 0 } },
@@ -1223,12 +1229,13 @@ static ut64 modern_pool_entry_pp_offset(DartCtx *ctx, ut64 index) {
 
 static bool modern_read_pool_entry(ClusterStream *s, DartCtx *ctx, ut64 index, ModernPoolEntry *entry);
 
-static bool modern_skip_fill_instance(ClusterStream *s, const ModernClusterMeta *meta) {
+static bool modern_skip_fill_instance(DartCtx *ctx, ClusterStream *s, const ModernClusterMeta *meta) {
 	ut64 bitmap = 0;
 	if (!cs_read_unsigned (s, &bitmap)) {
 		return false;
 	}
-	int header_words = 2;
+	const int compressed_word_size = ctx && ctx->compressed_word_size? ctx->compressed_word_size: 4;
+	const int header_words = 8 / compressed_word_size;
 	int num_fields = meta->next_field_offset_words - header_words;
 	if (num_fields < 0) {
 		num_fields = 0;
@@ -1348,7 +1355,7 @@ static bool modern_skip_fill_by_kind(ClusterStream *s, const ModernCidCache *cid
 	case MODERN_FILL_RECORD:
 		return modern_resync_fill_record (s, meta);
 	case MODERN_FILL_INSTANCE:
-		return modern_skip_fill_instance (s, meta);
+		return modern_skip_fill_instance (s->ctx, s, meta);
 	case MODERN_FILL_NONE:
 		return true;
 	default:
@@ -1361,6 +1368,17 @@ static bool modern_read_cluster_tags(ClusterStream *s, DartCtx *ctx, ut32 *out) 
 	return cs_read_tagged32 (s, out);
 }
 
+static bool modern_cluster_is_canonical(const DartCtx *ctx, ut32 tags) {
+	if (ctx && ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_CID_SHIFT1) {
+		return (tags & 1) != 0;
+	}
+	return ((tags >> 1) & 1) != 0;
+}
+
+static bool modern_cluster_is_immutable(const DartCtx *ctx, ut32 tags) {
+	return ctx && ctx->layout && ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER && (tags & (1 << 6)) != 0;
+}
+
 // Shared alloc/fill cluster walker.
 //
 // Every consumer below reads the same stream the same way: for each cluster a
@@ -1371,8 +1389,8 @@ static bool modern_read_cluster_tags(ClusterStream *s, DartCtx *ctx, ut32 *out) 
 // having to know the encoding of the classes it ignores.
 typedef struct ModernWalk ModernWalk;
 
-typedef bool (*ModernAllocFn)(ModernWalk *w, ClusterStream *s, ModernClusterMeta *m);
-typedef bool (*ModernFillFn)(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec);
+typedef bool(*ModernAllocFn)(ModernWalk *w, ClusterStream *s, ModernClusterMeta *m);
+typedef bool(*ModernFillFn)(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec);
 
 typedef struct {
 	DartCidKind kind;
@@ -1418,15 +1436,14 @@ static void modern_walk_init(ModernWalk *w, DartCtx *ctx, const char *what, Mode
 
 static bool modern_walk_fail(const ModernWalk *w, const char *phase, ut64 cluster, ut64 off, int cid) {
 	if (w->ctx->verbose > 0) {
-		fprintf (stderr, "[r2flutter] %s %s: failed cid=%d cluster=%" PFMT64u " off=0x%" PFMT64x "\n",
-			w->what, phase, cid, cluster, off);
+		fprintf (stderr, "[r2flutter] %s %s: failed cid=%d cluster=%" PFMT64u " off=0x%" PFMT64x "\n", w->what, phase, cid, cluster, off);
 	}
 	return false;
 }
 
 // With pointer compression off, Dart moves six classes into the read-only data
 // image -- the three code-metadata blobs and the three string classes, exactly
-// Serializer::ReadOnlyObjectType(). Their bytes live in the image, so the
+// Serializer::ReadOnlyObjectType (). Their bytes live in the image, so the
 // cluster carries image offsets in its alloc record and emits no fill records
 // at all. With compression on the same classes are ordinary clusters carrying
 // their bytes inline, which is why this cannot be decided from the class id.
@@ -1489,8 +1506,8 @@ static bool modern_walk_alloc(ModernWalk *w, ClusterStream *s) {
 			return modern_walk_fail (w, "alloc tag", i, s->cursor, -1);
 		}
 		m->cid = (int)dart_cid_from_tags (w->ctx, tags);
-		m->is_canonical = ((tags >> 1) & 1) != 0;
-		m->is_immutable = (tags & (1 << 6)) != 0;
+		m->is_canonical = modern_cluster_is_canonical (w->ctx, tags);
+		m->is_immutable = modern_cluster_is_immutable (w->ctx, tags);
 		m->start_ref = next_ref;
 		m->alloc_offset = s->cursor;
 		const ModernAllocFn read = modern_walk_alloc_reader (w, m->cid);
@@ -2511,7 +2528,7 @@ static void modern_cluster_meta_free(ModernClusterMeta *meta, ut64 num_clusters)
 }
 
 static ModernClusterMeta *modern_parse_cluster_meta(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 num_base_objects) {
-	if (!ctx || !ctx->layout || ctx->layout->tag_style != DART_TAG_STYLE_OBJECT_HEADER || cluster_start >= cluster_end || num_clusters == 0 || num_clusters > 100000) {
+	if (!ctx || !ctx->layout || cluster_start >= cluster_end || num_clusters == 0 || num_clusters > 100000) {
 		return NULL;
 	}
 	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)num_clusters, sizeof (ModernClusterMeta));
@@ -3303,10 +3320,6 @@ typedef struct {
 // followed by a canonical-set table: skipping one here consumes the next
 // cluster's bytes and desynchronises the rest of the walk. Read only the
 // encoded lengths, which is why this cannot use the default alloc path.
-// The VM snapshot's canonical string cluster, unlike the isolate's, is not
-// followed by a canonical-set table: skipping one here consumes the next
-// cluster's bytes and desynchronises the rest of the walk. Read only the
-// encoded lengths, which is why this cannot use the default alloc path.
 static bool modern_vm_strings_alloc(ModernWalk *w, ClusterStream *s, ModernClusterMeta *m) {
 	(void)w;
 	ut64 count = 0;
@@ -3341,6 +3354,52 @@ static bool modern_vm_strings_fill(ModernWalk *w, ClusterStream *s, const Modern
 	return true;
 }
 
+static ut64 modern_load_rodata_strings(DartCtx *ctx, const ModernClusterMeta *meta, ut64 num_clusters, ut64 snapshot_base, ut64 snapshot_len, char **strings_by_ref, ut64 refs_count) {
+	if (!ctx || !ctx->layout || ctx->compressed_word_size != 8 || !meta || !snapshot_base || !snapshot_len || !strings_by_ref) {
+		return 0;
+	}
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
+	const ut64 object_alignment = ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
+	const ut64 data_image_base = dart_snapshot_data_image_base (snapshot_base, snapshot_len);
+	ut64 loaded = 0;
+	for (ut64 cluster = 0; cluster < num_clusters; cluster++) {
+		const ModernClusterMeta *m = &meta[cluster];
+		if (!modern_is_string_cid (&cids, m->cid) || m->alloc_kind != MODERN_ALLOC_RODATA || !m->count) {
+			continue;
+		}
+		ClusterStream s = {
+			.ctx = ctx,
+			.cursor = m->alloc_offset,
+			.end = m->alloc_end,
+};
+		ut64 count = 0;
+		ut64 running_offset = 0;
+		if (!cs_read_unsigned (&s, &count) || count != m->count) {
+			continue;
+		}
+		for (ut64 i = 0; i < count; i++) {
+			ut64 delta = 0;
+			if (!cs_read_unsigned (&s, &delta) || delta > (UT64_MAX - running_offset) / object_alignment) {
+				break;
+			}
+			running_offset += delta * object_alignment;
+			const ut64 ref = m->start_ref + i;
+			if (ref >= refs_count || strings_by_ref[ref]) {
+				continue;
+			}
+			char *value = try_read_dart_string_dup (ctx, data_image_base + running_offset);
+			if (value) {
+				strings_by_ref[ref] = value;
+				loaded++;
+			}
+		}
+	}
+	if (ctx->verbose > 1 && loaded) {
+		fprintf (stderr, "[r2flutter] loaded %" PFMT64u " ROData strings from 0x%" PFMT64x "\n", loaded, data_image_base);
+	}
+	return loaded;
+}
+
 static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut64 refs_count) {
 	if (!ctx->vm_data || refs_count == 0) {
 		return false;
@@ -3369,7 +3428,12 @@ static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut6
 	w.on_string_alloc = modern_vm_strings_alloc;
 	w.on_string_fill = modern_vm_strings_fill;
 	w.user = &user;
-	const bool ok = modern_walk_run (&w, &s);
+	bool ok = modern_walk_alloc (&w, &s);
+	if (ok) {
+		modern_load_rodata_strings (ctx, meta, sh.nc, ctx->vm_data, sh.total_len, strings_by_ref, refs_count);
+		w.keep_partial_fill = true;
+		ok = modern_walk_fill (&w, &s);
+	}
 	modern_cluster_meta_free (meta, sh.nc);
 	return ok;
 }
@@ -3774,7 +3838,6 @@ typedef struct {
 	ut64 next_code_index;
 } ModernNameScanWalk;
 
-
 static bool modern_name_scan_read_strings(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
 	(void)spec;
@@ -4050,6 +4113,9 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 	if (!modern_walk_alloc (&w, &s)) {
 		goto fail;
 	}
+	if (ctx->iso_data && cluster_end > ctx->iso_data) {
+		modern_load_rodata_strings (ctx, meta, num_clusters, ctx->iso_data, cluster_end - ctx->iso_data, strings_by_ref, total_refs);
+	}
 	if (!ctx->name_by_code_index || ctx->name_by_code_index_count != itlen) {
 		if (ctx->name_by_code_index) {
 			for (ut64 i = 0; i < ctx->name_by_code_index_count; i++) {
@@ -4067,6 +4133,7 @@ bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64
 	} else {
 		memset (ctx->owner_kind_by_code_index, 0, (size_t)itlen * sizeof (ut8));
 	}
+	w.keep_partial_fill = true;
 	if (!modern_walk_fill (&w, &s)) {
 		goto fail;
 	}

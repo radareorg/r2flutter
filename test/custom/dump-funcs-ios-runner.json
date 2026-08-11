@@ -5,7 +5,7 @@
   "timeout": 30,
   "expect": {
     "contains": [
-      "func.0000e768",
+      "method.PointerEvent.get:radiusMinor",
       "0xe768"
     ]
   }

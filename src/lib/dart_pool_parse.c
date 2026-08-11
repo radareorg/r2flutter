@@ -343,8 +343,7 @@ static int decode_pool_and_emit(DartItEmitRequest *req) {
 		}
 		return 0;
 	}
-	const ut64 kAlign = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
-	const ut64 data_image_base = base + ((total_len + (kAlign - 1)) & ~ (kAlign - 1));
+	const ut64 data_image_base = dart_snapshot_data_image_base (base, total_len);
 	ut64 data_image_end = ctx->iso_instr? ctx->iso_instr: (data_image_base + (1ULL << 22));
 	if (data_image_end < data_image_base) {
 		data_image_end = data_image_base + (1ULL << 22);
@@ -790,8 +789,7 @@ static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, u
 	ut64 cluster_end = addr + sh.total_len;
 	pj_kn (pj, "cluster_end", cluster_end);
 	if (ctx->layout) {
-		ut64 align = ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
-		ut64 data_image_base = addr + ((sh.total_len + (align - 1)) & ~ (align - 1));
+		ut64 data_image_base = dart_snapshot_data_image_base (addr, sh.total_len);
 		pj_kn (pj, "data_image_base", data_image_base);
 		pj_kn (pj, "instruction_table_addr", data_image_base + sh.itdata);
 	}
@@ -890,8 +888,7 @@ static void dump_header_ext_snapshot_text(DartCtx *ctx, RStrBuf *sb, const char 
 		return;
 	}
 	ut64 cluster_end = addr + sh.total_len;
-	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
-	ut64 data_image_base = addr + ((sh.total_len + (align - 1)) & ~ (align - 1));
+	ut64 data_image_base = dart_snapshot_data_image_base (addr, sh.total_len);
 	r_strbuf_appendf (sb, "  cluster_start: 0x%" PFMT64x "\n", (ut64)sh.cluster_start);
 	r_strbuf_appendf (sb, "  cluster_end:   0x%" PFMT64x "\n", (ut64)cluster_end);
 	r_strbuf_appendf (sb, "  data_image:    0x%" PFMT64x "\n", (ut64)data_image_base);
@@ -928,8 +925,7 @@ static void dump_header_ext_snapshot_r2(DartCtx *ctx, RStrBuf *sb, const char *l
 		return;
 	}
 	ut64 cluster_end = addr + sh.total_len;
-	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
-	ut64 data_image_base = addr + ((sh.total_len + (align - 1)) & ~ (align - 1));
+	ut64 data_image_base = dart_snapshot_data_image_base (addr, sh.total_len);
 	r_strbuf_appendf (sb, "'f dart.%s.cluster_start = 0x%" PFMT64x "\n", scope, (ut64)sh.cluster_start);
 	r_strbuf_appendf (sb, "'f dart.%s.cluster_end = 0x%" PFMT64x "\n", scope, (ut64)cluster_end);
 	r_strbuf_appendf (sb, "'f dart.%s.data_image = 0x%" PFMT64x "\n", scope, (ut64)data_image_base);
@@ -1035,8 +1031,7 @@ static bool resolve_pp_from_snapshot(DartCtx *ctx, ut64 snapshot_base, const cha
 	if (!dart_snapshot_header_read (ctx, snapshot_base, &sh) || !sh.ok) {
 		return false;
 	}
-	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
-	ut64 data_image_base = snapshot_base + ((sh.total_len + (align - 1)) & ~ (align - 1));
+	ut64 data_image_base = dart_snapshot_data_image_base (snapshot_base, sh.total_len);
 	const DartModernClusterRequest req = { ctx, sh.cluster_start, snapshot_base + sh.total_len, sh.nc, sh.nb };
 	return dart_modern_build_synthetic_pp (&req, snapshot_base, label, data_image_base, info);
 }

@@ -4,7 +4,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -j -f -l 3 -m custom/obf-map.txt bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"addr":59240,"name":"func.0000e768"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"func.0000e7a0"}]
+[{"addr":59240,"name":"method.PointerEvent.get:radiusMinor"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"method.PointerEvent.get:distance"}]
 EOF
 RUN
 

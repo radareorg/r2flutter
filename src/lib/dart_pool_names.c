@@ -60,9 +60,87 @@ static bool read_heap_ptr(DartCtx *ctx, ut64 addr, ut64 data_image_base, ut64 *o
 	return true;
 }
 
+// Returns 1 for a decoded text string, 0 when addr is not a recognised 64-bit
+// string object, and -1 for a recognised string whose payload is not text.
+static int try_read_dart_string_object64(DartCtx *ctx, ut64 addr, char *out, int outsz) {
+	if (!ctx || !ctx->layout || ctx->compressed_word_size != 8) {
+		return false;
+	}
+	ut8 hdr[16];
+	if (!read_mem (ctx, addr, hdr, sizeof (hdr))) {
+		return false;
+	}
+	const ut32 cid = dart_cid_from_object_header (r_read_le64 (hdr));
+	const int one_byte_cid = dart_cid_get (ctx->layout, DART_CID_ONE_BYTE_STRING);
+	const int two_byte_cid = dart_cid_get (ctx->layout, DART_CID_TWO_BYTE_STRING);
+	const bool is_two_byte = two_byte_cid >= 0 && cid == (ut32)two_byte_cid;
+	if (!is_two_byte && (one_byte_cid < 0 || cid != (ut32)one_byte_cid)) {
+		return false;
+	}
+	const ut64 length_smi = r_read_le64 (hdr + 8);
+	if ((length_smi & 1) != 0) {
+		return -1;
+	}
+	const ut64 length = length_smi >> 1;
+	if (!length || length > 1024) {
+		return -1;
+	}
+	const ut64 bytes_len = is_two_byte? length * 2: length;
+	ut8 *bytes = (ut8 *)malloc ((size_t)bytes_len);
+	if (!bytes || !read_mem (ctx, addr + 16, bytes, (int)bytes_len)) {
+		free (bytes);
+		return -1;
+	}
+	if (is_two_byte) {
+		for (ut64 i = 0; i < length; i++) {
+			const ut16 code = r_read_le16 (bytes + (i * 2));
+			if (code < 0x20 || (code >= 0x7f && code < 0xa0)) {
+				free (bytes);
+				return -1;
+			}
+		}
+		char *utf8 = dart_utf16le_to_utf8 (bytes, bytes_len);
+		free (bytes);
+		if (R_STR_ISEMPTY (utf8)) {
+			free (utf8);
+			return -1;
+		}
+		r_str_ncpy (out, utf8, outsz);
+		free (utf8);
+		return true;
+	}
+	int written = 0;
+	for (ut64 i = 0; i < length; i++) {
+		const ut8 ch = bytes[i];
+		if (ch < 0x20 || (ch >= 0x7f && ch < 0xa0)) {
+			free (bytes);
+			return -1;
+		}
+		if (ch < 0x80) {
+			if (written + 1 >= outsz) {
+				break;
+			}
+			out[written++] = (char)ch;
+		} else {
+			if (written + 2 >= outsz) {
+				break;
+			}
+			out[written++] = (char) (0xc0 | (ch >> 6));
+			out[written++] = (char) (0x80 | (ch & 0x3f));
+		}
+	}
+	out[written] = '\0';
+	free (bytes);
+	return true;
+}
+
 bool try_read_dart_string(DartCtx *ctx, ut64 addr, char *out, int outsz) {
 	if (!ctx || !out || outsz <= 1) {
 		return false;
+	}
+	const int object_string = try_read_dart_string_object64 (ctx, addr, out, outsz);
+	if (object_string) {
+		return object_string > 0;
 	}
 	ut8 hdr[32];
 	if (!read_mem (ctx, addr, hdr, sizeof (hdr))) {
