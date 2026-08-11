@@ -29,7 +29,18 @@ rank; each item states the concrete failure it causes.
 | `833f89a` | **P2.1**: deleted the legacy cluster walker — `deserialize_clusters`, `decode_class_cluster`, `decode_function_cluster`, `resolve_names`, the `DartClass`/`DartPoolFunction` types and the `DartCtx.classes`/`.functions` fields that only it wrote (244 lines). It had been running on every `-f`/`-A` alongside the modern scanner while contributing nothing: verified before removal by stubbing it out (50/50 outputs identical), and after by diffing 95 sample×action outputs against the previous commit. `decode_string_cluster`/`skip_generic_cluster`/`free_dart_string` stay — the legacy **class** parser in `dart_pool_classes.c` still uses them for CID_SHIFT1 samples. |
 | `f10d30d` | **P2.2**: the fake `kXxxCid` enum is gone. Only 3 of its 28 values (`Class`, `PatchClass`, `Function`) matched any real Dart release, so the legacy class parser decoded Class/Function clusters and silently skipped String/Array/Type/Mint/Double — the ones it needed for names. Its `switch` is now an `if` chain over `LegacyClusterCids`, resolved per layout via `dart_cid_get`. The two sites that fell back to a *fabricated* id when resolution failed (`dart_pool_data_image.c`, `dart_pool_it.c`) now fail closed, and a third raw `kFieldCid` comparison was resolved the same way. `builtin_type_name` keeps working on `Type.type_class_id` — a class id packed in the type flags, not a ref despite the field name — but against real ids. The `ti->kind` discriminator, which was never a snapshot id, became `DartTypeKind`. |
 | `f10d30d` | **Perf, found via P2.2**: `cid_table_for_layout` resolved the CID table by comparing version *strings* against every row on **every** `dart_cid_get` call, and that call sits per-object on some paths. A one-entry memo keyed on the layout pointer makes it a pointer compare. Synthetic `-x` 4862 → **37 ms** (131×), mafia `-f` 1008 → 550 ms, mafia `-c` 756 → 312 ms. Output unchanged on all 95 comparisons. This was already the dominant cost *before* P2.2 — more evidence for the P3.1 note that the double cluster walk was the wrong suspect. |
+| *(uncommitted)* | **P3.5 + two `-x` correctness bugs**: `collect_pool_uses_from_entry` read JSON keys `pdj` does not emit. `offset` (real key: `addr`) always returned 0, so *every* pool use fell back to `entry->address` — the reported address was the function start, never the referencing instruction. `opstr` (real keys: `disasm`/`opcode`) was always NULL, making two of the three parser calls duplicates. The fixed 96-op window also ran past short functions (median Dart function is 28 instructions) into their neighbours, crediting those references to the wrong entry; it is now bounded by the next entry's address. Verified: after the fix 100% of pool uses lie inside the function they are attributed to and only 7 of 4573 sit at a function start — before, 100% sat at a function start, which is why the attribution check could not fail. mafia `-x` 7783 → 4738 ms, AuthPass 6460 → 2635 ms. Non-`-x` output identical across 80 comparisons. Also hardens the `dart_cid_get` memo: it was keyed on the layout pointer, and owned layouts are freed, so a later layout at the same address could inherit the previous snapshot's CID table; it now keys on a copy of the version text. |
 | *(uncommitted)* | **P2.3**: `cid_table_for_layout`'s fallback for a layout with no usable version now goes through `dart_newest_profile()` instead of the literal `"3.9.2"`, so it agrees with the baseline the version fingerprinter picks for an unknown hash. Verified a no-op today by diffing the two tables directly — the literal floors to the 3.9.0 row, the newest profile selects 3.12.0, and they have **zero** differing CIDs and identical typed-data base/limit/stride. It stops being a no-op the moment a release shifts the numbering, which is the whole point. |
+
+> **Broken right now:** `6a7e01b` correctly switched the legacy class parser to
+> read cluster tags as varints (`cs_read_tagged32`) — Dart writes them with
+> `Read<uint32_t>`, which is a varint — but `bins/synthetic/field_snapshot.bin`
+> stores **raw little-endian u32** tags, so it decodes to nothing. 4 custom and
+> 9 r2r tests fail (all `fields-synthetic` / `sbom-synthetic`; no real-binary
+> test is affected). This is the same fixture problem P2.2 hit from the other
+> side: it encodes obsolete conventions, so re-encoding the tags shifts every
+> following byte and the header's `total_len`. **The fix is to write a generator
+> for it** rather than patch bytes a third time — see the P4 note.
 
 Corrections to earlier assumptions, worth remembering:
 - **The CID tables are not the problem.** Flooring is exactly correct 2.10→3.12,
@@ -222,21 +233,6 @@ time here.** `-x` is now the slowest action by a wide margin (mafia 7.8 s,
 AuthPass 6.5 s) and is the next thing worth measuring; P3.2's brute-force
 InstructionTable search is the other suspect.
 
-### P3.5 `-x` renders disassembly to text and JSON only to parse it back
-`collect_pool_uses_from_entry` (`dart_pool_xrefs.c:515`) runs
-`pdj 96 @ <addr>` — a full JSON disassembly of 96 instructions — once per
-InstructionTable entry, up to the 4096 scan cap, then string-matches `opstr`
-for `PP+N` operands.
-
-**Profiled** (gdb stack sampling; `perf` is blocked in the dev sandbox): 7 of 8
-samples sit in `AArch64_printInst`/`printAliasInstr` (capstone *text* rendering)
-and `pj_kn`/`snprintf` (JSON serialisation). After the `dart_cid_get` memo, `-x`
-is by far the slowest action: mafia `-f` 550 ms, `-c` 312 ms, **`-x` 7783 ms**;
-AuthPass `-x` 6460 ms.
-**Fix:** decode with `r_anal_op` and inspect operands directly; the text and
-JSON round-trip is pure overhead. Note this also retires P3.2 as the prime
-suspect — the IT header search never appeared in the samples.
-
 ### P3.2 Brute-force InstructionTable header search
 `dart_pool_it.c:233-330` probes `{16,0,8,12} × delta -64..64 step 4`, then scans
 the whole data image every 16 bytes (`:209-231`), then a third linear scan
@@ -261,6 +257,11 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## P4 — test quality (beyond the corpus gaps in P0.3)
 
+- **`-x` has no real-binary test at all.** The only coverage is
+  `xrefs-fields-synthetic` / `dump-fields-synthetic-xrefs`, both on the synthetic
+  blob, which is why two wrong JSON key names survived indefinitely. The P3.5
+  output change (addresses moving from function starts to real reference sites)
+  was therefore invisible to CI.
 - **The synthetic fixture used to encode the fake CID table.** `bins/synthetic/field_snapshot.bin`
   was authored with the `kXxxCid` values (cluster ids 73/12/5/114/75/115/110/111/10/7,
   none of them real), so the four tests covering the legacy class parser agreed
@@ -290,17 +291,20 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## Suggested execution order
 
-1. **`-x` disassembly round-trip** (new, profiled — see P3.5). Biggest remaining
-   perf item and maintainer priority #2.
-2. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
+1. **Regenerate the synthetic fixture** — 13 tests are red and the blob now
+   disagrees with the parser twice over (raw vs varint tags). Write a generator.
+2. **Finish `-x`**: the `pdj` text round-trip is still there (a further ~2x is
+   available by decoding with `r_anal_op` instead), and the 4096-entry scan cap
+   still hides ~89% of mafia's 37259 entries.
+3. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
    win; makes most iOS/macOS samples use the good path. The RO-data half is
    already implemented and the alloc phase is proven correct; what remains is
    version-dependent *fill* shapes — see the P0.2 notes before starting.
-3. **P0.3** — grow the corpus alongside 2 so it is actually verified, and to give
+4. **P0.3** — grow the corpus alongside 2 so it is actually verified, and to give
    the landed P0.1 fix an end-to-end regression test.
-4. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
-5. **P1.2** — arch gating.
-6. **P3.2** — now a *lower* suspect than it looked; it never showed up in the
+5. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
+6. **P1.2** — arch gating.
+7. **P3.2** — now a *lower* suspect than it looked; it never showed up in the
    `-x` profile. Remaining P2 cleanups and test hardening.
 
 `COMMIT2.md` tracks the narrower follow-ups left over from the discovery work

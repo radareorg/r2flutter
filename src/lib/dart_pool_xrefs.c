@@ -508,11 +508,24 @@ static bool xref_pool_use_seen(HtUP *seen, ut64 at, ut64 pp_off) {
 	return false;
 }
 
-static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTableEntry *entry, RList *uses, HtUP *seen) {
+#define DART_XREF_MAX_OPS 96
+
+// `end_addr` is the next entry's address, or 0 when unknown. Without it the
+// scan disassembles a fixed window that runs past short functions into their
+// neighbours, crediting those neighbours' pool references to this entry.
+static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTableEntry *entry, ut64 end_addr, RList *uses, HtUP *seen) {
 	if (!ctx || !ctx->core || !entry || !entry->address || !uses || !seen) {
 		return;
 	}
-	r_strf_var (cmd, 128, "pdj 96 @ 0x%" PFMT64x, entry->address);
+	ut64 nops = DART_XREF_MAX_OPS;
+	if (end_addr > entry->address) {
+		const ut64 avail = (end_addr - entry->address) / 4;
+		nops = R_MIN (avail, (ut64)DART_XREF_MAX_OPS);
+	}
+	if (!nops) {
+		return;
+	}
+	r_strf_var (cmd, 128, "pdj %" PFMT64u " @ 0x%" PFMT64x, nops, entry->address);
 	char *s = r_core_cmd_str (ctx->core, cmd);
 	if (!s) {
 		return;
@@ -531,8 +544,14 @@ static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTabl
 		if (!item) {
 			break;
 		}
-		const char *opstr = r_json_get_str (item, "opstr");
+		// pdj emits `disasm`/`opcode`; `disasm` carries flag and comment
+		// substitution, `opcode` is the raw mnemonic. Prefer the raw form and
+		// fall back, rather than reading keys that do not exist.
 		const char *opcode = r_json_get_str (item, "opcode");
+		const char *opstr = r_json_get_str (item, "disasm");
+		if (R_STR_ISEMPTY (opcode)) {
+			opcode = opstr;
+		}
 		if (R_STR_ISEMPTY (opstr)) {
 			opstr = opcode;
 		}
@@ -541,7 +560,7 @@ static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTabl
 			xref_parse_mem_pp_offset (opstr, reg_valid, reg_off, &pp_off) ||
 			xref_parse_mem_pp_offset (opcode, reg_valid, reg_off, &pp_off);
 		if (have_pp) {
-			ut64 at = (ut64)r_json_get_num (item, "offset");
+			ut64 at = (ut64)r_json_get_num (item, "addr");
 			if (!at) {
 				at = entry->address;
 			}
@@ -583,15 +602,26 @@ static RList *collect_pool_uses(DartCtx *ctx, RVecDartInstructionTableEntry *ent
 	HtUP *seen = ht_up_new0 ();
 	ut64 scanned = 0;
 	ut64 scan_limit = limit > 0? limit: 4096;
-	DartInstructionTableEntry *entry;
-	R_VEC_FOREACH (entries, entry) {
-		if (!entry->has_code || !entry->address) {
+	const ut64 nentries = RVecDartInstructionTableEntry_length (entries);
+	for (ut64 i = 0; i < nentries; i++) {
+		const DartInstructionTableEntry *entry = RVecDartInstructionTableEntry_at (entries, i);
+		if (!entry || !entry->has_code || !entry->address) {
 			continue;
 		}
 		if (scan_limit > 0 && scanned >= scan_limit) {
 			break;
 		}
-		collect_pool_uses_from_entry (ctx, entry, uses, seen);
+		// Entries are emitted in ascending address order, so the next one with
+		// code bounds this one.
+		ut64 end_addr = 0;
+		for (ut64 k = i + 1; k < nentries; k++) {
+			const DartInstructionTableEntry *nx = RVecDartInstructionTableEntry_at (entries, k);
+			if (nx && nx->address > entry->address) {
+				end_addr = nx->address;
+				break;
+			}
+		}
+		collect_pool_uses_from_entry (ctx, entry, end_addr, uses, seen);
 		scanned++;
 	}
 	ht_up_free (seen);

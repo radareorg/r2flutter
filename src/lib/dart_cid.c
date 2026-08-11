@@ -1,6 +1,7 @@
 /* r2flutter - MIT - Copyright 2026 - pancake */
 
 #include <stddef.h>
+#include <string.h>
 
 #include "../../include/r2flutter/dart_cid.h"
 
@@ -141,15 +142,17 @@ static const DartCidTable *cid_table_for_version(const char *version) {
 
 static const DartCidTable *cid_table_for_layout(const DartVerLayout *layout) {
 	// One-entry memo. dart_cid_get is called per decoded object on some paths,
-	// and resolving the table means comparing version strings against every row;
-	// a layout's version never changes once it is picked, so caching the last
-	// answer turns that scan into a pointer compare.
-	static const DartVerLayout *memo_layout = NULL;
+	// and resolving the table means comparing version strings against every row.
+	// Keyed on a copy of the version text rather than the layout pointer: owned
+	// layouts are freed, and a later one allocated at the same address would
+	// otherwise inherit the previous snapshot's table.
+	static char memo_version[32] = { 0 };
 	static const DartCidTable *memo_table = NULL;
-	if (layout && layout == memo_layout && memo_table) {
+	const char *version = layout? layout->dart_version: NULL;
+	if (version && memo_table && !strcmp (version, memo_version)) {
 		return memo_table;
 	}
-	const DartCidTable *table = cid_table_for_version (layout? layout->dart_version: NULL);
+	const DartCidTable *table = cid_table_for_version (version);
 	if (!table) {
 		// Fall back to the same profile the version fingerprinter picks for an
 		// unknown hash, so a layout it guessed cannot then be decoded with CIDs
@@ -158,8 +161,8 @@ static const DartCidTable *cid_table_for_layout(const DartVerLayout *layout) {
 		const DartVerLayout *newest = dart_newest_profile ();
 		table = cid_table_for_version (newest? newest->dart_version: NULL);
 	}
-	if (layout && table) {
-		memo_layout = layout;
+	if (version && table && strlen (version) < sizeof (memo_version)) {
+		strcpy (memo_version, version);
 		memo_table = table;
 	}
 	return table;
