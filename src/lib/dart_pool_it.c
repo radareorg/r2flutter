@@ -148,9 +148,8 @@ static bool read_it_data_header_from_string_object(DartCtx *ctx, ut64 obj_addr, 
 	}
 	ut64 tags = r_read_le64 (objhdr);
 	const ut32 cid = dart_cid_from_tags (ctx, tags);
-	const int resolved_string_cid = dart_cid_get (ctx->layout, DART_CID_ONE_BYTE_STRING);
-	const int string_cid = resolved_string_cid >= 0? resolved_string_cid: kOneByteStringCid;
-	if ((int)cid != string_cid) {
+	const int string_cid = dart_cid_get (ctx->layout, DART_CID_ONE_BYTE_STRING);
+	if (string_cid < 0 || (int)cid != string_cid) {
 		return false;
 	}
 	ut64 len_smi = r_read_le64 (objhdr + 8);

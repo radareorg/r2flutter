@@ -64,7 +64,8 @@ bool read_data_image_field(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_en
 		return false;
 	}
 	ut64 header = r_read_le64 (hdr);
-	if ((int)dart_cid_from_tags (ctx, header) != kFieldCid) {
+	const int cid_field = dart_cid_get (ctx->layout, DART_CID_FIELD);
+	if (cid_field < 0 || (int)dart_cid_from_tags (ctx, header) != cid_field) {
 		return false;
 	}
 	bool use_compressed = ctx->compressed_word_size == 4;
@@ -157,9 +158,10 @@ bool read_data_image_method(DartCtx *ctx, ut64 pos, ut64 data_start, ut64 data_e
 	if (!read_mem (ctx, pos, buf, sizeof (buf))) {
 		return false;
 	}
-	const int resolved_function_cid = dart_cid_get (ctx->layout, DART_CID_FUNCTION);
-	const int cid_function = resolved_function_cid >= 0? resolved_function_cid: kFunctionCid;
-	if ((int)dart_cid_from_tags (ctx, r_read_le64 (buf)) != cid_function) {
+	// No Function id for this layout means we cannot tell a Function object from
+	// anything else; report nothing rather than match against a guessed id.
+	const int cid_function = dart_cid_get (ctx->layout, DART_CID_FUNCTION);
+	if (cid_function < 0 || (int)dart_cid_from_tags (ctx, r_read_le64 (buf)) != cid_function) {
 		return false;
 	}
 	ut64 entry = r_read_le64 (buf + fl->entry_off);

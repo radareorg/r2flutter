@@ -30,40 +30,13 @@ static inline ut32 dart_cid_from_tags(const DartCtx *ctx, ut64 tags) {
 	}
 }
 
+// Which flavour of type a DartTypeInfo holds. Not snapshot class ids: these
+// never leave the parser, so they carry no version dependency.
 typedef enum {
-	kIllegalCid = 0,
-	kClassCid = 5,
-	kPatchClassCid = 6,
-	kFunctionCid = 7,
-	kClosureDataCid = 8,
-	kFfiTrampolineDataCid = 9,
-	kFieldCid = 10,
-	kScriptCid = 11,
-	kLibraryCid = 12,
-	kNamespaceCid = 13,
-	kKernelProgramInfoCid = 14,
-	kCodeCid = 40,
-	kInstructionsCid = 41,
-	kObjectPoolCid = 45,
-	kCodeSourceMapCid = 49,
-	kPcDescriptorsCid = 50,
-	kStringCid = 72,
-	kOneByteStringCid = 73,
-	kTwoByteStringCid = 74,
-	kArrayCid = 75,
-	kImmutableArrayCid = 76,
-	kGrowableObjectArrayCid = 77,
-	kMintCid = 78,
-	kDoubleCid = 79,
-	kTypedDataBaseCid = 80,
-	kTypeCid = 110,
-	kFunctionTypeCid = 111,
-	kRecordTypeCid = 112,
-	kTypeParametersCid = 113,
-	kTypeParameterCid = 114,
-	kTypeArgumentsCid = 115,
-	kNumPredefinedCids = 128
-} DartCid;
+	DART_TYPE_KIND_TYPE = 1,
+	DART_TYPE_KIND_FUNCTION_TYPE,
+	DART_TYPE_KIND_TYPE_PARAMETER,
+} DartTypeKind;
 
 #define DART_SNAPSHOT_MAGIC 0xdcdcf5f5
 #define DART_SNAPSHOT_FIXED_SIZE (4 + 8 + 8)

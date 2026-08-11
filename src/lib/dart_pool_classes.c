@@ -47,10 +47,58 @@ static void dart_interface_info_free(void *p) {
 	}
 }
 
-typedef enum {
-	kFieldCid_extract = 10,
-	kLibraryCid_extract = 12,
-} ExtraCids;
+// Cluster classes the legacy (non-OBJECT_HEADER) parser knows how to decode,
+// resolved for the snapshot's own layout. Absent classes resolve to -1 and then
+// match nothing, which is the point: comparing against a hardcoded id silently
+// decoded the wrong cluster on every release that shifted the numbering.
+typedef struct {
+	int string;
+	int one_byte_string;
+	int two_byte_string;
+	int class_;
+	int field;
+	int function;
+	int type;
+	int function_type;
+	int type_parameter;
+	int type_arguments;
+	int array;
+	int immutable_array;
+	int library;
+} LegacyClusterCids;
+
+static LegacyClusterCids legacy_cluster_cids(const DartVerLayout *layout) {
+	const LegacyClusterCids lc = {
+		.string = dart_cid_get (layout, DART_CID_STRING),
+		.one_byte_string = dart_cid_get (layout, DART_CID_ONE_BYTE_STRING),
+		.two_byte_string = dart_cid_get (layout, DART_CID_TWO_BYTE_STRING),
+		.class_ = dart_cid_get (layout, DART_CID_CLASS),
+		.field = dart_cid_get (layout, DART_CID_FIELD),
+		.function = dart_cid_get (layout, DART_CID_FUNCTION),
+		.type = dart_cid_get (layout, DART_CID_TYPE),
+		.function_type = dart_cid_get (layout, DART_CID_FUNCTION_TYPE),
+		.type_parameter = dart_cid_get (layout, DART_CID_TYPE_PARAMETER),
+		.type_arguments = dart_cid_get (layout, DART_CID_TYPE_ARGUMENTS),
+		.array = dart_cid_get (layout, DART_CID_ARRAY),
+		.immutable_array = dart_cid_get (layout, DART_CID_IMMUTABLE_ARRAY),
+		.library = dart_cid_get (layout, DART_CID_LIBRARY),
+};
+	return lc;
+}
+
+static inline bool legacy_cid_is(ut64 cid, int resolved) {
+	return resolved >= 0 && cid == (ut64)resolved;
+}
+
+// Clusters whose decoders may legitimately give up part-way (variable-length
+// payloads we do not fully model); the rest are treated as stream corruption.
+static bool legacy_cid_recoverable(ut64 cid, const LegacyClusterCids *lc) {
+	return legacy_cid_is (cid, lc->function) ||
+		legacy_cid_is (cid, lc->function_type) ||
+		legacy_cid_is (cid, lc->type_arguments) ||
+		legacy_cid_is (cid, lc->array) ||
+		legacy_cid_is (cid, lc->immutable_array);
+}
 
 #define DART_TYPE_CLASS_ID_SHIFT 3
 #define DART_TYPE_CLASS_ID_MASK ((1U << 20) - 1)
@@ -415,7 +463,7 @@ static int decode_type_cluster_ext(ClusterStream *s, DartCtx *ctx, RList *type_l
 	for (ut64 i = 0; i < count; i++) {
 		DartTypeInfo *ti = R_NEW0 (DartTypeInfo);
 		ti->ref_id = (*ref_counter)++;
-		ti->kind = kTypeCid;
+		ti->kind = DART_TYPE_KIND_TYPE;
 		ut64 type_test_stub_ref = 0;
 		ut64 hash_ref = 0;
 		ut64 args_ref = 0;
@@ -451,7 +499,7 @@ static int decode_type_parameter_cluster_ext(ClusterStream *s, DartCtx *ctx, RLi
 	for (ut64 i = 0; i < count; i++) {
 		DartTypeInfo *ti = R_NEW0 (DartTypeInfo);
 		ti->ref_id = (*ref_counter)++;
-		ti->kind = kTypeParameterCid;
+		ti->kind = DART_TYPE_KIND_TYPE_PARAMETER;
 		ut64 type_test_stub_ref = 0;
 		ut64 hash_ref = 0;
 		ut64 owner_ref = 0;
@@ -518,7 +566,7 @@ static int decode_function_type_cluster_ext(ClusterStream *s, DartCtx *ctx, RLis
 	for (ut64 i = 0; i < count; i++) {
 		DartTypeInfo *ti = R_NEW0 (DartTypeInfo);
 		ti->ref_id = (*ref_counter)++;
-		ti->kind = kFunctionTypeCid;
+		ti->kind = DART_TYPE_KIND_FUNCTION_TYPE;
 		ut64 type_test_stub_ref = 0;
 		ut64 hash_ref = 0;
 		if (!cs_read_ref_id (s, &type_test_stub_ref) || !cs_read_ref_id (s, &hash_ref) || !cs_read_ref_id (s, &ti->type_parameters_ref) || !cs_read_ref_id (s, &ti->result_type_ref) || !cs_read_ref_id (s, &ti->parameter_types_ref) || !cs_read_ref_id (s, &ti->named_parameter_names_ref)) {
@@ -658,23 +706,27 @@ static char *dup_ref_string_obf(DartCtx *ctx, ut64 ref) {
 	return value;
 }
 
-static const char *builtin_type_name(ut64 cid) {
-	switch (cid) {
-	case kStringCid:
-	case kOneByteStringCid:
-	case kTwoByteStringCid:
+// `Type.type_class_id` is a class id packed into the type's flags, not a ref, so
+// it is compared against this layout's real ids.
+static const char *builtin_type_name(DartCtx *ctx, ut64 cid) {
+	const DartVerLayout *layout = ctx? ctx->layout: NULL;
+	if (legacy_cid_is (cid, dart_cid_get (layout, DART_CID_STRING)) ||
+		legacy_cid_is (cid, dart_cid_get (layout, DART_CID_ONE_BYTE_STRING)) ||
+		legacy_cid_is (cid, dart_cid_get (layout, DART_CID_TWO_BYTE_STRING))) {
 		return "String";
-	case kArrayCid:
-	case kImmutableArrayCid:
-	case kGrowableObjectArrayCid:
-		return "List";
-	case kMintCid:
-		return "int";
-	case kDoubleCid:
-		return "double";
-	default:
-		return NULL;
 	}
+	if (legacy_cid_is (cid, dart_cid_get (layout, DART_CID_ARRAY)) ||
+		legacy_cid_is (cid, dart_cid_get (layout, DART_CID_IMMUTABLE_ARRAY)) ||
+		legacy_cid_is (cid, dart_cid_get (layout, DART_CID_GROWABLE_OBJECT_ARRAY))) {
+		return "List";
+	}
+	if (legacy_cid_is (cid, dart_cid_get (layout, DART_CID_MINT))) {
+		return "int";
+	}
+	if (legacy_cid_is (cid, dart_cid_get (layout, DART_CID_DOUBLE))) {
+		return "double";
+	}
+	return NULL;
 }
 
 static DartTypeInfo *find_type_by_ref(RList *type_list, ut64 ref) {
@@ -855,7 +907,7 @@ static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *typ
 	if (R_STR_ISNOTEMPTY (ti->name)) {
 		return strdup (ti->name);
 	}
-	if (ti->kind == kTypeParameterCid) {
+	if (ti->kind == DART_TYPE_KIND_TYPE_PARAMETER) {
 		bool is_function_param = (ti->flags & DART_TYPE_PARAMETER_FUNCTION_FLAG) != 0;
 		const char *base_prefix = is_function_param? "F": "C";
 		const char *index_prefix = is_function_param? "Y": "X";
@@ -868,7 +920,7 @@ static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *typ
 		}
 		return name;
 	}
-	if (ti->kind == kFunctionTypeCid) {
+	if (ti->kind == DART_TYPE_KIND_FUNCTION_TYPE) {
 		char *name = resolve_function_type_name (ctx, class_list, type_list, type_args_list, array_list, ti, depth);
 		if (name) {
 			ti->name = strdup (name);
@@ -876,7 +928,7 @@ static char *resolve_type_name_depth(DartCtx *ctx, RList *class_list, RList *typ
 		return name;
 	}
 	char *name = NULL;
-	const char *builtin = builtin_type_name (ti->type_class_ref);
+	const char *builtin = builtin_type_name (ctx, ti->type_class_ref);
 	if (builtin) {
 		name = strdup (builtin);
 	} else {
@@ -1319,7 +1371,7 @@ static void resolve_class_interfaces(DartCtx *ctx, RList *class_list, RList *typ
 		char *name = resolve_type_name (ctx, class_list, type_list, type_args_list, array_list, type_ref);
 		ut64 class_ref = 0;
 		DartTypeInfo *ti = find_type_by_ref (type_list, type_ref);
-		if (ti && ti->kind == kTypeCid) {
+		if (ti && ti->kind == DART_TYPE_KIND_TYPE) {
 			DartClassInfo *target_ci = find_class_by_ref (class_list, ti->type_class_ref);
 			if (target_ci) {
 				class_ref = target_ci->ref_id;
@@ -1504,6 +1556,7 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 			.end = snapshot_base + sh.total_len
 		};
 		ut64 ref_counter = sh.nb + 1;
+		const LegacyClusterCids lc = legacy_cluster_cids (ctx->layout);
 		for (ut64 ci2 = 0; ci2 < sh.nc && stream.cursor < stream.end; ci2++) {
 			uint32_t tags = 0;
 			if (!cs_read_u32 (&stream, &tags)) {
@@ -1513,62 +1566,37 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 			bool is_canonical = ((tags >> 1) & 1) != 0;
 			(void)is_canonical;
 			if (ctx->verbose > 1) {
-				fprintf (stderr, "[r2flutter] Cluster %" PRIu64 ": cid=%u (Class=%d,Field=%d,String=%d)\n", ci2, cid, kClassCid, kFieldCid_extract, kOneByteStringCid);
+				fprintf (stderr, "[r2flutter] Cluster %" PRIu64 ": cid=%u (Class=%d,Field=%d,String=%d)\n", ci2, cid, lc.class_, lc.field, lc.one_byte_string);
 			}
 			int rc = 0;
-			switch (cid) {
-			case kOneByteStringCid:
-			case kTwoByteStringCid:
-			case kStringCid:
+			if (legacy_cid_is (cid, lc.one_byte_string) || legacy_cid_is (cid, lc.two_byte_string) || legacy_cid_is (cid, lc.string)) {
 				rc = decode_string_cluster (&stream, ctx, &ref_counter, false);
-				break;
-			case kClassCid:
+			} else if (legacy_cid_is (cid, lc.class_)) {
 				rc = decode_class_cluster_ext (&stream, ctx, class_list, &ref_counter);
-				break;
-			case kFieldCid_extract:
+			} else if (legacy_cid_is (cid, lc.field)) {
 				rc = decode_field_cluster_ext (&stream, ctx, field_list, &ref_counter);
-				break;
-			case kFunctionCid:
+			} else if (legacy_cid_is (cid, lc.function)) {
 				rc = decode_function_cluster_ext (&stream, ctx, method_list, &ref_counter);
-				if (rc < 0) {
-					rc = 0;
-					skip_generic_cluster (&stream);
-				}
-				break;
-			case kTypeCid:
+			} else if (legacy_cid_is (cid, lc.type)) {
 				rc = decode_type_cluster_ext (&stream, ctx, type_list, &ref_counter);
-				break;
-			case kFunctionTypeCid:
+			} else if (legacy_cid_is (cid, lc.function_type)) {
 				rc = decode_function_type_cluster_ext (&stream, ctx, type_list, &ref_counter);
-				if (rc < 0) {
-					rc = 0;
-					skip_generic_cluster (&stream);
-				}
-				break;
-			case kTypeParameterCid:
+			} else if (legacy_cid_is (cid, lc.type_parameter)) {
 				rc = decode_type_parameter_cluster_ext (&stream, ctx, type_list, &ref_counter);
-				break;
-			case kTypeArgumentsCid:
+			} else if (legacy_cid_is (cid, lc.type_arguments)) {
 				rc = decode_type_arguments_cluster_ext (&stream, ctx, type_args_list, &ref_counter);
-				if (rc < 0) {
-					rc = 0;
-					skip_generic_cluster (&stream);
-				}
-				break;
-			case kArrayCid:
-			case kImmutableArrayCid:
+			} else if (legacy_cid_is (cid, lc.array) || legacy_cid_is (cid, lc.immutable_array)) {
 				rc = decode_array_cluster_ext (&stream, ctx, array_list, &ref_counter);
-				if (rc < 0) {
-					rc = 0;
-					skip_generic_cluster (&stream);
-				}
-				break;
-			case kLibraryCid_extract:
+			} else if (legacy_cid_is (cid, lc.library)) {
 				rc = decode_library_cluster_ext (&stream, ctx, libraries, &ref_counter);
-				break;
-			default:
+			} else {
 				skip_generic_cluster (&stream);
-				break;
+			}
+			// A cluster we recognise but cannot decode is not fatal: skip its
+			// bytes and carry on rather than abandoning the whole snapshot.
+			if (rc < 0 && legacy_cid_recoverable (cid, &lc)) {
+				rc = 0;
+				skip_generic_cluster (&stream);
 			}
 			if (rc < 0) {
 				break;

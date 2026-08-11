@@ -140,11 +140,24 @@ static const DartCidTable *cid_table_for_version(const char *version) {
 }
 
 static const DartCidTable *cid_table_for_layout(const DartVerLayout *layout) {
-	const DartCidTable *table = cid_table_for_version (layout? layout->dart_version: NULL);
-	if (table) {
-		return table;
+	// One-entry memo. dart_cid_get is called per decoded object on some paths,
+	// and resolving the table means comparing version strings against every row;
+	// a layout's version never changes once it is picked, so caching the last
+	// answer turns that scan into a pointer compare.
+	static const DartVerLayout *memo_layout = NULL;
+	static const DartCidTable *memo_table = NULL;
+	if (layout && layout == memo_layout && memo_table) {
+		return memo_table;
 	}
-	return cid_table_for_version ("3.9.2");
+	const DartCidTable *table = cid_table_for_version (layout? layout->dart_version: NULL);
+	if (!table) {
+		table = cid_table_for_version ("3.9.2");
+	}
+	if (layout && table) {
+		memo_layout = layout;
+		memo_table = table;
+	}
+	return table;
 }
 
 const char *dart_cid_kind_name(DartCidKind kind) {
