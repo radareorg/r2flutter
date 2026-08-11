@@ -98,6 +98,82 @@ static int collect_snapshot_magics_in_range(DartCtx *ctx, ut64 start, ut64 size,
 	return found_cnt;
 }
 
+// A Dart Image starts with a kObjectStartAlignment (64)-byte header whose first
+// host word is ImageSize (header + payload) and second is
+// InstructionsSectionOffset. Bare-instructions AOT lays the two instruction
+// images consecutively at the start of the first executable section:
+// [VmInstructions][IsolateInstructions], each padded up to this alignment.
+#define DART_IMAGE_ALIGN 64
+#define DART_IMAGE_HEADER_MIN 64
+
+static ut64 dart_align_up(ut64 v, ut64 a) {
+	return (v + (a - 1)) & ~(a - 1);
+}
+
+// Read an Image header at addr and return its ImageSize in *size_out, true only
+// if it is a plausible instructions image: it fits before the first data image
+// and its InstructionsSection offset (word 1) is a small nonzero aligned value
+// inside the image.
+static bool dart_image_at(DartCtx *ctx, ut64 addr, ut64 data_lo, ut64 *size_out) {
+	ut8 hdr[16];
+	if (!read_mem (ctx, addr, hdr, sizeof (hdr))) {
+		return false;
+	}
+	ut64 size = r_read_le64 (hdr), isoff = r_read_le64 (hdr + 8);
+	*size_out = size;
+	return size >= DART_IMAGE_HEADER_MIN && addr + size <= data_lo &&
+		isoff >= 8 && (isoff & 7) == 0 && isoff < size && isoff < 0x10000;
+}
+
+// When the four kDart* symbols are stripped, the magic scan can only find the
+// data snapshots (instruction images carry no magic). Recover vm_instr/iso_instr
+// structurally: vm_instr is the start of the first executable section, and the
+// isolate instructions image follows the VM one and ends where the first data
+// image begins. Every step is cross-checked; if anything is off we leave the
+// addresses at 0, so a wrong/unknown layout degrades to "no IT names" rather
+// than junk addresses. No-op when symbols already resolved the instructions.
+static void locate_instr_images_structural(DartCtx *ctx) {
+	if (!ctx || !ctx->core || !ctx->core->bin || ctx->vm_instr || ctx->iso_instr) {
+		return;
+	}
+	ut64 data_lo = ctx->vm_data && ctx->iso_data
+		? R_MIN (ctx->vm_data, ctx->iso_data)
+		: (ctx->vm_data? ctx->vm_data: ctx->iso_data);
+	if (!data_lo) {
+		return;
+	}
+	RVecRBinSection *sections = r_bin_get_sections_vec (ctx->core->bin);
+	if (!sections) {
+		return;
+	}
+	ut64 vm_instr = 0, sz1 = 0, sz2 = 0;
+	RBinSection *sec;
+	R_VEC_FOREACH (sections, sec) {
+		if (sec && !sec->is_segment && sec->vaddr && sec->vsize && (sec->perm & R_PERM_X)) {
+			vm_instr = rebase_bin_addr (ctx, sec->vaddr);
+			break;
+		}
+	}
+	if (!vm_instr || vm_instr >= data_lo || !dart_image_at (ctx, vm_instr, data_lo, &sz1)) {
+		return;
+	}
+	ut64 iso_instr = dart_align_up (vm_instr + sz1, DART_IMAGE_ALIGN);
+	if (iso_instr <= vm_instr || iso_instr >= data_lo || !dart_image_at (ctx, iso_instr, data_lo, &sz2)) {
+		return;
+	}
+	// The isolate instructions image is the last text image: it must end right
+	// where the first data image begins (within a page of alignment slack).
+	ut64 iso_end = dart_align_up (iso_instr + sz2, DART_IMAGE_ALIGN);
+	if (iso_end > data_lo || data_lo - iso_end > 0x4000) {
+		return;
+	}
+	ctx->vm_instr = vm_instr;
+	ctx->iso_instr = iso_instr;
+	if (ctx->verbose > 0) {
+		fprintf (stderr, "[r2flutter] located instruction images structurally: vm_instr=0x%" PFMT64x " iso_instr=0x%" PFMT64x "\n", (ut64)vm_instr, (ut64)iso_instr);
+	}
+}
+
 int find_snapshots(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
 		return -1;
@@ -212,6 +288,9 @@ int find_snapshots(DartCtx *ctx) {
 				ctx->iso_data = scan_iso_data;
 			}
 		}
+		// Symbols are absent (we reached the scan): try to recover the
+		// instruction images from the section layout so IT name recovery works.
+		locate_instr_images_structural (ctx);
 		if (ctx->vm_data || ctx->iso_data || ctx->vm_instr || ctx->iso_instr) {
 			return 0;
 		}
