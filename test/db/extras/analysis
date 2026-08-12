@@ -296,6 +296,6 @@ EXPECT=<<EOF
 0x00008e90 0 dart.class.Handle
 EOF
 EXPECT_ERR=<<EOF
-INFO: Flutter analysis: 1311 functions, 4731 calls, 0 fields, 4 classes, 0 types, 14 strings, 2912 PP refs
+INFO: Flutter analysis: 1311 functions, 4731 calls, 0 fields, 9 classes, 0 types, 42 strings, 2912 PP refs
 EOF
 RUN
