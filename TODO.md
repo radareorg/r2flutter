@@ -29,18 +29,12 @@ rank; each item states the concrete failure it causes.
 | `833f89a` | **P2.1**: deleted the legacy cluster walker — `deserialize_clusters`, `decode_class_cluster`, `decode_function_cluster`, `resolve_names`, the `DartClass`/`DartPoolFunction` types and the `DartCtx.classes`/`.functions` fields that only it wrote (244 lines). It had been running on every `-f`/`-A` alongside the modern scanner while contributing nothing: verified before removal by stubbing it out (50/50 outputs identical), and after by diffing 95 sample×action outputs against the previous commit. `decode_string_cluster`/`skip_generic_cluster`/`free_dart_string` stay — the legacy **class** parser in `dart_pool_classes.c` still uses them for CID_SHIFT1 samples. |
 | `f10d30d` | **P2.2**: the fake `kXxxCid` enum is gone. Only 3 of its 28 values (`Class`, `PatchClass`, `Function`) matched any real Dart release, so the legacy class parser decoded Class/Function clusters and silently skipped String/Array/Type/Mint/Double — the ones it needed for names. Its `switch` is now an `if` chain over `LegacyClusterCids`, resolved per layout via `dart_cid_get`. The two sites that fell back to a *fabricated* id when resolution failed (`dart_pool_data_image.c`, `dart_pool_it.c`) now fail closed, and a third raw `kFieldCid` comparison was resolved the same way. `builtin_type_name` keeps working on `Type.type_class_id` — a class id packed in the type flags, not a ref despite the field name — but against real ids. The `ti->kind` discriminator, which was never a snapshot id, became `DartTypeKind`. |
 | `f10d30d` | **Perf, found via P2.2**: `cid_table_for_layout` resolved the CID table by comparing version *strings* against every row on **every** `dart_cid_get` call, and that call sits per-object on some paths. A one-entry memo keyed on the layout pointer makes it a pointer compare. Synthetic `-x` 4862 → **37 ms** (131×), mafia `-f` 1008 → 550 ms, mafia `-c` 756 → 312 ms. Output unchanged on all 95 comparisons. This was already the dominant cost *before* P2.2 — more evidence for the P3.1 note that the double cluster walk was the wrong suspect. |
-| *(uncommitted)* | **P3.5 + two `-x` correctness bugs**: `collect_pool_uses_from_entry` read JSON keys `pdj` does not emit. `offset` (real key: `addr`) always returned 0, so *every* pool use fell back to `entry->address` — the reported address was the function start, never the referencing instruction. `opstr` (real keys: `disasm`/`opcode`) was always NULL, making two of the three parser calls duplicates. The fixed 96-op window also ran past short functions (median Dart function is 28 instructions) into their neighbours, crediting those references to the wrong entry; it is now bounded by the next entry's address. Verified: after the fix 100% of pool uses lie inside the function they are attributed to and only 7 of 4573 sit at a function start — before, 100% sat at a function start, which is why the attribution check could not fail. mafia `-x` 7783 → 4738 ms, AuthPass 6460 → 2635 ms. Non-`-x` output identical across 80 comparisons. Also hardens the `dart_cid_get` memo: it was keyed on the layout pointer, and owned layouts are freed, so a later layout at the same address could inherit the previous snapshot's CID table; it now keys on a copy of the version text. |
-| *(uncommitted)* | **P2.3**: `cid_table_for_layout`'s fallback for a layout with no usable version now goes through `dart_newest_profile()` instead of the literal `"3.9.2"`, so it agrees with the baseline the version fingerprinter picks for an unknown hash. Verified a no-op today by diffing the two tables directly — the literal floors to the 3.9.0 row, the newest profile selects 3.12.0, and they have **zero** differing CIDs and identical typed-data base/limit/stride. It stops being a no-op the moment a release shifts the numbering, which is the whole point. |
-
-> **Broken right now:** `6a7e01b` correctly switched the legacy class parser to
-> read cluster tags as varints (`cs_read_tagged32`) — Dart writes them with
-> `Read<uint32_t>`, which is a varint — but `bins/synthetic/field_snapshot.bin`
-> stores **raw little-endian u32** tags, so it decodes to nothing. 4 custom and
-> 9 r2r tests fail (all `fields-synthetic` / `sbom-synthetic`; no real-binary
-> test is affected). This is the same fixture problem P2.2 hit from the other
-> side: it encodes obsolete conventions, so re-encoding the tags shifts every
-> following byte and the header's `total_len`. **The fix is to write a generator
-> for it** rather than patch bytes a third time — see the P4 note.
+| `251bec7` | **Initial `--dump-xrefs`**: real-binary `-x` tests (`xrefs-android`, `xrefs-ios`) land, so the ObjectPool-use scanner is no longer covered only by the synthetic blob. |
+| `25dc49e` | **P3.5 + two `-x` correctness bugs**: `collect_pool_uses_from_entry` read JSON keys `pdj` does not emit. `offset` (real key: `addr`) always returned 0, so *every* pool use fell back to `entry->address` — the reported address was the function start, never the referencing instruction. `opstr` (real keys: `disasm`/`opcode`) was always NULL, making two of the three parser calls duplicates. The fixed 96-op window also ran past short functions (median Dart function is 28 instructions) into their neighbours; it is now bounded by the next entry's address. After the fix 100% of pool uses lie inside the function they are attributed to (before, 100% sat at a function start, which is why the attribution check could not fail). mafia `-x` 7783 → 4738 ms. Also hardens the `dart_cid_get` memo to key on a copy of the version text, not the (freeable) layout pointer. |
+| `334c97b` | **P2.3**: `cid_table_for_layout`'s fallback for a layout with no usable version now goes through `dart_newest_profile()` instead of the literal `"3.9.2"`, so it agrees with the baseline the version fingerprinter picks for an unknown hash. Verified a no-op today (the two tables have zero differing CIDs); it stops being one the moment a release shifts the numbering. |
+| `540efcf` | **P0.2 largely landed — the modern gate is now open.** `dart_modern_is_supported_snapshot` accepts `cws == 8` **and** `CID_SHIFT1`, not just `cws == 4` / OBJECT_HEADER. The fill desync that blocked this (the roadmap's cluster-12 failure on `hello.aot`) is resolved by `modern_skip_fill_instance` (version-dependent instance fill shape) and `modern_load_rodata_strings`, which reads the six RO-data string classes from the data image where uncompressed builds put them. **Result:** iOS Runner (3.4.3) recovers **6389 method names** where it emitted `func.<addr>` placeholders before; `hello.aot` (3.11.5) recovers 1130/1325. Tests `dump-funcs-ios-runner`/`-authpass`/`dump-it-ios-runner` updated to assert real names. **Still gated:** class/field extraction (`modern_can_extract_classes` keeps `cws == 4`), so `-c` on cws=8 still shows the weak `size=0` fallback — see the trimmed P0.2. |
+| `b6ea0b8` | **Synthetic fixture reconciled** with the varint-tag switch. `6a7e01b` correctly made the legacy class parser read cluster tags as varints (Dart writes them with `Read<uint32_t>`, a varint), which broke `bins/synthetic/field_snapshot.bin` — it stores raw LE u32 tags. Rather than re-encode the blob, the parser branches on `synthetic_legacy_parse`: raw u32 for the fixture, varint for real snapshots. All tests green again. The fixture still has no generator (see P4). |
+| `02efb30` | **String comments in `-AAA` disasm**: `PP+N` ObjectPool loads that resolve to a string now emit a `; dart: string "…"` comment at the referencing instruction. New test `analysis-string-comments`. |
 
 Corrections to earlier assumptions, worth remembering:
 - **The CID tables are not the problem.** Flooring is exactly correct 2.10→3.12,
@@ -60,86 +54,63 @@ Corrections to earlier assumptions, worth remembering:
 
 ---
 
-## The finding that reshapes priorities
+## The finding that reshaped priorities — now largely acted on
 
-**Only 1 of 5 sample binaries exercises the "modern" (good) cluster decoder.**
-`dart_modern_is_supported_snapshot()` (`dart_pool_modern.c:207`) gates it on
-`tag_style == OBJECT_HEADER && compressed_word_size == 4`:
+Historically **only 1 of 5 sample binaries** reached the "modern" (good) cluster
+decoder, because `dart_modern_is_supported_snapshot()` gated on
+`tag_style == OBJECT_HEADER && cws == 4`. `540efcf` opened that gate:
 
-| Sample | Dart | tag_style | cws | modern decoder? |
-|--------|------|-----------|-----|-----------------|
-| `android/mafia` | 3.9.2 | OBJECT_HEADER | 4 | **yes** |
-| `android/first` | 2.18.2 | OBJECT_HEADER | 8 | no |
-| `ios/Runner.app` | 3.4.3 | OBJECT_HEADER | 8 | no |
-| `ios/AuthPass.app` | 3.2.5 | CID_SHIFT1 | 8 | no |
-| `macos/hello.aot` | 3.11.5 | OBJECT_HEADER | 8 | no |
+| Sample | Dart | tag_style | cws | modern **name** path | modern **class/field** path |
+|--------|------|-----------|-----|-----------------|-----------------|
+| `android/mafia` | 3.9.2 | OBJECT_HEADER | 4 | **yes** | **yes** |
+| `android/first` | 2.18.2 | OBJECT_HEADER | 8 | **yes** (was no) | no (cws==4 gate) |
+| `ios/Runner.app` | 3.4.3 | OBJECT_HEADER | 8 | **yes** (was no) | no |
+| `ios/AuthPass.app` | 3.2.5 | CID_SHIFT1 | 8 | **yes** (was no) | no |
+| `macos/hello.aot` | 3.11.5 | OBJECT_HEADER | 8 | **yes** (was no) | no |
 
-Two consequences drive the P0 items below:
-1. The 4000-line modern decoder is **skipped for most binaries**, including
-   modern-era ones that merely lack pointer compression (iOS Runner 3.4.3,
-   hello 3.11.5). Those rely on the data-image scanners for names.
-2. The single modern-path sample is 3.9.2, which **nearly matched** the CID table
-   `modern_get_fill_spec` used to hardcode — which is why the P0.1 bug was
-   invisible to CI, and why its fix still has no end-to-end test (P0.3).
+So function/method **name** recovery now runs on all five; only class/field
+extraction is still `cws == 4`-only. That is the remaining half of P0.2.
+
+The single *class-path* sample is still 3.9.2, which **nearly matched** the CID
+table `modern_get_fill_spec` used to hardcode — which is why the P0.1 bug was
+invisible to CI, and why its fix still has no end-to-end test (P0.3).
 
 ---
 
 ## P0 — correctness bugs with no test coverage
 
-### P0.2 Extend the modern decoder to uncompressed (`cws == 8`) snapshots
-`dart_pool_modern.c` gate + `modern_can_extract_classes`. The `cws == 4` half of
-the gate is an implementation limit, not a format boundary: 2.18.2, 3.4.3 and
-3.11.5 samples are all OBJECT_HEADER but uncompressed, so they never reach the
-good decoder. **Failure:** name/class recovery on those binaries falls back to
-heuristic data-image scanning — i.e. most iOS apps and all macOS standalone
-builds get the weaker path. Still the single largest *quality* win available.
+### P0.2 (remaining half) Class/field extraction on `cws == 8` snapshots
+The **name** path is done — `540efcf` opened `dart_modern_is_supported_snapshot`
+to `cws == 8` and `CID_SHIFT1`, and iOS/macOS samples now recover real method
+names (see status table). What is left is **class/field** extraction:
+`modern_can_extract_classes` (`dart_pool_modern.c`) still returns
+`cws == 4`. On a cws=8 snapshot `-c` falls back to the `size=0` string-scan
+(`class extraction: ObjectHeader fill parser unavailable for cws=8, using string
+fallback`), so fields, instance sizes and interfaces are not recovered.
 
-**Investigated; partially landed. Do not re-derive the following.**
-
-*The format delta is small and now known exactly.* `Serializer::ReadOnlyObjectType`
-(`app_snapshot.cc`) is the whole of it: with pointer compression off, six classes
-move into the read-only data image — `PcDescriptors`, `CodeSourceMap`,
-`CompressedStackMaps`, `String`, `OneByteString`, `TwoByteString`. Their clusters
-carry image offsets in the alloc record and emit **no fill records at all**
-(`RODataDeserializationCluster::ReadFill` is a no-op). Nothing else in the cluster
-stream depends on pointer compression — it is varint/ref-id encoded throughout,
-and the *target* word size is 64-bit either way. This rule is implemented in
-`modern_walk_is_rodata` and is live for both gates.
-
-*The alloc phase already works uncompressed.* Verified on `hello.aot` (3.11.5) and
-iOS `Runner` (3.4.3): the walk yields a complete, sane cluster list — 501 `Class`,
-1 `ObjectPool`, 24 `PcDescriptors`, 946 `CodeSourceMap`, `Field`/`Script`/`Library`
-all present — and the allocated-object total sits the same small distance below the
-header's `num_objects` as it does on the known-good compressed sample. No width
-parameterisation was needed for it.
-
-*What still blocks the gate: the fill phase desyncs, for a reason unrelated to
-`cws`.* On `hello.aot` fill dies at cluster 12 with ~14 KB of stream still
-unconsumed (a genuine decode failure, not a bounds problem), having already read
-an implausible `Array` length of 11039 at cluster 11. All six RO-data clusters sit
-*after* the failure, so the RO-data rule alone does not unblock it. The suspicion
-is that one or more **fill shapes are version-dependent** and `rules[]` encodes a
-single era: P0.1 fixed which *cid* each rule applies to, not the *shape* of the
-rule. Concrete evidence that shapes do move: `ClosureDeserializationCluster`
-changed between 3.9 and current from `ReadAllocFixedSize` to a per-object length
-varint in **both** ReadAlloc and ReadFill. Ruled out already: `Map`/`Set` are 5
-refs (`to_snapshot()` stops at `deleted_keys_`, `index` is not serialized) and
-`Array` matches the SDK exactly.
-
-**Next step:** bisect the first divergent cluster on `hello.aot` by diffing the
-per-class `ReadFill` bodies between `third_party/blutter/dartsdk/v3.9.0` and
-`third_party/dart-sdk` (both are checked in, and the byte-per-object figures per
-cluster make a good oracle), then make the affected rules version-aware. **Do not
-open the gate until fill lands exactly on `cluster_end`** — with it open the
-decoder emits confidently wrong class names instead of falling back.
+**Do not re-derive — already established:**
+- *Format delta is exactly `Serializer::ReadOnlyObjectType`*: six classes
+  (`PcDescriptors`, `CodeSourceMap`, `CompressedStackMaps`, `String`,
+  `OneByteString`, `TwoByteString`) move to the RO-data image with no fill
+  records. Handled by `modern_walk_is_rodata` + `modern_load_rodata_strings`.
+- *The fill desync is resolved.* The old cluster-12 failure on `hello.aot` came
+  from a version-dependent instance fill shape; `modern_skip_fill_instance`
+  fixes it, and the name-scan fill walk now completes on cws=8.
+- *Instance/class fill reads target-word-sized fields.* This is where the
+  remaining work is: `modern_read_class_fill`/`modern_read_field_fill` were
+  written for the compressed layout. Extending them, then dropping the `cws == 4`
+  in `modern_can_extract_classes`, is the task. Verify with `hello.aot -c`:
+  today garbage, target is real class names + non-zero sizes.
 
 ### P0.3 Test corpus does not cover the decoders we ship
-Add samples that exercise the untested combinations, then wire them into the
-suite:
+Progress: iOS **name** recovery on cws=8 is now asserted
+(`dump-funcs-ios-runner`/`-authpass`, `dump-it-ios-runner`), and `-x` has
+real-binary coverage (`xrefs-android`/`-ios`). Remaining gaps:
 - a **Dart 3.4/3.5-era compressed-pointer** app (P0.1 is fixed but still has no
   end-to-end regression test; it was verified only by resolving `rules[]` against
   each layout in isolation);
-- an **uncompressed modern** app through the modern path (validates P0.2);
+- **cws=8 class/field** extraction has no positive test yet — it can't, until the
+  remaining half of P0.2 lands and `hello.aot -c` produces real classes;
 - more **iOS** binaries generally, ideally real obfuscated/stripped release
   `App`s (also broadens the `0716a95` structural path, per `COMMIT2.md`);
 - a **32-bit ARM** app if one can be found (validates P1.2).
@@ -206,9 +177,13 @@ overridden by the feature flags anyway (cws is decided three times, flags win).
 and confirm alignment is genuinely derived (it can be raised to 64) rather than
 silently defaulted.
 
-### P2.7 Dead `-x`/`-z` special-case in both frontends
-`core_flutter.c:343-345` and `main.c:207-208` set string-refs for *any* `-x`,
-making the later `action == 'x'` check dead; help text implies otherwise.
+### P2.7 `-x`/`-z` special-case in both frontends (partly overtaken)
+`core_flutter.c` (`case 'x'`) and `main.c` set `string_refs = true` for *any*
+`-x`. The dispatch is now live (`case 'x' → dart_pool_dump_xrefs`), so the
+"dead branch" framing no longer holds — but the unconditional `string_refs`
+plus the `if (cmd->action != 'z')` guard still reads as accidental coupling
+between `-x` and `-z`. Re-audit against current line numbers before acting;
+lower priority than when first written.
 
 ---
 
@@ -229,9 +204,14 @@ The real cost was elsewhere, and profiling found it: `dart_cid_get` re-resolved
 the CID table by version-string comparison on every call (see the status table).
 Memoising it took mafia `-f` from 1008 → 550 ms and the synthetic `-x` from 4862
 → 37 ms — far more than P2.1 could ever have given. **Profile before spending
-time here.** `-x` is now the slowest action by a wide margin (mafia 7.8 s,
-AuthPass 6.5 s) and is the next thing worth measuring; P3.2's brute-force
-InstructionTable search is the other suspect.
+time here.**
+
+`-x` was the next slowest; `25dc49e` fixed its correctness bugs and the window
+bound cut mafia `-x` 7783 → 4738 ms. A further ~2× remains: it still round-trips
+disassembly through `pdj` JSON text (`dart_pool_xrefs.c:527`) only to string-match
+`disasm`, where decoding with `r_anal_op` and inspecting operands directly would
+skip both the pretty-printer and the JSON. The 4096-entry scan cap also still
+hides ~89% of mafia's 37259 IT entries.
 
 ### P3.2 Brute-force InstructionTable header search
 `dart_pool_it.c:233-330` probes `{16,0,8,12} × delta -64..64 step 4`, then scans
@@ -257,20 +237,13 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## P4 — test quality (beyond the corpus gaps in P0.3)
 
-- **`-x` has no real-binary test at all.** The only coverage is
-  `xrefs-fields-synthetic` / `dump-fields-synthetic-xrefs`, both on the synthetic
-  blob, which is why two wrong JSON key names survived indefinitely. The P3.5
-  output change (addresses moving from function starts to real reference sites)
-  was therefore invisible to CI.
-- **The synthetic fixture used to encode the fake CID table.** `bins/synthetic/field_snapshot.bin`
-  was authored with the `kXxxCid` values (cluster ids 73/12/5/114/75/115/110/111/10/7,
-  none of them real), so the four tests covering the legacy class parser agreed
-  with the parser and with no real binary. P2.2 renumbered its cluster tags and
-  packed type-class ids to the layout it fingerprints to (~3.12), verified by the
-  output being unchanged; feeding the *old* fixture to the new parser now yields
-  1 class instead of 12, which is the regression signal that was missing.
-  **There is no generator for this fixture** — it is a checked-in blob, so any
-  future layout change means patching bytes again. Worth writing one.
+- **The synthetic fixture has no generator and is fragile.** `bins/synthetic/field_snapshot.bin`
+  is a hand-authored blob. It has already forced two special cases as the parser
+  was corrected: P2.2 had to renumber its cluster tags to real CIDs, and `b6ea0b8`
+  had to branch the tag reader on `synthetic_legacy_parse` because it stores raw
+  LE u32 tags while real snapshots use varints. Every future layout/encoding fix
+  risks a third. **Write a generator** so the fixture tracks the parser instead of
+  pinning obsolete conventions; the `synthetic_legacy_parse` branch could then go.
 - **Obfuscation-map tests are tautological**: `test/db/cmd/obf-map`,
   `test/custom/obf-funcs-ios.json`, `obf-it-android.json` load a map whose keys
   match nothing in the sample, so output is identical to the no-`-m` run. They
@@ -291,19 +264,19 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## Suggested execution order
 
-1. **Regenerate the synthetic fixture** — 13 tests are red and the blob now
-   disagrees with the parser twice over (raw vs varint tags). Write a generator.
-2. **Finish `-x`**: the `pdj` text round-trip is still there (a further ~2x is
-   available by decoding with `r_anal_op` instead), and the 4096-entry scan cap
-   still hides ~89% of mafia's 37259 entries.
-3. **P0.2** — widen the modern decoder to uncompressed snapshots. Biggest quality
-   win; makes most iOS/macOS samples use the good path. The RO-data half is
-   already implemented and the alloc phase is proven correct; what remains is
-   version-dependent *fill* shapes — see the P0.2 notes before starting.
-4. **P0.3** — grow the corpus alongside 2 so it is actually verified, and to give
-   the landed P0.1 fix an end-to-end regression test.
-5. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
-6. **P1.2** — arch gating.
+1. **P0.2 (remaining half)** — class/field extraction on `cws == 8`. The name
+   path already landed (`540efcf`); this finishes the largest quality win. Drop
+   the `cws == 4` in `modern_can_extract_classes` once
+   `modern_read_class_fill`/`modern_read_field_fill` handle the uncompressed
+   layout. Verify with `hello.aot -c`.
+2. **P0.3** — grow the corpus alongside 1: a real cws=8 class-extraction golden,
+   and a 3.4/3.5-era compressed sample for the still-untested P0.1 fix.
+3. **Finish `-x`**: replace the `pdj` JSON round-trip with `r_anal_op` decoding
+   (~2× more), then reconsider the 4096-entry cap that hides ~89% of IT entries.
+4. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
+5. **P1.2** — arch gating.
+6. **Write a synthetic-fixture generator** (see P4) so parser fixes stop needing
+   blob special-cases.
 7. **P3.2** — now a *lower* suspect than it looked; it never showed up in the
    `-x` profile. Remaining P2 cleanups and test hardening.
 

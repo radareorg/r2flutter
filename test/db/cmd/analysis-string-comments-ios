@@ -1,13 +1,13 @@
-NAME=r2-analysis-string-comment
-FILE=bins/android/first/libapp.so
+NAME=r2-analysis-pp-string-comment-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
 CMDS=<<EOF
 L ../src/r2/core_flutter.so
 L ../src/r2/core_flutter.dylib
 r2flutter -AAA
-pd 1 @ 0x8b914~&_nativeGetFloat64,dart: string[0]
+pd 1 @ 0x176d0~&PP slot,string,https[0]
 EOF
 EXPECT=<<EOF
-0x0008b914
+0x000176d0
 EOF
 RUN

@@ -1294,3 +1294,38 @@ The key instruction should now include:
 ```text
 0x009da744 ... ldr x2, [x2, 0x458] ; ... "premium" ; dart: PP slot +0x18458 string "premium"
 ```
+
+### PP string comments: resolver and analysis cost
+
+The first implementation initialized `ModernRefResolver` for a direct
+ObjectPool string lookup. That resolver also allocated ref-to-cluster,
+class/library/function, flags, and code-index tables and walked unrelated
+metadata fills. A direct PP string lookup only needs `string_ref -> value` and
+`string_ref -> payload address`, so `ModernDirectStringResolver` now owns just
+those two arrays. It still loads VM base strings when resolving an isolate
+snapshot, because isolate ObjectPool entries may reference canonical VM strings.
+
+PP offsets are local to one ObjectPool. Isolate and VM maps must therefore not
+be merged: the isolate ObjectPool is authoritative, and the VM ObjectPool is
+only a fallback when no isolate pool can be decoded. Merging both can attach a
+valid VM string to an unrelated isolate PP offset.
+
+On uncompressed iOS snapshots, string clusters may use `ROData` allocation and
+have no serialized fill payload. Their direct refs are resolved from the data
+image object, with the string payload at `object_addr + 16`. This is why Runner
+previously decoded a PP entry as `resolved_kind=string` but could not print its
+value or annotate its load.
+
+The instruction scan no longer requests OPEX JSON and reparses it once per
+instruction. It asks r2 for `R_ARCH_OP_MASK_VAL` operands and uses the decoded
+register/immediate values directly. ARM64 memory operands still use the already
+generated mnemonic for the base/displacement because the current ARM backend
+does not reliably set `RArchValue.memref`. ESIL is not useful in this hot path:
+it costs more to generate and execute, and tagged-object PP entries contain no
+runtime heap pointer in the serialized synthetic image. ESIL can propagate
+`x27 + offset`, but it cannot reconstruct the missing object pointer; the
+snapshot ref table remains the source of truth.
+
+On the local fixtures this reduced `r2flutter -AAA` from about 1.61 s to 1.57 s
+for Android `first/libapp.so` and from about 11.06 s to 10.43 s for iOS Runner,
+while Runner gained 2,355 PP-string annotations that the old path missed.

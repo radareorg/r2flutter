@@ -55,16 +55,12 @@ typedef struct {
 } FlutterAnalStats;
 
 typedef struct {
-	ut64 pp_offset;
 	ut64 string_addr;
 	char *string_value;
-	char *target_kind;
-	bool direct;
 } FlutterPpStringRef;
 
 typedef struct {
 	HtUP *by_pp_off;
-	RList *refs;
 } FlutterPpStringMap;
 
 typedef struct {
@@ -76,20 +72,15 @@ static void flutter_stack_slot_free(void *p) {
 	free (p);
 }
 
-static void flutter_pp_string_ref_free(void *p) {
-	FlutterPpStringRef *ref = p;
-	if (!ref) {
-		return;
-	}
+static void flutter_pp_string_ref_free(HtUPKv *kv) {
+	FlutterPpStringRef *ref = kv->value;
 	free (ref->string_value);
-	free (ref->target_kind);
 	free (ref);
 }
 
 static void flutter_pp_string_map_init(FlutterPpStringMap *map) {
 	memset (map, 0, sizeof (*map));
-	map->by_pp_off = ht_up_new0 ();
-	map->refs = r_list_newf (flutter_pp_string_ref_free);
+	map->by_pp_off = ht_up_new (NULL, flutter_pp_string_ref_free, NULL);
 }
 
 static void flutter_pp_string_map_fini(FlutterPpStringMap *map) {
@@ -97,7 +88,6 @@ static void flutter_pp_string_map_fini(FlutterPpStringMap *map) {
 		return;
 	}
 	ht_up_free (map->by_pp_off);
-	r_list_free (map->refs);
 	memset (map, 0, sizeof (*map));
 }
 
@@ -270,55 +260,114 @@ static bool flutter_parse_shifted_imm(const char *line, ut64 *imm) {
 	return true;
 }
 
+static void flutter_opinfo_add_reg(FlutterOpInfo *info, const char *reg) {
+	if (R_STR_ISEMPTY (reg) || info->n_regs >= (int)R_ARRAY_SIZE (info->regs)) {
+		return;
+	}
+	r_str_ncpy (info->regs[info->n_regs], reg, sizeof (info->regs[0]));
+	info->n_regs++;
+}
+
+static void flutter_opinfo_add_value(FlutterOpInfo *info, const RArchValue *value, bool add_reg) {
+	if (!value) {
+		return;
+	}
+	if (add_reg && R_STR_ISNOTEMPTY (value->reg)) {
+		flutter_opinfo_add_reg (info, value->reg);
+	}
+	if (value->imm) {
+		info->imm = (ut64)value->imm;
+		info->has_imm = true;
+	}
+}
+
+static void flutter_parse_mem_operand(const char *line, FlutterOpInfo *info) {
+	const char *p = R_STR_ISNOTEMPTY (line)? strchr (line, '['): NULL;
+	if (!p) {
+		return;
+	}
+	p++;
+	while (isspace ((ut8)*p)) {
+		p++;
+	}
+	const char *reg = p;
+	while (isalnum ((ut8)*p) || *p == '_') {
+		p++;
+	}
+	const size_t reg_len = p - reg;
+	if (!reg_len || reg_len >= sizeof (info->mem_base)) {
+		return;
+	}
+	memcpy (info->mem_base, reg, reg_len);
+	info->mem_base[reg_len] = '\0';
+	info->has_mem = true;
+	while (isspace ((ut8)*p)) {
+		p++;
+	}
+	if (*p != ',') {
+		return;
+	}
+	p++;
+	while (isspace ((ut8)*p) || *p == '#') {
+		p++;
+	}
+	char *end = NULL;
+	st64 disp = (st64)strtoll (p, &end, 0);
+	if (end != p) {
+		info->mem_disp = disp;
+	}
+}
+
+static void flutter_parse_first_operand_reg(const char *line, FlutterOpInfo *info) {
+	const char *p = R_STR_ISNOTEMPTY (line)? strchr (line, ' '): NULL;
+	if (!p) {
+		return;
+	}
+	while (isspace ((ut8)*p)) {
+		p++;
+	}
+	const char *reg = p;
+	while (isalnum ((ut8)*p) || *p == '_') {
+		p++;
+	}
+	const size_t reg_len = p - reg;
+	if (!reg_len || reg_len >= sizeof (info->regs[0])) {
+		return;
+	}
+	char name[sizeof (info->regs[0])];
+	memcpy (name, reg, reg_len);
+	name[reg_len] = '\0';
+	flutter_opinfo_add_reg (info, name);
+}
+
 static bool flutter_parse_opinfo(const RAnalOp *op, FlutterOpInfo *info) {
 	if (!op || !info) {
 		return false;
 	}
 	memset (info, 0, sizeof (*info));
-	const char *opex = r_strbuf_get ((RStrBuf *)&op->opex);
-	if (R_STR_ISEMPTY (opex)) {
-		return false;
+	const int type = op->type & R_ANAL_OP_TYPE_MASK;
+	const RArchValue *value = RVecRArchValue_at (&op->dsts, 0);
+	if (type != R_ANAL_OP_TYPE_STORE) {
+		flutter_opinfo_add_value (info, value, true);
 	}
-	char *opexdup = strdup (opex);
-	RJson *j = r_json_parse (opexdup);
-	if (!j) {
-		free (opexdup);
-		return false;
+	const RArchValue *src;
+	R_VEC_FOREACH (&op->srcs, src) {
+		const bool add_reg = type != R_ANAL_OP_TYPE_LOAD;
+		flutter_opinfo_add_value (info, src, add_reg);
 	}
-	const RJson *ops = r_json_get (j, "operands");
-	for (size_t i = 0;; i++) {
-		const RJson *item = r_json_item (ops, i);
-		if (!item) {
-			break;
-		}
-		const char *type = r_json_get_str (item, "type");
-		if (R_STR_ISEMPTY (type)) {
-			continue;
-		}
-		if (!strcmp (type, "reg")) {
-			const char *value = r_json_get_str (item, "value");
-			if (R_STR_ISNOTEMPTY (value) && info->n_regs < 4) {
-				r_str_ncpy (info->regs[info->n_regs], value, sizeof (info->regs[0]));
-				info->n_regs++;
-			}
-			continue;
-		}
-		if (!strcmp (type, "mem")) {
-			const char *base = r_json_get_str (item, "base");
-			if (R_STR_ISNOTEMPTY (base)) {
-				r_str_ncpy (info->mem_base, base, sizeof (info->mem_base));
-				info->has_mem = true;
-			}
-			info->mem_disp = (st64)r_json_get_num (item, "disp");
-			continue;
-		}
-		if (!strcmp (type, "imm")) {
-			info->imm = r_json_get_num (item, "value");
-			info->has_imm = true;
-		}
+	if (type == R_ANAL_OP_TYPE_LOAD || type == R_ANAL_OP_TYPE_STORE) {
+		flutter_parse_mem_operand (op->mnemonic, info);
 	}
-	r_json_free (j);
-	free (opexdup);
+	if (type == R_ANAL_OP_TYPE_STORE && info->n_regs == 0) {
+		flutter_parse_first_operand_reg (op->mnemonic, info);
+	}
+	if (!info->has_imm && type == R_ANAL_OP_TYPE_ADD && op->val) {
+		info->imm = op->val;
+		info->has_imm = true;
+	}
+	if (info->n_regs == 0 && (type == R_ANAL_OP_TYPE_RCALL || type == R_ANAL_OP_TYPE_UCALL || type == R_ANAL_OP_TYPE_ICALL || type == R_ANAL_OP_TYPE_IRCALL)) {
+		flutter_parse_first_operand_reg (op->mnemonic, info);
+	}
 	if (info->has_imm && R_STR_ISNOTEMPTY (op->mnemonic)) {
 		(void)flutter_parse_shifted_imm (op->mnemonic, &info->imm);
 	}
@@ -396,21 +445,15 @@ static bool flutter_model_load(FlutterAnalModel *model, RCore *core, DartCtx *dc
 }
 
 static void flutter_pp_string_map_add(FlutterPpStringMap *map, const DartModernPoolStringRefInfo *info) {
-	if (!map || !map->by_pp_off || !map->refs || !info || R_STR_ISEMPTY (info->string_value) || !info->string_addr) {
+	if (!map || !map->by_pp_off || !info || R_STR_ISEMPTY (info->string_value) || !info->string_addr) {
 		return;
 	}
-	const bool direct = R_STR_ISNOTEMPTY (info->target_kind) && !strcmp (info->target_kind, "object_pool.entry");
-	FlutterPpStringRef *old = ht_up_find (map->by_pp_off, info->pp_offset, NULL);
-	if (old && (old->direct || !direct)) {
+	if (ht_up_find (map->by_pp_off, info->pp_offset, NULL)) {
 		return;
 	}
 	FlutterPpStringRef *ref = R_NEW0 (FlutterPpStringRef);
-	ref->pp_offset = info->pp_offset;
 	ref->string_addr = info->string_addr;
 	ref->string_value = strdup (info->string_value);
-	ref->target_kind = R_STR_ISNOTEMPTY (info->target_kind)? strdup (info->target_kind): NULL;
-	ref->direct = direct;
-	r_list_append (map->refs, ref);
 	ht_up_insert (map->by_pp_off, info->pp_offset, ref);
 }
 
@@ -418,13 +461,13 @@ static void flutter_pp_string_ref_cb(const DartModernPoolStringRefInfo *info, vo
 	flutter_pp_string_map_add (user, info);
 }
 
-static void flutter_collect_pp_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, HtUP *wanted, FlutterPpStringMap *map) {
+static bool flutter_collect_pp_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, HtUP *wanted, FlutterPpStringMap *map) {
 	if (!ctx || !snapshot_base || !map) {
-		return;
+		return false;
 	}
 	DartSnapshotHeader sh = { 0 };
 	if (!dart_snapshot_header_read (ctx, snapshot_base, &sh) || !sh.ok) {
-		return;
+		return false;
 	}
 	const DartModernClusterRequest req = {
 		.ctx = ctx,
@@ -433,7 +476,7 @@ static void flutter_collect_pp_strings_from_snapshot(DartCtx *ctx, ut64 snapshot
 		.num_clusters = sh.nc,
 		.num_base_objects = sh.nb,
 };
-	(void)dart_modern_collect_direct_object_pool_string_refs (&req, wanted, flutter_pp_string_ref_cb, map);
+	return dart_modern_collect_direct_object_pool_string_refs (&req, snapshot_base, wanted, flutter_pp_string_ref_cb, map);
 }
 
 static void flutter_pp_string_map_load(DartCtx *ctx, HtUP *wanted, FlutterPpStringMap *map) {
@@ -442,8 +485,9 @@ static void flutter_pp_string_map_load(DartCtx *ctx, HtUP *wanted, FlutterPpStri
 	}
 	DartVerLayout layout_tmp;
 	DartVerLayout *layout_owned = ctx->layout? NULL: dart_ctx_init_layout (ctx, &layout_tmp);
-	flutter_collect_pp_strings_from_snapshot (ctx, ctx->iso_data, wanted, map);
-	flutter_collect_pp_strings_from_snapshot (ctx, ctx->vm_data, wanted, map);
+	if (!flutter_collect_pp_strings_from_snapshot (ctx, ctx->iso_data, wanted, map)) {
+		flutter_collect_pp_strings_from_snapshot (ctx, ctx->vm_data, wanted, map);
+	}
 	if (layout_owned) {
 		dart_ctx_fini_layout (ctx, layout_owned);
 	}
@@ -980,7 +1024,7 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterP
 				at += 4;
 				continue;
 			}
-			RAnalOp *op = r_core_anal_op (core, at, R_ARCH_OP_MASK_BASIC | R_ARCH_OP_MASK_OPEX | R_ARCH_OP_MASK_DISASM);
+			RAnalOp *op = r_core_anal_op (core, at, R_ARCH_OP_MASK_BASIC | R_ARCH_OP_MASK_VAL | R_ARCH_OP_MASK_DISASM);
 			if (!op || op->size <= 0) {
 				r_anal_op_free (op);
 				break;
