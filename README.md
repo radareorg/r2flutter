@@ -1,150 +1,120 @@
-# r2flutter - Dart/Flutter support for Radare2
+# r2flutter
 
-<p>
-<img border="0" align="left" width="125px" height="125px" src="doc/images/r2flutter500.png" />
+<p align="center">
+  <img width="160" src="doc/images/r2flutter500.png" alt="r2flutter logo" />
+</p>
 
 [![ci](https://github.com/trufae/r2flutter/actions/workflows/ci.yml/badge.svg)](https://github.com/trufae/r2flutter/actions/workflows/ci.yml)
 
-<br />
-The default parser uses radare2 for binary loading but does not rely on existing
-r2 analysis (`afl`/`aflj`); Dart-aware code analysis is opt-in with `-AAA`. The
-Dart parser is self-contained C code (no Dart VM headers or libs) and reads AOT
-snapshots, data images, clusters, ObjectPool records, and instruction tables
-directly.
-</p>
+**r2flutter brings Dart and Flutter AOT awareness to [radare2](https://rada.re/).**
+It reads the snapshots embedded in release builds and turns their metadata into
+useful names, addresses, strings, classes, and references for reverse
+engineering. It is available both as the `bin/r2flutter` command-line tool and
+as an `r2flutter` command inside radare2.
 
-## Features
+Give it an extracted Android `libapp.so`, an Android directory containing one,
+an iOS `.app` bundle, or a direct AOT binary. AArch64 is the primary analysis
+target. The parser has in-tree layouts for Dart 2.10 through 3.12; see the
+[support matrix](doc/support.md) for platform and version details.
 
-- Support iOS and Android Flutter apps
-- Accepts direct binaries, Android directories with `libapp.so`, and iOS `.app`
-  bundles with `Frameworks/App.framework/App`
-- Derives names/addresses from Dart snapshots, data images, clusters,
-  ObjectPool records, and instruction tables
-- Recovers snapshot headers, functions, classes, fields, string refs, xrefs,
-  reconstructed ObjectPool PP data, and best-effort SBOM/component reports
-- Uses radare2 for binary loading while keeping the Dart parser self-contained
-- Prints text, JSON, or radare2 command output for supported dump actions
+## What it can do
 
-## Supported Dart/Flutter Versions
+- Find Dart AOT snapshots in Flutter apps and supported standalone Dart
+  containers.
+- Recover snapshot headers, functions, classes, fields, type names, strings,
+  ObjectPool values, instruction-table entries, and metadata references.
+- Apply recovered names, flags, comments, classes, and code references to a
+  radare2 session.
+- Emit readable text, JSON for automation, or radare2 commands for importing
+  into another session.
+- Use Flutter's `--save-obfuscation-map` output to restore recovered names.
 
-r2flutter supports Dart AOT snapshots from **Dart 2.10.0 to 3.10.7** (Flutter 1.22.x to 3.38.x).
+r2flutter is a metadata and analysis aid, not a Dart source-code decompiler.
+Recovery depends on what survived in the AOT snapshot, so some names and
+references are necessarily best effort.
 
-The detailed support matrix, including tag-style changes and Android/iOS-specific notes, lives in [doc/support.md](doc/support.md).
+## Build and install
 
-Unknown snapshot hashes default to the v3.9.2 profile with ObjectHeader tag encoding.
+You need a recent `radare2` installation, including its development headers,
+and `r2` must be on `PATH`. The build obtains the required flags from `r2 -H`.
 
-## Building
-
-This project can be used from the system shell or directly integrated inside radare2:
-
-```bash
+```sh
+git clone https://github.com/trufae/r2flutter.git
+cd r2flutter
 make
 ```
 
-To get the plugin inside your r2 shell do that:
+The command-line tool is now ready at `bin/r2flutter`.
 
-```bash
+To install the radare2 plugin for your user account:
+
+```sh
 make user-install
 ```
 
-## Usage
+For a system-wide command-line tool and plugin, build the plugin first and
+then use the usual install prefix:
 
-```bash
-Usage: bin/r2flutter [options] <libapp_path_or_dir>
-Modifiers:
-  -h                    Show help
-  -j                    Output in JSON format
-  -n                    Heuristic fallback for unknown functions; may assign wrong names
-  -q                    Compact output; suppress non-essential detail
-  -r                    Output r2 commands for the selected action
-  -v                    Verbose (stderr debug info)
-  -vv                   More verbose (dump headers)
-  -V                    Show version
-Actions:
-  -A                    Analyze Dart snapshot and apply flags/comments
-  -AA                   Analyze with field extraction enabled
-  -AAA                  Run Dart-aware code analysis and recover code refs
-  -c                    Print extracted class information
-  -f                    Print all extracted functions (addr name)
-  -H                    Print Dart AOT snapshot header info
-  -HH                   Print extended snapshot header and cluster layout
-  -HHH                  Decode selected cluster payloads for diagnostics
-  -i                    Print instruction table entries to stdout
-  -O <addr|pp+off>      Decode Dart tagged/object pointer or ObjectPool PP slot
-  -p                    Print reconstructed ObjectPool PP value
-  -R                    Print radare2 script for snapshot analysis
-  -S                    Print best-effort recovered SBOM/components
-  -T                    Print string-based type names
-  -x                    Print metadata/data-image xrefs; with -z, include string refs/ax in -r
-  -z                    Print reliable ObjectPool-referenced strings (-q prints values only)
-  -zz                   Print all fuzzy/carved extracted strings (-xzz includes refs/ax in -r)
-Options:
-  -D <hash|version>     Override Dart snapshot profile for analysis
-  -l <N>                Limit output to N items
-  -m <file>             Load Flutter obfuscation map JSON
+```sh
+make r2
+sudo make install
 ```
 
-`bin/r2flutter` runs one action per invocation. Directory inputs resolve Android
-first (`libapp.so`), then iOS (`Frameworks/App.framework/App`).
+## First look at an app
 
-`-f` and the `-A` analysis flow skip loader-provided ELF/Mach-O stub symbols; radare2 already gets those from `RBin`, so `r2flutter` stays focused on Dart-derived metadata.
+Start with the snapshot header. It confirms that r2flutter found a Dart AOT
+image and shows the detected Dart profile:
 
-`-m` consumes the JSON array emitted by Flutter/Dart `--save-obfuscation-map`. r2flutter inverts that mapping and applies it to recovered functions, instruction-table names, classes, fields, and method owners.
-
-`-n` is intentionally opt-in. It consumes `package:` and `dart:` strings from the data image as a sequential fallback for otherwise unnamed functions, so it can produce plausible but incorrect names when the string order does not match the instruction table.
-
-`-D` forces the Dart profile used for layout/CID decoding without patching the
-input binary. Pass either a known 32-byte snapshot hash or a supported Dart
-version such as `3.8.1`.
-
-`-S` emits a best-effort recovered component report, not a complete dependency
-inventory. JSON output uses `format: "r2flutter-recovered-sbom"` and
-`complete: false`; package versions are usually `null` unless explicit packaged
-metadata such as `pubspec.lock`, `.dart_tool/package_config.json`, or framework
-`Info.plist` survived in the input bundle.
-
-Dump actions honor the global format modifiers:
-
-```bash
-bin/r2flutter -i test/bins/ios/Runner.app
-bin/r2flutter -j -l 16 -i test/bins/ios/Runner.app
-bin/r2flutter -r -l 16 -i test/bins/ios/Runner.app
-bin/r2flutter -jS test/bins/ios/Runner.app
-bin/r2flutter -HHH -l 36 test/bins/android/mafia/libapp.so
-bin/r2flutter -O pp+0x68 test/bins/android/mafia/libapp.so
-bin/r2flutter -qrz test/bins/ios/Runner.app
-bin/r2flutter -rz test/bins/ios/Runner.app
-bin/r2flutter -rzz test/bins/ios/Runner.app
+```sh
+bin/r2flutter -H path/to/libapp.so
 ```
 
-## radare2 Plugin
+Then try a small, practical extraction:
 
-`make user-install` installs the core plugin command as `r2flutter`. Inside r2,
-the same modifiers apply to dump actions:
+```sh
+# Recovered Dart function entrypoints and names
+bin/r2flutter -f path/to/libapp.so
 
-```text
-r2flutter -A       analyze and apply flags/comments
-r2flutter -AA      analyze with field extraction enabled
-r2flutter -AAA     run Dart-aware code analysis and recover refs/comments
-r2flutter -C       apply Dart classes, fields, methods and types
-r2flutter -D 3.8.1  override Dart snapshot profile for analysis
-r2flutter -jS      print recovered components/SBOM as JSON
-r2flutter -r -p    map a synthetic ObjectPool and set anal.gp/x27
+# A compact JSON header, useful for scripts
+bin/r2flutter -jH path/to/libapp.so
+
+# The first 20 instruction-table entries
+bin/r2flutter -l 20 -i path/to/libapp.so
 ```
 
-Plugin config keys:
+Directory and bundle inputs work too. For example, pass an Android directory
+containing `libapp.so`, or an iOS `Runner.app` bundle directly.
 
-- `r2flutter.mapfile`: Flutter obfuscation map JSON path
-- `r2flutter.namepool`: enable heuristic name-pool fallback
-- `r2flutter.profile`: override Dart profile by snapshot hash or Dart version
+After `make user-install`, open the same binary in radare2 and apply the Dart
+metadata to the analysis session:
 
-## Dependencies
+```sh
+r2 -q path/to/libapp.so
+> r2flutter -AAA
+> afl~method
+```
 
-- radare2 (with development headers; uses `r2 -H` to resolve flags, no pkg-config needed)
+`-AAA` is the Dart-aware analysis pass. For a concise list of every action and
+output modifier, run `bin/r2flutter -h` or `r2flutter -h` inside radare2.
 
-## Other Projects
+## Learn more
 
-- https://github.com/dart-lang/sdk
-- https://github.com/worawit/blutter
-- https://github.com/zboralski/unflutter
-- https://github.com/Impact-I/reFlutter
+- [Support matrix](doc/support.md) — accepted containers, platform scope, and
+  Dart layout coverage.
+- [AuthPass walkthrough](doc/tuto-authpass.md) — a complete iOS AOT analysis
+  example using recovered method names in radare2.
+- [ObjectPool internals](doc/objpool.md) and [instruction-table entries](doc/its.md)
+  — the two central structures behind function and constant recovery.
+- [Strings](doc/strings.md) and [cross references](doc/xrefs.md) — what can be
+  recovered and how reliable each result is.
+- [Flutter obfuscation maps](doc/obfuscate.md) — restore names from a map
+  produced during a Flutter build.
+
+## Related projects
+
+- [Dart SDK](https://github.com/dart-lang/sdk)
+- [blutter](https://github.com/worawit/blutter)
+- [unflutter](https://github.com/zboralski/unflutter)
+- [reFlutter](https://github.com/Impact-I/reFlutter)
+
+Released under the [MIT license](LICENSE.txt).
