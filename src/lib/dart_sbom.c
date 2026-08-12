@@ -190,7 +190,7 @@ static void sbom_add_snapshot_runtime(DartCtx *ctx, RList *components) {
 			}
 		}
 	}
-	const char *version = dart_ctx_effective_version (ctx);
+	const char *version = dart_ctx_version (ctx);
 	char evidence[96];
 	snprintf (evidence, sizeof (evidence), "snapshot_hash=%s", ctx->snapshot_hash[0]? ctx->snapshot_hash: "unknown");
 	sbom_add_component (components, "runtime", "dart-sdk", version, "snapshot_header", version? 100: 70, evidence);
@@ -470,7 +470,7 @@ static void sbom_dump_component_json(PJ *pj, const DartSbomComponent *c) {
 }
 
 static char *sbom_dump_json(DartCtx *ctx, RList *components, const char *input_path) {
-	const char *version = dart_ctx_effective_version (ctx);
+	const char *version = dart_ctx_version (ctx);
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_ks (pj, "format", "r2flutter-recovered-sbom");
@@ -530,7 +530,7 @@ static char *sbom_dump_text(DartCtx *ctx, RList *components) {
 	const bool quiet = ctx && ctx->quiet;
 	RStrBuf *sb = r_strbuf_new ("");
 	if (!quiet) {
-		const char *version = dart_ctx_effective_version (ctx);
+		const char *version = dart_ctx_version (ctx);
 		r_strbuf_append (sb, "# Dart/Flutter Recovered Components\n");
 		r_strbuf_append (sb, "# complete: false\n");
 		r_strbuf_append (sb, "# versions: explicit metadata only; AOT snapshots usually do not serialize pub package versions\n");

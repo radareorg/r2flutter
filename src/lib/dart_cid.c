@@ -192,7 +192,7 @@ bool dart_cid_is(const DartVerLayout *layout, int cid, DartCidKind kind) {
 	return value >= 0 && cid == value;
 }
 
-int dart_cid_typed_data_internal_base(const DartVerLayout *layout) {
+int dart_cid_typed_data_base(const DartVerLayout *layout) {
 	const DartCidTable *table = cid_table_for_layout (layout);
 	if (table && table->typed_data_internal_base > 0) {
 		return table->typed_data_internal_base;
@@ -207,12 +207,12 @@ int dart_cid_typed_data_internal_base(const DartVerLayout *layout) {
 	return 112;
 }
 
-int dart_cid_typed_data_internal_limit(const DartVerLayout *layout) {
+int dart_cid_typed_data_limit(const DartVerLayout *layout) {
 	const DartCidTable *table = cid_table_for_layout (layout);
 	if (table && table->typed_data_internal_limit > 0) {
 		return table->typed_data_internal_limit;
 	}
-	const int base = dart_cid_typed_data_internal_base (layout);
+	const int base = dart_cid_typed_data_base (layout);
 	const int stride = dart_cid_typed_data_stride (layout);
 	return base + (14 * stride);
 }

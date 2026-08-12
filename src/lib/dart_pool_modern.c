@@ -216,7 +216,7 @@ static const ModernOpNameMap modern_op_name_map[] = {
 	{ NULL, NULL }
 };
 
-bool dart_modern_is_supported_snapshot(DartCtx *ctx) {
+bool modern_supported(DartCtx *ctx) {
 	if (!ctx || !ctx->layout || (ctx->compressed_word_size != 4 && ctx->compressed_word_size != 8)) {
 		return false;
 	}
@@ -435,8 +435,8 @@ static ModernCidCache modern_cid_cache_init(const DartVerLayout *layout) {
 		.set = dart_cid_get (layout, DART_CID_SET),
 		.const_set = dart_cid_get (layout, DART_CID_CONST_SET),
 		.num_predefined_cids = dart_cid_get (layout, DART_CID_NUM_PREDEFINED_CIDS),
-		.typed_data_internal_base = dart_cid_typed_data_internal_base (layout),
-		.typed_data_internal_limit = dart_cid_typed_data_internal_limit (layout),
+		.typed_data_internal_base = dart_cid_typed_data_base (layout),
+		.typed_data_internal_limit = dart_cid_typed_data_limit (layout),
 		.typed_data_stride = dart_cid_typed_data_stride (layout),
 };
 	for (int kind = 0; kind < DART_CID_KIND_COUNT; kind++) {
@@ -1396,7 +1396,7 @@ static bool modern_cluster_is_immutable(const DartCtx *ctx, ut32 tags) {
 typedef struct ModernWalk ModernWalk;
 
 typedef bool(*ModernAllocFn)(ModernWalk *w, ClusterStream *s, ModernClusterMeta *m);
-typedef bool(*ModernFillFn)(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec);
+typedef bool(*ModernFillFn)(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m);
 
 typedef struct {
 	DartCidKind kind;
@@ -1488,18 +1488,19 @@ static ModernFillFn modern_walk_fill_reader(const ModernWalk *w, int cid) {
 	return NULL;
 }
 
-static bool modern_walk_read_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_walk_read_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, m->cid);
 	if (modern_walk_is_rodata (w, m->cid)) {
 		return true;
 	}
 	const ModernFillFn read = modern_walk_fill_reader (w, m->cid);
 	if (read) {
-		return read (w, s, m, spec);
+		return read (w, s, m);
 	}
 	if (modern_walk_strings_inline (w, m->cid)) {
 		return modern_skip_fill_string (s, m);
 	}
-	return modern_skip_fill_by_kind (s, &w->cids, m, spec);
+	return modern_skip_fill_by_kind (s, &w->cids, m, &spec);
 }
 
 static bool modern_walk_alloc(ModernWalk *w, ClusterStream *s) {
@@ -1544,7 +1545,7 @@ static bool modern_walk_fill(ModernWalk *w, ClusterStream *s) {
 			// so not knowing its layout costs nothing.
 			m->fill_kind = MODERN_FILL_NONE;
 		} else {
-			ok = modern_walk_read_fill (w, s, m, &spec);
+			ok = modern_walk_read_fill (w, s, m);
 		}
 		m->fill_parsed = true;
 		m->fill_ok = ok;
@@ -1580,8 +1581,7 @@ static void modern_walk_fill_recorded(ModernWalk *w, const ModernClusterMeta *me
 			.cursor = m->fill_offset,
 			.end = m->fill_end,
 };
-		const ModernFillSpec spec = modern_get_fill_spec (&w->cids, m->cid);
-		(void)read (w, &s, m, &spec);
+		(void)read (w, &s, m);
 	}
 }
 
@@ -1743,14 +1743,15 @@ static void modern_ref_resolver_fini(ModernRefResolver *resolver) {
 	memset (resolver, 0, sizeof (*resolver));
 }
 
-static bool modern_resolver_read_class_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_resolver_read_class_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	ModernRefResolver *resolver = (ModernRefResolver *)w->user;
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, meta->cid);
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
 		ut64 name_ref = 0;
 		ut32 class_id = 0;
 		ut32 tmp32 = 0;
-		for (int k = 0; k < spec->num_refs; k++) {
+		for (int k = 0; k < spec.num_refs; k++) {
 			ut64 rv = 0;
 			if (!cs_read_ref_id (s, &rv)) {
 				return false;
@@ -1777,9 +1778,8 @@ static bool modern_resolver_read_class_fill(ModernWalk *w, ClusterStream *s, con
 	return true;
 }
 
-static bool modern_resolver_read_function_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_resolver_read_function_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	ModernRefResolver *resolver = (ModernRefResolver *)w->user;
-	(void)spec;
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
 		ut64 name_ref = 0;
@@ -1803,12 +1803,13 @@ static bool modern_resolver_read_function_fill(ModernWalk *w, ClusterStream *s, 
 	return true;
 }
 
-static bool modern_resolver_read_library_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_resolver_read_library_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	ModernRefResolver *resolver = (ModernRefResolver *)w->user;
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, meta->cid);
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
 		ut64 name_ref = 0;
-		for (int k = 0; k < spec->num_refs; k++) {
+		for (int k = 0; k < spec.num_refs; k++) {
 			ut64 rv = 0;
 			if (!cs_read_ref_id (s, &rv)) {
 				return false;
@@ -1817,8 +1818,8 @@ static bool modern_resolver_read_library_fill(ModernWalk *w, ClusterStream *s, c
 				name_ref = rv;
 			}
 		}
-		for (int k = 0; k < spec->scalar_count; k++) {
-			if (!modern_skip_scalar (s, spec->scalars[k])) {
+		for (int k = 0; k < spec.scalar_count; k++) {
+			if (!modern_skip_scalar (s, spec.scalars[k])) {
 				return false;
 			}
 		}
@@ -1829,9 +1830,8 @@ static bool modern_resolver_read_library_fill(ModernWalk *w, ClusterStream *s, c
 	return true;
 }
 
-static bool modern_resolver_read_patch_class_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_resolver_read_patch_class_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	ModernRefResolver *resolver = (ModernRefResolver *)w->user;
-	(void)spec;
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
 		ut64 wrapped_ref = 0;
@@ -1873,15 +1873,13 @@ static bool modern_read_strings_into(ClusterStream *s, const ModernClusterMeta *
 	return true;
 }
 
-static bool modern_resolver_read_strings(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_resolver_read_strings(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	ModernRefResolver *resolver = (ModernRefResolver *)w->user;
-	(void)spec;
 	return modern_read_strings_into (s, meta, resolver->strings_by_ref, resolver->string_addr_by_ref, resolver->string_flags_by_ref, resolver->refs_count);
 }
 
-static bool modern_direct_resolver_read_strings(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_direct_resolver_read_strings(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	ModernDirectStringResolver *resolver = (ModernDirectStringResolver *)w->user;
-	(void)spec;
 	return modern_read_strings_into (s, meta, resolver->strings_by_ref, resolver->string_addr_by_ref, NULL, resolver->refs_count);
 }
 
@@ -2604,7 +2602,7 @@ static ModernClusterMeta *modern_parse_cluster_meta(DartCtx *ctx, ut64 cluster_s
 	return meta;
 }
 
-void dart_modern_pool_slot_info_fini(DartModernPoolSlotInfo *info) {
+void modern_slot_fini(ModernPoolSlot *info) {
 	if (!info) {
 		return;
 	}
@@ -2614,7 +2612,7 @@ void dart_modern_pool_slot_info_fini(DartModernPoolSlotInfo *info) {
 	info->resolved_code_index = UT64_MAX;
 }
 
-static void modern_pool_slot_info_set_resolved(DartModernPoolSlotInfo *out, const ModernResolvedRef *resolved) {
+static void modern_pool_slot_info_set_resolved(ModernPoolSlot *out, const ModernResolvedRef *resolved) {
 	if (!out || !resolved) {
 		return;
 	}
@@ -2626,9 +2624,9 @@ static void modern_pool_slot_info_set_resolved(DartModernPoolSlotInfo *out, cons
 	}
 }
 
-bool dart_modern_resolve_pp_slot(const DartModernClusterRequest *req, ut64 pp_offset, DartModernPoolSlotInfo *out) {
+bool modern_resolve_pp_slot(const ModernReq *req, ut64 pp_offset, ModernPoolSlot *out) {
 	DartCtx *ctx = req? req->ctx: NULL;
-	if (!ctx || !out || !dart_modern_is_supported_snapshot (ctx)) {
+	if (!ctx || !out || !modern_supported (ctx)) {
 		return false;
 	}
 	memset (out, 0, sizeof (*out));
@@ -2703,7 +2701,7 @@ bool dart_modern_resolve_pp_slot(const DartModernClusterRequest *req, ut64 pp_of
 typedef struct {
 	const ModernRefResolver *resolver;
 	const ModernCidCache *cids;
-	DartModernPoolStringRefCallback cb;
+	ModernPoolStrRefCb cb;
 	void *user;
 	HtUP *seen;
 	ut64 pp_offset;
@@ -2717,7 +2715,7 @@ static void modern_emit_pool_string_ref(ModernPoolStringRefCollector *collector,
 	if (!collector || !resolver || !collector->cb || string_ref >= resolver->refs_count || R_STR_ISEMPTY (resolver->strings_by_ref[string_ref])) {
 		return;
 	}
-	DartModernPoolStringRefInfo info = {
+	ModernPoolStrRef info = {
 		.pp_offset = collector->pp_offset,
 		.pool_ref = collector->pool_ref,
 		.pool_index = collector->pool_index,
@@ -2938,9 +2936,9 @@ static bool modern_collect_ref_strings(ModernPoolStringRefCollector *collector, 
 	return false;
 }
 
-bool dart_modern_collect_object_pool_string_refs(const DartModernClusterRequest *req, HtUP *pp_offsets, DartModernPoolStringRefCallback cb, void *user) {
+bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offsets, ModernPoolStrRefCb cb, void *user) {
 	DartCtx *ctx = req? req->ctx: NULL;
-	if (!ctx || !cb || !dart_modern_is_supported_snapshot (ctx)) {
+	if (!ctx || !cb || !modern_supported (ctx)) {
 		return false;
 	}
 	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
@@ -3011,9 +3009,29 @@ bool dart_modern_collect_object_pool_string_refs(const DartModernClusterRequest 
 	return ok;
 }
 
-bool dart_modern_collect_direct_object_pool_string_refs(const DartModernClusterRequest *req, ut64 snapshot_base, HtUP *pp_offsets, DartModernPoolStringRefCallback cb, void *user) {
+static ut64 modern_find_sb(const ModernReq *req) {
 	DartCtx *ctx = req? req->ctx: NULL;
-	if (!ctx || !snapshot_base || snapshot_base >= req->cluster_end || !cb || !dart_modern_is_supported_snapshot (ctx)) {
+	if (!ctx) {
+		return 0;
+	}
+	const ut64 bases[] = { ctx->iso_data, ctx->vm_data };
+	for (size_t i = 0; i < R_ARRAY_SIZE (bases); i++) {
+		const ut64 sb = bases[i];
+		DartSnapshotHeader hdr = { 0 };
+		if (!sb || sb >= req->cluster_end || !dart_snapshot_header_read (ctx, sb, &hdr) || !hdr.ok) {
+			continue;
+		}
+		if (hdr.cluster_start == req->cluster_start && hdr.total_len == req->cluster_end - sb) {
+			return sb;
+		}
+	}
+	return 0;
+}
+
+bool modern_collect_direct_pool_strrefs(const ModernReq *req, HtUP *pp_offsets, ModernPoolStrRefCb cb, void *user) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	const ut64 sb = modern_find_sb (req);
+	if (!ctx || !sb || !cb || !modern_supported (ctx)) {
 		return false;
 	}
 	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
@@ -3021,7 +3039,7 @@ bool dart_modern_collect_direct_object_pool_string_refs(const DartModernClusterR
 		return false;
 	}
 	ModernDirectStringResolver resolver = { 0 };
-	bool ok = modern_direct_string_resolver_init (&resolver, ctx, meta, req->num_clusters, req->num_base_objects, snapshot_base, req->cluster_end - snapshot_base);
+	bool ok = modern_direct_string_resolver_init (&resolver, ctx, meta, req->num_clusters, req->num_base_objects, sb, req->cluster_end - sb);
 	if (!ok) {
 		modern_cluster_meta_free (meta, req->num_clusters);
 		return false;
@@ -3057,7 +3075,7 @@ bool dart_modern_collect_direct_object_pool_string_refs(const DartModernClusterR
 				if (entry.behavior != 0 || entry.type != 1 || !entry.ref || entry.ref >= resolver.refs_count || R_STR_ISEMPTY (resolver.strings_by_ref[entry.ref])) {
 					continue;
 				}
-				DartModernPoolStringRefInfo info = {
+				ModernPoolStrRef info = {
 					.pp_offset = pp_offset,
 					.pool_ref = m->start_ref + pool_index,
 					.pool_index = pool_index,
@@ -3133,9 +3151,9 @@ static void modern_append_object_pool_string(RList *strings, HtUP *seen_refs, ut
 	modern_add_object_pool_string_ref (si, emit->pool_ref, emit->pool_index, entry->index, emit->pp_base, modern_pool_entry_pp_offset (resolver->ctx, entry->index));
 }
 
-bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClusterRequest *req, RList *strings, HtUP *seen_refs, ut64 *ref_counter) {
+bool modern_extract_pool_strings(const ModernReq *req, RList *strings, HtUP *seen, ut64 *next_ref) {
 	DartCtx *ctx = req? req->ctx: NULL;
-	if (!ctx || !strings || !seen_refs || !dart_modern_is_supported_snapshot (ctx)) {
+	if (!ctx || !strings || !seen || !modern_supported (ctx)) {
 		return false;
 	}
 	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
@@ -3182,7 +3200,7 @@ bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClust
 				}
 				const ModernClusterMeta *target = modern_resolver_cluster_for_ref (&resolver, entry.ref);
 				if (target && modern_is_string_cid (&cids, target->cid)) {
-					modern_append_object_pool_string (strings, seen_refs, ref_counter, &resolver, &emit, &entry);
+					modern_append_object_pool_string (strings, seen, next_ref, &resolver, &emit, &entry);
 				}
 			}
 			if (!ok) {
@@ -3198,7 +3216,7 @@ bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClust
 	return ok;
 }
 
-bool dart_modern_emit_cluster_summary(const DartModernClusterSummaryRequest *req) {
+bool modern_emit_summary(const ModernSummaryReq *req) {
 	if (!req || !req->ctx) {
 		return false;
 	}
@@ -3242,9 +3260,10 @@ bool dart_modern_emit_cluster_summary(const DartModernClusterSummaryRequest *req
 	return true;
 }
 
-bool dart_modern_build_synthetic_pp(const DartModernClusterRequest *req, ut64 snapshot_base, const char *snapshot_label, ut64 data_image_base, DartPpInfo *out) {
+bool modern_build_pp(const ModernReq *req, DartPpInfo *out) {
 	DartCtx *ctx = req? req->ctx: NULL;
-	if (!ctx || !out) {
+	const ut64 sb = modern_find_sb (req);
+	if (!ctx || !sb || !out) {
 		return false;
 	}
 	memset (out, 0, sizeof (*out));
@@ -3271,9 +3290,9 @@ bool dart_modern_build_synthetic_pp(const DartModernClusterRequest *req, ut64 sn
 			emit.pool_ref = m->start_ref + pool_index;
 			ok = modern_build_pp_image_from_pool (&emit, m, pool_stream, out);
 			if (ok) {
-				out->snapshot_base = snapshot_base;
-				out->data_image_base = data_image_base;
-				r_str_ncpy (out->snapshot_label, snapshot_label? snapshot_label: "snapshot", sizeof (out->snapshot_label));
+				out->snapshot_base = sb;
+				out->data_image_base = dart_snapshot_data_image_base (sb, req->cluster_end - sb);
+				r_str_ncpy (out->snapshot_label, sb == ctx->iso_data? "Isolate": "VM", sizeof (out->snapshot_label));
 				break;
 			}
 			if (!modern_skip_pool_payload_for_pp (&s)) {
@@ -3464,9 +3483,8 @@ static bool modern_vm_strings_alloc(ModernWalk *w, ClusterStream *s, ModernClust
 	return true;
 }
 
-static bool modern_vm_strings_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_vm_strings_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernVmStringsWalk *u = (ModernVmStringsWalk *)w->user;
-	(void)spec;
 	ut64 ref = m->start_ref;
 	for (ut64 i = 0; i < m->count; i++, ref++) {
 		char *value = NULL;
@@ -3684,10 +3702,9 @@ static bool modern_read_mint_alloc(ModernWalk *w, ClusterStream *s, ModernCluste
 	return true;
 }
 
-static bool modern_read_class_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_read_class_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	const ModernClassExtractCtx *extract = ((ModernClassWalk *)w->user)->extract;
 	DartCtx *ctx = extract->ctx;
-	(void)spec;
 	const int word_size = ctx->compressed_word_size? ctx->compressed_word_size: 4;
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
@@ -3761,10 +3778,9 @@ static void modern_field_flags_from_kind(ut32 kind_bits, ut32 *out_flags) {
 	*out_flags = flags;
 }
 
-static bool modern_read_field_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_read_field_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	const ModernClassExtractCtx *extract = ((ModernClassWalk *)w->user)->extract;
 	DartCtx *ctx = extract->ctx;
-	(void)spec;
 	const int word_size = ctx->compressed_word_size? ctx->compressed_word_size: 4;
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
@@ -3804,9 +3820,8 @@ static bool modern_read_field_fill(ModernWalk *w, ClusterStream *s, const Modern
 	return true;
 }
 
-static bool modern_read_function_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
+static bool modern_read_function_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	RList *methods = ((ModernClassWalk *)w->user)->methods;
-	(void)spec;
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
 		ut64 name_ref = 0;
@@ -3858,9 +3873,8 @@ static void modern_free_strings(char **strings_by_ref, ut64 refs_count) {
 	free (strings_by_ref);
 }
 
-static bool modern_classes_read_strings(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_classes_read_strings(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernClassWalk *u = (ModernClassWalk *)w->user;
-	(void)spec;
 	ut64 ref = m->start_ref;
 	for (ut64 i = 0; i < m->count; i++, ref++) {
 		char *value = NULL;
@@ -3889,7 +3903,7 @@ static const ModernFillHandler modern_classes_fill_handlers[] = {
 	{ 0, NULL },
 };
 
-bool dart_modern_extract_classes_from_clusters(const DartModernClusterRequest *req, RList *class_list) {
+bool modern_extract_classes(const ModernReq *req, RList *class_list) {
 	DartCtx *ctx = req? req->ctx: NULL;
 	if (!modern_can_extract_classes (ctx) || !class_list || req->cluster_start >= req->cluster_end || req->num_clusters == 0 || req->num_clusters > 100000) {
 		return false;
@@ -3974,9 +3988,8 @@ typedef struct {
 	ut64 next_code_index;
 } ModernNameScanWalk;
 
-static bool modern_name_scan_read_strings(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_name_scan_read_strings(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
-	(void)spec;
 	ut64 ref = m->start_ref;
 	for (ut64 j = 0; j < m->count; j++, ref++) {
 		char *value = NULL;
@@ -3993,14 +4006,15 @@ static bool modern_name_scan_read_strings(ModernWalk *w, ClusterStream *s, const
 	return true;
 }
 
-static bool modern_name_scan_read_class(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_name_scan_read_class(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, m->cid);
 	ut64 ref = m->start_ref;
 	for (ut64 j = 0; j < m->count; j++, ref++) {
 		ut64 name_ref = 0;
 		ut32 class_id = 0;
 		ut32 tmp32 = 0;
-		for (int k = 0; k < spec->num_refs; k++) {
+		for (int k = 0; k < spec.num_refs; k++) {
 			ut64 rv = 0;
 			if (!cs_read_ref_id (s, &rv)) {
 				return false;
@@ -4026,9 +4040,8 @@ static bool modern_name_scan_read_class(ModernWalk *w, ClusterStream *s, const M
 	return true;
 }
 
-static bool modern_name_scan_read_function(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_name_scan_read_function(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
-	(void)spec;
 	ut64 ref = m->start_ref;
 	for (ut64 j = 0; j < m->count; j++, ref++) {
 		ut64 name_ref = 0;
@@ -4065,9 +4078,8 @@ static int modern_name_scan_owner_cid(const ModernWalk *w, ut64 owner_ref) {
 	return 0;
 }
 
-static bool modern_name_scan_read_code(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_name_scan_read_code(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
-	(void)spec;
 	for (ut64 j = 0; j < m->count; j++) {
 		ut64 owner_ref = 0;
 		ut64 tmp_ref = 0;
@@ -4101,9 +4113,8 @@ static bool modern_name_scan_read_code(ModernWalk *w, ClusterStream *s, const Mo
 	return true;
 }
 
-static bool modern_name_scan_read_closure_data(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_name_scan_read_closure_data(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
-	(void)spec;
 	ut64 ref = m->start_ref;
 	for (ut64 j = 0; j < m->count; j++, ref++) {
 		ut64 parent_function_ref = 0;
@@ -4119,8 +4130,9 @@ static bool modern_name_scan_read_closure_data(ModernWalk *w, ClusterStream *s, 
 	return true;
 }
 
-static bool modern_name_scan_read_library(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_name_scan_read_library(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, m->cid);
 	ut64 ref = m->start_ref;
 	for (ut64 j = 0; j < m->count; j++, ref++) {
 		ut64 name_ref = 0;
@@ -4134,7 +4146,7 @@ static bool modern_name_scan_read_library(ModernWalk *w, ClusterStream *s, const
 			}
 		}
 		for (int k = 0; k < 4; k++) {
-			if (!modern_skip_scalar (s, spec->scalars[k])) {
+			if (!modern_skip_scalar (s, spec.scalars[k])) {
 				return false;
 			}
 		}
@@ -4145,9 +4157,8 @@ static bool modern_name_scan_read_library(ModernWalk *w, ClusterStream *s, const
 	return true;
 }
 
-static bool modern_name_scan_read_patch_class(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m, const ModernFillSpec *spec) {
+static bool modern_name_scan_read_patch_class(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
-	(void)spec;
 	ut64 ref = m->start_ref;
 	for (ut64 j = 0; j < m->count; j++, ref++) {
 		ut64 wrapped_ref = 0;
@@ -4172,8 +4183,8 @@ static const ModernFillHandler modern_name_scan_fill_handlers[] = {
 	{ 0, NULL },
 };
 
-bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen) {
-	if (!dart_modern_is_supported_snapshot (ctx) || !itlen || cluster_start >= cluster_end) {
+bool modern_scan_names(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen) {
+	if (!modern_supported (ctx) || !itlen || cluster_start >= cluster_end) {
 		return false;
 	}
 	ModernClusterMeta *meta = (ModernClusterMeta *)calloc ((size_t)num_clusters, sizeof (ModernClusterMeta));

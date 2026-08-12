@@ -658,7 +658,7 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 	return string_list;
 }
 
-RList *dart_pool_extract_object_pool_strings(DartCtx *ctx) {
+RList *dart_pool_extract_pool_strings(DartCtx *ctx) {
 	if (!ctx || !ctx->core || !ctx->core->bin) {
 		return NULL;
 	}
@@ -667,7 +667,7 @@ RList *dart_pool_extract_object_pool_strings(DartCtx *ctx) {
 	if (find_snapshots (ctx) == 0 && ctx->vm_data) {
 		DartVerLayout layout_tmp;
 		DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
-		if (dart_modern_is_supported_snapshot (ctx)) {
+		if (modern_supported (ctx)) {
 			const ut64 snapshots[] = {
 				ctx->vm_data,
 				ctx->iso_data
@@ -682,8 +682,8 @@ RList *dart_pool_extract_object_pool_strings(DartCtx *ctx) {
 				if (!seen_refs) {
 					continue;
 				}
-				const DartModernClusterRequest req = { ctx, sh.cluster_start, base + sh.total_len, sh.nc, sh.nb };
-				(void)dart_modern_extract_object_pool_strings_from_clusters (&req, string_list, seen_refs, &ref_counter);
+				const ModernReq req = { ctx, sh.cluster_start, base + sh.total_len, sh.nc, sh.nb };
+				(void)modern_extract_pool_strings (&req, string_list, seen_refs, &ref_counter);
 				ht_up_free (seen_refs);
 			}
 		}
@@ -867,7 +867,7 @@ static char *dump_strings_list(DartCtx *ctx, RList *strings, int fmt) {
 }
 
 char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
-	RList *strings = dart_pool_extract_object_pool_strings (ctx);
+	RList *strings = dart_pool_extract_pool_strings (ctx);
 	char *out = dump_strings_list (ctx, strings, fmt);
 	dart_string_list_free (strings);
 	return out;

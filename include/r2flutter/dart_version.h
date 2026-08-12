@@ -52,7 +52,7 @@ const DartVerLayout *dart_profile_from_version(const char *version);
 // Pick a layout structure based on hash, with fallback to defaults
 // Returns a newly allocated DartVerLayout (caller must free)
 // If hash is unknown, fingerprints against the newest known layout profile
-DartVerLayout *dart_pick_layout_by_hash(const char *hash);
+DartVerLayout *dart_layout_from_hash(const char *hash);
 
 // Newest known layout profile (used as the fingerprint baseline for unknown
 // git/dev builds, whose snapshot format tracks the latest release).
@@ -61,7 +61,7 @@ const DartVerLayout *dart_newest_profile(void);
 // Human-readable name for a DartVersionSource value.
 const char *dart_version_source_str(int source);
 
-// Free a DartVerLayout allocated by dart_pick_layout_by_hash
+// Free a DartVerLayout allocated by dart_layout_from_hash
 void dart_ver_layout_free(DartVerLayout *layout);
 
 void dart_version_set_verbose(int level);

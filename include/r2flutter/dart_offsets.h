@@ -78,11 +78,14 @@ static const DartHashEntry dart_hash_entries[] = {
 #define DART_HASH_ENTRIES_COUNT 61
 
 // Default offset arrays (identical across all known Dart versions)
-#define DART_DEFAULT_EP_OFFSETS { 8, 24, 16, 32 }
+#define DART_DEFAULT_EP_OFFSETS \
+	{ 8, 24, 16, 32 }
 #define DART_DEFAULT_EP_OFFSETS_COUNT 4
-#define DART_DEFAULT_OWNER_OFFSETS { 56 }
+#define DART_DEFAULT_OWNER_OFFSETS \
+	{ 56 }
 #define DART_DEFAULT_OWNER_OFFSETS_COUNT 1
-#define DART_DEFAULT_NAME_OFFSETS { 24, 8 }
+#define DART_DEFAULT_NAME_OFFSETS \
+	{ 24, 8 }
 #define DART_DEFAULT_NAME_OFFSETS_COUNT 2
 
 #endif // R2C_DART_OFFSETS_H

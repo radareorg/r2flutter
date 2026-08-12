@@ -207,7 +207,7 @@ const DartVerLayout *dart_profile_from_version(const char *version) {
 	return best? best: version_profiles;
 }
 
-DartVerLayout *dart_pick_layout_by_hash(const char *hash) {
+DartVerLayout *dart_layout_from_hash(const char *hash) {
 	DartVerLayout *dvl = R_NEW0 (DartVerLayout);
 	const char *version = dart_version_from_hash (hash);
 	const DartVerLayout *profile = version? dart_profile_from_version (version): NULL;

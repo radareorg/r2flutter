@@ -91,8 +91,8 @@ typedef enum {
 const char *dart_cid_kind_name(DartCidKind kind);
 int dart_cid_get(const DartVerLayout *layout, DartCidKind kind);
 bool dart_cid_is(const DartVerLayout *layout, int cid, DartCidKind kind);
-int dart_cid_typed_data_internal_base(const DartVerLayout *layout);
-int dart_cid_typed_data_internal_limit(const DartVerLayout *layout);
+int dart_cid_typed_data_base(const DartVerLayout *layout);
+int dart_cid_typed_data_limit(const DartVerLayout *layout);
 int dart_cid_typed_data_stride(const DartVerLayout *layout);
 
 #ifdef __cplusplus

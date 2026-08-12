@@ -82,8 +82,8 @@ static char *resolve_input_path(const char *s, DartCtx *dctx, bool *extracted_in
 		return NULL;
 	}
 	DartAppEmbeddedPayload payload;
-	if (dart_app_find_macho_embedded_dart (s, &payload)) {
-		char *inner = dart_app_extract_embedded_payload (s, &payload);
+	if (dart_app_find_macho_dart (s, &payload)) {
+		char *inner = dart_app_extract_payload (s, &payload);
 		if (!inner) {
 			R_LOG_ERROR ("Failed to extract embedded Dart Mach-O from: %s", s);
 			return NULL;
@@ -318,7 +318,7 @@ int main(int argc, char **argv) {
 		output = dart_pool_dump_classes (&dctx, fmt);
 		break;
 	case 'e':
-		output = dart_pool_dump_entrypoint (&app->dctx, fmt);
+		output = dart_pool_dump_entry (&app->dctx, fmt);
 		break;
 	case 'T':
 		dctx.dump_classes = 3;
@@ -339,7 +339,7 @@ int main(int argc, char **argv) {
 		output = dart_pool_dump_object (&app->dctx, object_spec, fmt);
 		break;
 	case 'p':
-		output = dart_pool_dump_pp (&app->dctx, fmt);
+		output = dart_pool_dump_pool (&app->dctx, fmt);
 		break;
 	case 'x':
 		output = dart_pool_dump_xrefs (&dctx, fmt);
@@ -349,7 +349,7 @@ int main(int argc, char **argv) {
 		if (dctx.verbose) {
 			R_LOG_ERROR ("Dumping radare2 script");
 		}
-		char *s = dart_dumper_dump4radare2 (app);
+		char *s = dart_dumper_dump_r2 (app);
 		printf ("%s\n", s);
 		free (s);
 		break;

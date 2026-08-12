@@ -141,7 +141,7 @@ static bool find_dart_note_in_fat_macho(RBuffer *b, ut64 fsize, bool fat64, Dart
 	return false;
 }
 
-bool dart_app_find_macho_embedded_dart(const char *path, DartAppEmbeddedPayload *out) {
+bool dart_app_find_macho_dart(const char *path, DartAppEmbeddedPayload *out) {
 	if (R_STR_ISEMPTY (path) || !out) {
 		return false;
 	}
@@ -186,7 +186,7 @@ static FILE *open_payload_temp(char **out_path) {
 	return out;
 }
 
-char *dart_app_extract_embedded_payload(const char *path, const DartAppEmbeddedPayload *payload) {
+char *dart_app_extract_payload(const char *path, const DartAppEmbeddedPayload *payload) {
 	if (R_STR_ISEMPTY (path) || !payload || !payload->payload_size) {
 		return NULL;
 	}
@@ -586,12 +586,7 @@ void dart_app_load_info(DartApp *app) {
 	dart_app_load_it_functions (app);
 	dart_app_merge_class_methods (app);
 	if (RVecDartFunction_length (app->functions) == 0) {
-		ut64 base = 0, heap_base = 0;
-		int rc = dart_pool_enumerate (&app->dctx, app->file_path, add_fn_cb, app, &base, &heap_base);
-		if (rc == 0) {
-			app->base_addr = base;
-			app->heap_base = heap_base;
-		}
+		(void)dart_pool_scan (&app->dctx, add_fn_cb, app);
 	}
 	RVecDartFunction_sort (app->functions, dart_function_cmp);
 	if (app->dctx.verbose) {

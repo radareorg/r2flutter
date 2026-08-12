@@ -46,7 +46,7 @@ bool dart_ctx_set_profile_override(DartCtx *ctx, const char *spec) {
 	return true;
 }
 
-const char *dart_ctx_effective_hash(DartCtx *ctx) {
+const char *dart_ctx_hash(DartCtx *ctx) {
 	if (!ctx) {
 		return NULL;
 	}
@@ -59,14 +59,14 @@ const char *dart_ctx_effective_hash(DartCtx *ctx) {
 	return R_STR_ISNOTEMPTY (ctx->snapshot_hash_actual)? ctx->snapshot_hash_actual: NULL;
 }
 
-const char *dart_ctx_effective_version(DartCtx *ctx) {
+const char *dart_ctx_version(DartCtx *ctx) {
 	if (!ctx) {
 		return NULL;
 	}
 	if (R_STR_ISNOTEMPTY (ctx->dart_version_override)) {
 		return ctx->dart_version_override;
 	}
-	return dart_version_from_hash (dart_ctx_effective_hash (ctx));
+	return dart_version_from_hash (dart_ctx_hash (ctx));
 }
 
 // Classify how the layout was determined, for honest reporting: exact hash
@@ -77,9 +77,9 @@ static void dart_ctx_set_version_source(DartCtx *ctx) {
 	}
 	if (R_STR_ISNOTEMPTY (ctx->dart_version_override)) {
 		ctx->version_source = DART_VERSION_SOURCE_OVERRIDE;
-	} else if (dart_version_from_hash (dart_ctx_effective_hash (ctx))) {
+	} else if (dart_version_from_hash (dart_ctx_hash (ctx))) {
 		ctx->version_source = DART_VERSION_SOURCE_EXACT;
-	} else if (R_STR_ISNOTEMPTY (dart_ctx_effective_hash (ctx))) {
+	} else if (R_STR_ISNOTEMPTY (dart_ctx_hash (ctx))) {
 		ctx->version_source = DART_VERSION_SOURCE_FINGERPRINT;
 	} else {
 		ctx->version_source = DART_VERSION_SOURCE_UNKNOWN;
@@ -89,7 +89,7 @@ static void dart_ctx_set_version_source(DartCtx *ctx) {
 // Effective version label including a marker when the layout was fingerprinted
 // from an unknown (git/dev build) hash rather than matched exactly.
 static const char *dart_ctx_version_label(DartCtx *ctx, char *buf, size_t bufsz) {
-	const char *v = dart_ctx_effective_version (ctx);
+	const char *v = dart_ctx_version (ctx);
 	if (v) {
 		return v;
 	}
@@ -157,7 +157,7 @@ static DartVerLayout *dart_layout_new_from_profile(DartCtx *ctx, const DartVerLa
 	}
 	DartVerLayout *dvl = R_NEW0 (DartVerLayout);
 	memcpy (dvl, profile, sizeof (DartVerLayout));
-	const char *hash = dart_ctx_effective_hash (ctx);
+	const char *hash = dart_ctx_hash (ctx);
 	if (R_STR_ISNOTEMPTY (hash)) {
 		r_str_ncpy (dvl->hash, hash, sizeof (dvl->hash));
 	}
@@ -171,7 +171,7 @@ static DartVerLayout *dart_pick_layout_owned_for_ctx(DartCtx *ctx) {
 	if (R_STR_ISNOTEMPTY (ctx->dart_version_override)) {
 		return dart_layout_new_from_profile (ctx, dart_profile_from_version (ctx->dart_version_override));
 	}
-	return dart_pick_layout_by_hash (dart_ctx_effective_hash (ctx));
+	return dart_layout_from_hash (dart_ctx_hash (ctx));
 }
 
 static void extract_snapshot_hash_flags(DartCtx *ctx, ut64 vm_data) {
@@ -216,7 +216,7 @@ static void derive_layout_from_flags(DartCtx *ctx) {
 	if (ctx->layout && ctx->compressed_word_size == 4) {
 		int major = 0;
 		int minor = 0;
-		const char *version = dart_ctx_effective_version (ctx);
+		const char *version = dart_ctx_version (ctx);
 		bool use_64_alignment = ctx->layout->tag_style == DART_TAG_STYLE_OBJECT_HEADER;
 		if (!use_64_alignment && version && sscanf (version, "%d.%d", &major, &minor) == 2) {
 			use_64_alignment = major > 2 || (major == 2 && minor >= 19);
@@ -231,7 +231,7 @@ static void derive_layout_from_flags(DartCtx *ctx) {
 
 DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp) {
 	extract_snapshot_hash_flags (ctx, ctx->vm_data);
-	ctx->layout = R_STR_ISEMPTY (ctx->dart_version_override)? load_layout_from_json (dart_ctx_effective_hash (ctx), tmp): NULL;
+	ctx->layout = R_STR_ISEMPTY (ctx->dart_version_override)? load_layout_from_json (dart_ctx_hash (ctx), tmp): NULL;
 	DartVerLayout *owned = NULL;
 	if (!ctx->layout) {
 		owned = dart_pick_layout_owned_for_ctx (ctx);
@@ -351,8 +351,8 @@ static int decode_pool_and_emit(DartItEmitRequest *req) {
 	if (ctx->verbose > 0) {
 		fprintf (stderr, "[r2flutter] data_image_base=0x%" PFMT64x " data_image_end=0x%" PFMT64x "\n", (ut64)data_image_base, (ut64)data_image_end);
 	}
-	if (dart_modern_is_supported_snapshot (ctx)) {
-		dart_modern_scan_names_from_clusters (ctx, cluster_start, cluster_end, nc, itlen);
+	if (modern_supported (ctx)) {
+		modern_scan_names (ctx, cluster_start, cluster_end, nc, itlen);
 	}
 	ctx->name_by_ep = scan_code_names (ctx, data_image_base, data_image_end);
 	ctx->name_pool = collect_data_names (ctx, data_image_base, data_image_end);
@@ -454,19 +454,12 @@ static void emit_stub_symbols(DartCtx *ctx,
 	}
 }
 
-int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, DartPoolFunctionCallback on_fn, void *user, ut64 *out_base, ut64 *out_heap_base) {
-	(void)libapp_path;
+int dart_pool_scan(DartCtx *ctx, DartPoolFunctionCallback on_fn, void *user) {
 	if (!ctx || !ctx->core) {
 		return -1;
 	}
 	int ok = find_snapshots (ctx);
 	if (ok == 0) {
-		if (out_base) {
-			*out_base = r_bin_get_baddr (ctx->core->bin);
-		}
-		if (out_heap_base) {
-			*out_heap_base = 0;
-		}
 		if (ctx->verbose > 0) {
 			eprintf ("[r2flutter] Found Dart snapshots: vm_data=0x%" PFMT64x " vm_instr=0x%" PFMT64x " iso_data=0x%" PFMT64x " iso_instr=0x%" PFMT64x "\n",
 				(ut64)ctx->vm_data,
@@ -499,13 +492,7 @@ int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, DartPoolFunctionC
 		dart_ctx_fini_layout (ctx, layout_owned);
 		return rc;
 	}
-	if (out_base) {
-		*out_base = 0;
-	}
-	if (out_heap_base) {
-		*out_heap_base = 0;
-	}
-	eprintf ("[r2flutter] Dart snapshots not found in symbols (file=%s).\n", libapp_path? libapp_path: "(null)");
+	eprintf ("[r2flutter] Dart snapshots not found in symbols.\n");
 	return -1;
 }
 
@@ -794,7 +781,7 @@ static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, u
 		pj_kn (pj, "instruction_table_addr", data_image_base + sh.itdata);
 	}
 	pj_ka (pj, "clusters");
-	const DartModernClusterSummaryRequest cluster_req = {
+	const ModernSummaryReq cluster_req = {
 		.ctx = ctx,
 		.cluster_start = sh.cluster_start,
 		.cluster_end = cluster_end,
@@ -804,7 +791,7 @@ static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, u
 		.detail = detail,
 		.pj = pj,
 };
-	const bool parsed = dart_modern_emit_cluster_summary (&cluster_req);
+	const bool parsed = modern_emit_summary (&cluster_req);
 	pj_end (pj);
 	pj_kb (pj, "clusters_parsed", parsed);
 	if (!parsed) {
@@ -897,7 +884,7 @@ static void dump_header_ext_snapshot_text(DartCtx *ctx, RStrBuf *sb, const char 
 		r_strbuf_appendf (sb, "  detail: object_pool_entries\n");
 	}
 	r_strbuf_appendf (sb, "  columns: idx cid alloc fill count refs flags alloc_range fill_range extras\n");
-	const DartModernClusterSummaryRequest cluster_req = {
+	const ModernSummaryReq cluster_req = {
 		.ctx = ctx,
 		.cluster_start = sh.cluster_start,
 		.cluster_end = cluster_end,
@@ -907,7 +894,7 @@ static void dump_header_ext_snapshot_text(DartCtx *ctx, RStrBuf *sb, const char 
 		.detail = detail,
 		.sb = sb,
 };
-	const bool parsed = dart_modern_emit_cluster_summary (&cluster_req);
+	const bool parsed = modern_emit_summary (&cluster_req);
 	if (!parsed) {
 		r_strbuf_appendf (sb, "  parser: unsupported or failed cluster stream\n");
 	}
@@ -933,7 +920,7 @@ static void dump_header_ext_snapshot_r2(DartCtx *ctx, RStrBuf *sb, const char *l
 	if (detail >= 3) {
 		r_strbuf_appendf (sb, "'# Dart %s cluster detail: object_pool_entries\n", label);
 	}
-	const DartModernClusterSummaryRequest cluster_req = {
+	const ModernSummaryReq cluster_req = {
 		.ctx = ctx,
 		.cluster_start = sh.cluster_start,
 		.cluster_end = cluster_end,
@@ -944,7 +931,7 @@ static void dump_header_ext_snapshot_r2(DartCtx *ctx, RStrBuf *sb, const char *l
 		.r2_scope = scope,
 		.sb = sb,
 };
-	const bool parsed = dart_modern_emit_cluster_summary (&cluster_req);
+	const bool parsed = modern_emit_summary (&cluster_req);
 	if (!parsed) {
 		r_strbuf_appendf (sb, "'# Dart %s cluster parser: unsupported or failed cluster stream\n", label);
 	}
@@ -1023,7 +1010,7 @@ bool dart_pp_info_read_slot(const DartPpInfo *info, ut64 offset, DartPpSlotRaw *
 	return true;
 }
 
-static bool resolve_pp_from_snapshot(DartCtx *ctx, ut64 snapshot_base, const char *label, DartPpInfo *info) {
+static bool resolve_pp_from_snapshot(DartCtx *ctx, ut64 snapshot_base, DartPpInfo *info) {
 	if (!ctx || !snapshot_base || !info) {
 		return false;
 	}
@@ -1031,9 +1018,8 @@ static bool resolve_pp_from_snapshot(DartCtx *ctx, ut64 snapshot_base, const cha
 	if (!dart_snapshot_header_read (ctx, snapshot_base, &sh) || !sh.ok) {
 		return false;
 	}
-	ut64 data_image_base = dart_snapshot_data_image_base (snapshot_base, sh.total_len);
-	const DartModernClusterRequest req = { ctx, sh.cluster_start, snapshot_base + sh.total_len, sh.nc, sh.nb };
-	return dart_modern_build_synthetic_pp (&req, snapshot_base, label, data_image_base, info);
+	const ModernReq req = { ctx, sh.cluster_start, snapshot_base + sh.total_len, sh.nc, sh.nb };
+	return modern_build_pp (&req, info);
 }
 
 bool dart_resolve_pp_info(DartCtx *ctx, DartPpInfo *info) {
@@ -1046,9 +1032,9 @@ bool dart_resolve_pp_info(DartCtx *ctx, DartPpInfo *info) {
 	}
 	DartVerLayout layout_tmp;
 	DartVerLayout *layout_owned = ctx->layout? NULL: dart_ctx_init_layout (ctx, &layout_tmp);
-	bool ok = resolve_pp_from_snapshot (ctx, ctx->iso_data, "Isolate", info);
+	bool ok = resolve_pp_from_snapshot (ctx, ctx->iso_data, info);
 	if (!ok) {
-		ok = resolve_pp_from_snapshot (ctx, ctx->vm_data, "VM", info);
+		ok = resolve_pp_from_snapshot (ctx, ctx->vm_data, info);
 	}
 	if (layout_owned) {
 		dart_ctx_fini_layout (ctx, layout_owned);
@@ -1142,7 +1128,7 @@ static char *dump_pp_text(const DartPpInfo *info, bool quiet) {
 	return r_strbuf_drain (sb);
 }
 
-char *dart_pool_dump_pp(DartCtx *ctx, int fmt) {
+char *dart_pool_dump_pool(DartCtx *ctx, int fmt) {
 	DartPpInfo info = { 0 };
 	if (!dart_resolve_pp_info (ctx, &info)) {
 		if (fmt == 'j') {
@@ -1328,7 +1314,7 @@ static char *dart_pool_drain_trimmed_strbuf(RStrBuf *sb) {
 	return out;
 }
 
-char *dart_pool_dump_entrypoint(DartCtx *ctx, int fmt) {
+char *dart_pool_dump_entry(DartCtx *ctx, int fmt) {
 	DartEntrypointInfo info;
 	if (!dart_pool_entrypoint_info (ctx, &info)) {
 		return fmt == 'j'? strdup ("{\"error\":\"Dart entrypoint not found\"}"): strdup ("Error: Dart entrypoint not found\n");

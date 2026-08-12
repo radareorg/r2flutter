@@ -163,7 +163,7 @@ typedef struct {
 	char *resolved_name;
 	int resolved_cid;
 	ut64 resolved_code_index;
-} DartModernPoolSlotInfo;
+} ModernPoolSlot;
 
 typedef struct {
 	ut64 pp_offset;
@@ -176,9 +176,9 @@ typedef struct {
 	ut64 string_ref;
 	ut64 string_addr;
 	const char *string_value;
-} DartModernPoolStringRefInfo;
+} ModernPoolStrRef;
 
-typedef void(*DartModernPoolStringRefCallback)(const DartModernPoolStringRefInfo *info, void *user);
+typedef void(*ModernPoolStrRefCb)(const ModernPoolStrRef *info, void *user);
 
 typedef void(*DartInstructionTableEntryCallback)(const DartInstructionTableEntry *entry, void *user);
 
@@ -203,7 +203,7 @@ typedef struct {
 	ut64 cluster_end;
 	ut64 num_clusters;
 	ut64 num_base_objects;
-} DartModernClusterRequest;
+} ModernReq;
 
 typedef struct {
 	DartCtx *ctx;
@@ -216,7 +216,7 @@ typedef struct {
 	const char *r2_scope;
 	RStrBuf *sb;
 	PJ *pj;
-} DartModernClusterSummaryRequest;
+} ModernSummaryReq;
 
 bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len);
 bool read_u32_at(DartCtx *ctx, ut64 addr, ut32 *out);
@@ -257,16 +257,16 @@ int decode_string_cluster(ClusterStream *s, DartCtx *ctx, ut64 *ref_counter, boo
 void skip_generic_cluster(ClusterStream *stream);
 
 bool modern_skip_n_bytes(ClusterStream *s, ut64 len);
-bool dart_modern_is_supported_snapshot(DartCtx *ctx);
-bool dart_modern_emit_cluster_summary(const DartModernClusterSummaryRequest *req);
-bool dart_modern_build_synthetic_pp(const DartModernClusterRequest *req, ut64 snapshot_base, const char *snapshot_label, ut64 data_image_base, DartPpInfo *out);
-bool dart_modern_resolve_pp_slot(const DartModernClusterRequest *req, ut64 pp_offset, DartModernPoolSlotInfo *out);
-void dart_modern_pool_slot_info_fini(DartModernPoolSlotInfo *info);
-bool dart_modern_collect_direct_object_pool_string_refs(const DartModernClusterRequest *req, ut64 snapshot_base, HtUP *pp_offsets, DartModernPoolStringRefCallback cb, void *user);
-bool dart_modern_collect_object_pool_string_refs(const DartModernClusterRequest *req, HtUP *pp_offsets, DartModernPoolStringRefCallback cb, void *user);
-bool dart_modern_extract_object_pool_strings_from_clusters(const DartModernClusterRequest *req, RList *strings, HtUP *seen_refs, ut64 *ref_counter);
-bool dart_modern_scan_names_from_clusters(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen);
-bool dart_modern_extract_classes_from_clusters(const DartModernClusterRequest *req, RList *class_list);
+bool modern_supported(DartCtx *ctx);
+bool modern_emit_summary(const ModernSummaryReq *req);
+bool modern_build_pp(const ModernReq *req, DartPpInfo *out);
+bool modern_resolve_pp_slot(const ModernReq *req, ut64 pp_off, ModernPoolSlot *out);
+void modern_slot_fini(ModernPoolSlot *slot);
+bool modern_collect_direct_pool_strrefs(const ModernReq *req, HtUP *pp_offs, ModernPoolStrRefCb cb, void *user);
+bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offs, ModernPoolStrRefCb cb, void *user);
+bool modern_extract_pool_strings(const ModernReq *req, RList *strings, HtUP *seen, ut64 *next_ref);
+bool modern_scan_names(DartCtx *ctx, ut64 start, ut64 end, ut64 nclusters, ut64 itlen);
+bool modern_extract_classes(const ModernReq *req, RList *classes);
 DartStringCategory dart_string_classify_value(const char *s);
 
 void init_function_layout(DartCtx *ctx, DartFunctionLayout *fl);

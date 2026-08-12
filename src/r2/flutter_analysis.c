@@ -444,7 +444,7 @@ static bool flutter_model_load(FlutterAnalModel *model, RCore *core, DartCtx *dc
 	return true;
 }
 
-static void flutter_pp_string_map_add(FlutterPpStringMap *map, const DartModernPoolStringRefInfo *info) {
+static void flutter_pp_string_map_add(FlutterPpStringMap *map, const ModernPoolStrRef *info) {
 	if (!map || !map->by_pp_off || !info || R_STR_ISEMPTY (info->string_value) || !info->string_addr) {
 		return;
 	}
@@ -457,7 +457,7 @@ static void flutter_pp_string_map_add(FlutterPpStringMap *map, const DartModernP
 	ht_up_insert (map->by_pp_off, info->pp_offset, ref);
 }
 
-static void flutter_pp_string_ref_cb(const DartModernPoolStringRefInfo *info, void *user) {
+static void flutter_pp_string_ref_cb(const ModernPoolStrRef *info, void *user) {
 	flutter_pp_string_map_add (user, info);
 }
 
@@ -469,14 +469,14 @@ static bool flutter_collect_pp_strings_from_snapshot(DartCtx *ctx, ut64 snapshot
 	if (!dart_snapshot_header_read (ctx, snapshot_base, &sh) || !sh.ok) {
 		return false;
 	}
-	const DartModernClusterRequest req = {
+	const ModernReq req = {
 		.ctx = ctx,
 		.cluster_start = sh.cluster_start,
 		.cluster_end = snapshot_base + sh.total_len,
 		.num_clusters = sh.nc,
 		.num_base_objects = sh.nb,
 };
-	return dart_modern_collect_direct_object_pool_string_refs (&req, snapshot_base, wanted, flutter_pp_string_ref_cb, map);
+	return modern_collect_direct_pool_strrefs (&req, wanted, flutter_pp_string_ref_cb, map);
 }
 
 static void flutter_pp_string_map_load(DartCtx *ctx, HtUP *wanted, FlutterPpStringMap *map) {

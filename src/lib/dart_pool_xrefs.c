@@ -692,7 +692,7 @@ static DartPpUseBucket *xref_bucket_by_pp(RList *buckets, ut64 pp_off) {
 	return NULL;
 }
 
-static void xref_serialized_pool_string_cb(const DartModernPoolStringRefInfo *info, void *user) {
+static void xref_serialized_pool_string_cb(const ModernPoolStrRef *info, void *user) {
 	DartSerializedPoolXrefCtx *ux = (DartSerializedPoolXrefCtx *)user;
 	if (!info || !ux || !ux->buckets || !ux->xrefs || !ux->count || xref_limit_reached (*ux->count, ux->limit)) {
 		return;
@@ -759,14 +759,14 @@ static bool collect_serialized_object_pool_xrefs(DartCtx *ctx, RList *uses, RLis
 		if (!base || !dart_snapshot_header_read (ctx, base, &sh) || !sh.ok) {
 			continue;
 		}
-		const DartModernClusterRequest req = {
+		const ModernReq req = {
 			.ctx = ctx,
 			.cluster_start = sh.cluster_start,
 			.cluster_end = base + sh.total_len,
 			.num_clusters = sh.nc,
 			.num_base_objects = sh.nb,
 };
-		ok |= dart_modern_collect_object_pool_string_refs (&req, wanted, xref_serialized_pool_string_cb, &ux);
+		ok |= modern_collect_pool_strrefs (&req, wanted, xref_serialized_pool_string_cb, &ux);
 	}
 	if (layout_owned) {
 		dart_ctx_fini_layout (ctx, layout_owned);

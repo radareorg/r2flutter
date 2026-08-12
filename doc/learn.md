@@ -874,7 +874,7 @@ The fallback class-name scanner reads fixed-size chunks that are not guaranteed 
 
 Validate the CLI obfuscation map only after `dart_app_new_from_core ()` copies the initial `DartCtx`; loading it before that copy would share one hash table across two independently finalized contexts. After validation, keep the map loaded in the context that will use it instead of immediately forcing a second lazy parse.
 
-Modern cluster helpers run only after `dart_modern_is_supported_snapshot ()`
+Modern cluster helpers run only after `modern_supported ()`
 succeeds. Past that public gate, `ctx`, `ctx->layout`, a validated
 `CID_SHIFT1`/`OBJECT_HEADER` style, and a 4- or 8-byte compressed-word size are
 invariants for `src/lib/dart_pool_modern.c`. Keep null/layout fallback checks on
@@ -890,7 +890,7 @@ later in `WriteFill`. A parser that tries to decode fields during alloc will
 desynchronize and eventually fall back to string-only class names.
 
 For compressed ObjectHeader snapshots (`cws=4`, e.g. Android mafia / Dart
-3.9.2), `dart_modern_extract_classes_from_clusters ()` now walks the alloc
+3.9.2), `modern_extract_classes ()` now walks the alloc
 section to collect cluster ref ranges and Smi/Mint values, then walks fill to
 recover Class, Field, Function, and String metadata. This populates `ic` with
 real class members and avoids the old `0fields` class-only result.
@@ -1329,3 +1329,22 @@ snapshot ref table remains the source of truth.
 On the local fixtures this reduced `r2flutter -AAA` from about 1.61 s to 1.57 s
 for Android `first/libapp.so` and from about 11.06 s to 10.43 s for iOS Runner,
 while Runner gained 2,355 PP-string annotations that the old path missed.
+
+## Parser naming and argument discipline
+
+Public entrypoints keep the `dart_` namespace but use short subject/verb names:
+`dart_pool_scan ()`, `dart_pool_dump_pool ()`, and `dart_dumper_dump_r2 ()`.
+They should describe the operation without repeating implementation detail such
+as "effective", "embedded", or "for radare2".
+
+Private modern-snapshot helpers use the `modern_` prefix and compact terms that
+are already established in the parser: `pp`, `strref`, and `sb` (snapshot
+base). Do not export those helpers through `include/r2flutter/`; keep their
+types and declarations in `dart_pool_parse_priv.h`.
+
+Do not add argument-bundle structs merely to shorten a signature. First remove
+inputs that the context or the request already determines. For example,
+`dart_pool_scan ()` derives its base from `DartCtx`, `modern_build_pp ()`
+derives the matching snapshot base from its cluster range, and the modern fill
+callback derives its fill specification from the walker. This removed duplicate
+arguments while retaining explicit parser state and ownership.

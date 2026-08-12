@@ -107,7 +107,7 @@ static int collect_snapshot_magics_in_range(DartCtx *ctx, ut64 start, ut64 size,
 #define DART_IMAGE_HEADER_MIN 64
 
 static ut64 dart_align_up(ut64 v, ut64 a) {
-	return (v + (a - 1)) & ~(a - 1);
+	return (v + (a - 1)) & ~ (a - 1);
 }
 
 // Read an Image header at addr and return its ImageSize in *size_out, true only

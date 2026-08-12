@@ -133,7 +133,7 @@ static void dump_func_r2(RStrBuf *sb, const DartFunction *fn, bool quiet) {
 	free (flagname);
 }
 
-char *dart_dumper_dump4radare2(DartApp *app) {
+char *dart_dumper_dump_r2(DartApp *app) {
 	RStrBuf *sb = r_strbuf_new ("");
 	const bool quiet = app && app->dctx.quiet;
 

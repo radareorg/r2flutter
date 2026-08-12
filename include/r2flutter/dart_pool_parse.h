@@ -161,13 +161,13 @@ typedef void(*DartPoolFunctionCallback)(const char *name, ut64 addr, ut64 size, 
 // ============================================================================
 
 bool dart_ctx_set_profile_override(DartCtx *ctx, const char *spec);
-const char *dart_ctx_effective_version(DartCtx *ctx);
-const char *dart_ctx_effective_hash(DartCtx *ctx);
-int dart_pool_enumerate(DartCtx *ctx, const char *libapp_path, DartPoolFunctionCallback on_fn, void *user, ut64 *out_base, ut64 *out_heap_base);
+const char *dart_ctx_version(DartCtx *ctx);
+const char *dart_ctx_hash(DartCtx *ctx);
+int dart_pool_scan(DartCtx *ctx, DartPoolFunctionCallback on_fn, void *user);
 char *dart_pool_dump_header(DartCtx *ctx, int fmt);
 char *dart_pool_dump_header_ext(DartCtx *ctx, int fmt);
 char *dart_pool_dump_header_deep(DartCtx *ctx, int fmt);
-char *dart_pool_dump_pp(DartCtx *ctx, int fmt);
+char *dart_pool_dump_pool(DartCtx *ctx, int fmt);
 char *dart_pool_dump_object(DartCtx *ctx, const char *spec, int fmt);
 
 // ============================================================================
@@ -192,7 +192,7 @@ void dart_string_ref_free(DartStringRef *sr);
 // ============================================================================
 
 RList *dart_pool_extract_strings(DartCtx *ctx);
-RList *dart_pool_extract_object_pool_strings(DartCtx *ctx);
+RList *dart_pool_extract_pool_strings(DartCtx *ctx);
 char *dart_pool_dump_strings(DartCtx *ctx, int fmt);
 char *dart_pool_dump_strings_fuzzy(DartCtx *ctx, int fmt);
 void dart_string_list_free(RList *list);
@@ -204,7 +204,7 @@ char *dart_pool_dump_sbom(DartCtx *ctx, const char *input_path, int fmt);
 // ============================================================================
 
 RVecDartInstructionTableEntry *dart_pool_extract_instruction_table(DartCtx *ctx);
-char *dart_pool_dump_entrypoint(DartCtx *ctx, int fmt);
+char *dart_pool_dump_entry(DartCtx *ctx, int fmt);
 char *dart_pool_dump_it(DartCtx *ctx, int fmt);
 void dart_instruction_table_entry_free(DartInstructionTableEntry *ie);
 void dart_instruction_table_list_free(RVecDartInstructionTableEntry *list);

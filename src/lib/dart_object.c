@@ -50,7 +50,7 @@ typedef struct {
 	ut64 index;
 	ut8 bits;
 	DartPpInfo pp;
-	DartModernPoolSlotInfo slot;
+	ModernPoolSlot slot;
 } DartPpSlotInfo;
 
 static void dart_object_info_fini(DartObjectInfo *info) {
@@ -76,7 +76,7 @@ static void dart_pp_slot_info_fini(DartPpSlotInfo *info) {
 		return;
 	}
 	dart_pp_info_fini (&info->pp);
-	dart_modern_pool_slot_info_fini (&info->slot);
+	modern_slot_fini (&info->slot);
 	memset (info, 0, sizeof (*info));
 }
 
@@ -344,14 +344,14 @@ static bool dart_pp_slot_decode(DartCtx *ctx, ut64 offset, DartPpSlotInfo *slot)
 	if (slot->bits_ok) {
 		DartSnapshotHeader sh = { 0 };
 		if (dart_snapshot_header_read (ctx, slot->pp.snapshot_base, &sh) && sh.ok) {
-			const DartModernClusterRequest req = {
+			const ModernReq req = {
 				ctx,
 				sh.cluster_start,
 				slot->pp.snapshot_base + sh.total_len,
 				sh.nc,
 				sh.nb
 			};
-			slot->slot_ok = dart_modern_resolve_pp_slot (&req, offset, &slot->slot);
+			slot->slot_ok = modern_resolve_pp_slot (&req, offset, &slot->slot);
 		}
 	}
 	return true;
@@ -430,7 +430,7 @@ static void dart_object_json_pool_slot(PJ *pj, const DartPpSlotInfo *slot) {
 	}
 	pj_kb (pj, "resolved", slot->slot_ok);
 	if (slot->slot_ok) {
-		const DartModernPoolSlotInfo *si = &slot->slot;
+		const ModernPoolSlot *si = &slot->slot;
 		pj_kn (pj, "cluster_index", si->cluster_index);
 		pj_kn (pj, "pool_index", si->pool_index);
 		pj_kn (pj, "pool_ref", si->pool_ref);
@@ -552,7 +552,7 @@ static void dart_object_text_pool_slot(RStrBuf *sb, const DartPpSlotInfo *slot) 
 		r_strbuf_appendf (sb, "pp.bits:        0x%02x\n", (unsigned int)slot->bits);
 	}
 	if (slot->slot_ok) {
-		const DartModernPoolSlotInfo *si = &slot->slot;
+		const ModernPoolSlot *si = &slot->slot;
 		r_strbuf_appendf (sb, "pool.ref:       %" PRIu64 "\n", (uint64_t)si->pool_ref);
 		r_strbuf_appendf (sb, "pool.index:     %" PRIu64 "\n", (uint64_t)si->pool_index);
 		r_strbuf_appendf (sb, "entry.index:    %" PRIu64 "\n", (uint64_t)si->index);
@@ -611,7 +611,7 @@ static char *dart_object_dump_r2(const DartValueInfo *value, const DartPpSlotInf
 	if (slot && slot->present && slot->read_ok) {
 		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart PP slot offset=0x%" PFMT64x " raw=0x%" PFMT64x, slot->addr, slot->offset, slot->raw);
 		if (slot->slot_ok) {
-			const DartModernPoolSlotInfo *si = &slot->slot;
+			const ModernPoolSlot *si = &slot->slot;
 			r_strbuf_appendf (sb, " entry=%" PRIu64 " type=%s behavior=%s", (uint64_t)si->index, si->type_name? si->type_name: "unknown", si->behavior_name? si->behavior_name: "unknown");
 			if (R_STR_ISNOTEMPTY (si->resolved_kind)) {
 				r_strbuf_appendf (sb, " resolved=%s", si->resolved_kind);

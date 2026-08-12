@@ -142,7 +142,7 @@ static bool r2flutter_dump_r2script(RCore *core, DartCtx *dctx) {
 		return false;
 	}
 	dart_app_load_info (app);
-	char *script = dart_dumper_dump4radare2 (app);
+	char *script = dart_dumper_dump_r2 (app);
 	if (script) {
 		r_cons_print (core->cons, script);
 		free (script);
@@ -406,7 +406,7 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		out = dart_pool_dump_classes (dctx, cmd->fmt);
 		break;
 	case 'e':
-		out = dart_pool_dump_entrypoint (dctx, cmd->fmt);
+		out = dart_pool_dump_entry (dctx, cmd->fmt);
 		break;
 	case 'f':
 		out = r2flutter_dump_functions (core, dctx, cmd->fmt);
@@ -422,7 +422,7 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		out = dart_pool_dump_object (dctx, cmd->object_spec, cmd->fmt);
 		break;
 	case 'p':
-		out = dart_pool_dump_pp (dctx, cmd->fmt);
+		out = dart_pool_dump_pool (dctx, cmd->fmt);
 		break;
 	case 'R':
 		r2flutter_dump_r2script (core, dctx);
