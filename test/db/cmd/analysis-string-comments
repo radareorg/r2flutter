@@ -1,0 +1,9 @@
+NAME=r2-analysis-string-comment
+FILE=-
+CMDS=<<EOF
+!!sh -c 'p=../src/r2/core_flutter.so; [ -f "$p" ] || p=../src/r2/core_flutter.dylib; r2 -q -i "$p" -e scr.color=0 -e bin.relocs.apply=true -c "r2flutter -AAA" -c "s 0x8b914" -c "pd 1" -c q bins/android/first/libapp.so 2>/dev/null | awk "/_nativeGetFloat64/ && /dart: string/ { print \"string-comment-ok\" }"'
+EOF
+EXPECT=<<EOF
+string-comment-ok
+EOF
+RUN

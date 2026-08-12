@@ -1268,3 +1268,29 @@ singletons are still recoverable from the nearby handshake/schedule-filter
 cluster (`x22 + 0x20` is true, `x22 + 0x30` is false), so the same AArch64 entry
 patch (`add x0, x22, 0x20; ret`) is valid when the goal is to force acceptance
 at the Dart bad-certificate wrapper boundary.
+
+## PP-relative string comments in r2 disassembly
+
+`r2flutter -AAA` must account for shifted ARM64 PP-base materialization such as
+`add x2, x27, 0x18, lsl 12`. radare2 may print this as `lsl 12` without a `#`.
+If the shift is ignored, the analyzer records `PP slot +0x470` for a following
+`ldr x2, [x2, 0x458]` instead of the real `PP slot +0x18458`, so ObjectPool
+string resolution cannot attach the expected string comment.
+
+The analysis pass now accepts both `lsl #N` and `lsl N`, builds a direct
+ObjectPool string map, and annotates PP-relative string loads. On
+`ssl_test2/libapp.so`, the blutter-comparable check is:
+
+```sh
+r2 -q -e scr.color=0 -e bin.relocs.apply=true \
+  -c 'r2flutter -AAA' \
+  -c 's 0x9da730' \
+  -c 'pd 16' \
+  -c q ssl_test2/libapp.so
+```
+
+The key instruction should now include:
+
+```text
+0x009da744 ... ldr x2, [x2, 0x458] ; ... "premium" ; dart: PP slot +0x18458 string "premium"
+```

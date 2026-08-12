@@ -55,12 +55,50 @@ typedef struct {
 } FlutterAnalStats;
 
 typedef struct {
+	ut64 pp_offset;
+	ut64 string_addr;
+	char *string_value;
+	char *target_kind;
+	bool direct;
+} FlutterPpStringRef;
+
+typedef struct {
+	HtUP *by_pp_off;
+	RList *refs;
+} FlutterPpStringMap;
+
+typedef struct {
 	HtUP *seen;
 	RVecFlutterEntry *entries;
 } FlutterEntryCollector;
 
 static void flutter_stack_slot_free(void *p) {
 	free (p);
+}
+
+static void flutter_pp_string_ref_free(void *p) {
+	FlutterPpStringRef *ref = p;
+	if (!ref) {
+		return;
+	}
+	free (ref->string_value);
+	free (ref->target_kind);
+	free (ref);
+}
+
+static void flutter_pp_string_map_init(FlutterPpStringMap *map) {
+	memset (map, 0, sizeof (*map));
+	map->by_pp_off = ht_up_new0 ();
+	map->refs = r_list_newf (flutter_pp_string_ref_free);
+}
+
+static void flutter_pp_string_map_fini(FlutterPpStringMap *map) {
+	if (!map) {
+		return;
+	}
+	ht_up_free (map->by_pp_off);
+	r_list_free (map->refs);
+	memset (map, 0, sizeof (*map));
 }
 
 static void flutter_model_fini(FlutterAnalModel *model) {
@@ -214,11 +252,17 @@ static bool flutter_parse_shifted_imm(const char *line, ut64 *imm) {
 	if (!lsl) {
 		return false;
 	}
-	const char *hash = strchr (lsl, '#');
-	if (!hash) {
+	const char *p = lsl + 3;
+	while (isspace ((ut8)*p)) {
+		p++;
+	}
+	if (*p == '#') {
+		p++;
+	}
+	if (!isdigit ((ut8)*p)) {
 		return false;
 	}
-	int shift = atoi (hash + 1);
+	int shift = atoi (p);
 	if (shift <= 0 || shift >= 63) {
 		return false;
 	}
@@ -349,6 +393,64 @@ static bool flutter_model_load(FlutterAnalModel *model, RCore *core, DartCtx *dc
 		return false;
 	}
 	return true;
+}
+
+static void flutter_pp_string_map_add(FlutterPpStringMap *map, const DartModernPoolStringRefInfo *info) {
+	if (!map || !map->by_pp_off || !map->refs || !info || R_STR_ISEMPTY (info->string_value) || !info->string_addr) {
+		return;
+	}
+	const bool direct = R_STR_ISNOTEMPTY (info->target_kind) && !strcmp (info->target_kind, "object_pool.entry");
+	FlutterPpStringRef *old = ht_up_find (map->by_pp_off, info->pp_offset, NULL);
+	if (old && (old->direct || !direct)) {
+		return;
+	}
+	FlutterPpStringRef *ref = R_NEW0 (FlutterPpStringRef);
+	ref->pp_offset = info->pp_offset;
+	ref->string_addr = info->string_addr;
+	ref->string_value = strdup (info->string_value);
+	ref->target_kind = R_STR_ISNOTEMPTY (info->target_kind)? strdup (info->target_kind): NULL;
+	ref->direct = direct;
+	r_list_append (map->refs, ref);
+	ht_up_insert (map->by_pp_off, info->pp_offset, ref);
+}
+
+static void flutter_pp_string_ref_cb(const DartModernPoolStringRefInfo *info, void *user) {
+	flutter_pp_string_map_add (user, info);
+}
+
+static void flutter_collect_pp_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, HtUP *wanted, FlutterPpStringMap *map) {
+	if (!ctx || !snapshot_base || !map) {
+		return;
+	}
+	DartSnapshotHeader sh = { 0 };
+	if (!dart_snapshot_header_read (ctx, snapshot_base, &sh) || !sh.ok) {
+		return;
+	}
+	const DartModernClusterRequest req = {
+		.ctx = ctx,
+		.cluster_start = sh.cluster_start,
+		.cluster_end = snapshot_base + sh.total_len,
+		.num_clusters = sh.nc,
+		.num_base_objects = sh.nb,
+};
+	(void)dart_modern_collect_direct_object_pool_string_refs (&req, wanted, flutter_pp_string_ref_cb, map);
+}
+
+static void flutter_pp_string_map_load(DartCtx *ctx, HtUP *wanted, FlutterPpStringMap *map) {
+	if (!ctx || !map || find_snapshots (ctx) != 0) {
+		return;
+	}
+	DartVerLayout layout_tmp;
+	DartVerLayout *layout_owned = ctx->layout? NULL: dart_ctx_init_layout (ctx, &layout_tmp);
+	flutter_collect_pp_strings_from_snapshot (ctx, ctx->iso_data, wanted, map);
+	flutter_collect_pp_strings_from_snapshot (ctx, ctx->vm_data, wanted, map);
+	if (layout_owned) {
+		dart_ctx_fini_layout (ctx, layout_owned);
+	}
+}
+
+static const FlutterPpStringRef *flutter_pp_string_map_get(FlutterPpStringMap *map, ut64 pp_off) {
+	return map && map->by_pp_off? ht_up_find (map->by_pp_off, pp_off, NULL): NULL;
 }
 
 static void flutter_apply_model_to_core(FlutterAnalModel *model, RCore *core, FlutterAnalStats *stats) {
@@ -740,7 +842,7 @@ static bool flutter_process_stack_store(FlutterAnalState *state, const FlutterOp
 	return true;
 }
 
-static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, ut64 at, const FlutterOpInfo *info, FlutterAnalStats *stats) {
+static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, FlutterPpStringMap *pp_strings, ut64 at, const FlutterOpInfo *info, FlutterAnalStats *stats) {
 	if (!state || !info || info->n_regs < 1 || !info->has_mem) {
 		return false;
 	}
@@ -761,11 +863,23 @@ static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, ut64 a
 	memset (&state->regs[dst], 0, sizeof (state->regs[dst]));
 	state->regs[dst].has_pp_off = true;
 	state->regs[dst].pp_off = pp_off;
-	char *msg = r_str_newf ("dart: "
-		"PP slot +0x%" PFMT64x,
-		pp_off);
-	flutter_append_comment (core, at, msg, stats);
-	free (msg);
+	const FlutterPpStringRef *string_ref = flutter_pp_string_map_get (pp_strings, pp_off);
+	if (string_ref) {
+		flutter_set_flag (core, "dart.str", string_ref->string_value, string_ref->string_addr, (ut32)strlen (string_ref->string_value), true);
+		flutter_add_ref (core, at, string_ref->string_addr, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
+		stats->string_refs++;
+		char *escaped = r_str_escape_utf8 (string_ref->string_value, false, true);
+		char *msg = r_str_newf ("dart: PP slot +0x%" PFMT64x " string \"%s\"", pp_off, escaped);
+		flutter_append_comment (core, at, msg, stats);
+		free (msg);
+		free (escaped);
+	} else {
+		char *msg = r_str_newf ("dart: "
+			"PP slot +0x%" PFMT64x,
+			pp_off);
+		flutter_append_comment (core, at, msg, stats);
+		free (msg);
+	}
 	stats->pp_refs++;
 	return true;
 }
@@ -837,7 +951,7 @@ static void flutter_process_indirect_call(RCore *core, FlutterAnalState *state, 
 	}
 }
 
-static void flutter_scan_function(RCore *core, FlutterAnalModel *model, RAnalFunction *fcn, FlutterAnalStats *stats) {
+static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterPpStringMap *pp_strings, RAnalFunction *fcn, FlutterAnalStats *stats) {
 	if (!core || !model || !fcn || !stats) {
 		return;
 	}
@@ -898,7 +1012,7 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, RAnalFun
 				(void)flutter_process_add (&state, &info);
 				break;
 			case R_ANAL_OP_TYPE_LOAD:
-				if (!flutter_process_pp_load (core, &state, at, &info, stats) &&
+				if (!flutter_process_pp_load (core, &state, pp_strings, at, &info, stats) &&
 					!flutter_process_stack_load (&state, &info) &&
 					!flutter_process_field_load (core, model, &state, at, &info, stats) &&
 					has_info && info.n_regs > 0) {
@@ -938,7 +1052,7 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, RAnalFun
 	flutter_state_fini (&state);
 }
 
-static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, RVecFlutterEntry *entries, FlutterAnalStats *stats) {
+static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, FlutterPpStringMap *pp_strings, RVecFlutterEntry *entries, FlutterAnalStats *stats) {
 	if (!core || !model || !entries || !stats) {
 		return;
 	}
@@ -953,7 +1067,7 @@ static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, RVecFlu
 			continue;
 		}
 		ht_up_insert (seen_fcns, fcn->addr, fcn);
-		flutter_scan_function (core, model, fcn, stats);
+		flutter_scan_function (core, model, pp_strings, fcn, stats);
 	}
 	ht_up_free (seen_fcns);
 }
@@ -979,9 +1093,13 @@ bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 	flutter_apply_app_methods_to_core (core, app, &stats);
 	flutter_apply_model_to_core (&model, core, &stats);
 
+	FlutterPpStringMap pp_strings;
+	flutter_pp_string_map_init (&pp_strings);
+	flutter_pp_string_map_load (&app->dctx, NULL, &pp_strings);
+
 	RVecFlutterEntry *entries = flutter_collect_entries (core, app, &model);
 	flutter_ensure_functions (core, entries);
-	flutter_scan_functions (core, &model, entries, &stats);
+	flutter_scan_functions (core, &model, &pp_strings, entries, &stats);
 
 	if (!quiet) {
 		R_LOG_INFO ("Flutter analysis: %d functions, %d calls, %d fields, %d classes, %d types, %d strings, %d PP refs",
@@ -995,6 +1113,7 @@ bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 	}
 
 	RVecFlutterEntry_free (entries);
+	flutter_pp_string_map_fini (&pp_strings);
 	flutter_model_fini (&model);
 	dart_app_free (app);
 	return true;

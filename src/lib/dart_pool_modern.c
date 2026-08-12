@@ -2957,6 +2957,77 @@ bool dart_modern_collect_object_pool_string_refs(const DartModernClusterRequest 
 	return ok;
 }
 
+bool dart_modern_collect_direct_object_pool_string_refs(const DartModernClusterRequest *req, HtUP *pp_offsets, DartModernPoolStringRefCallback cb, void *user) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	if (!ctx || !cb || !dart_modern_is_supported_snapshot (ctx)) {
+		return false;
+	}
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
+	if (!meta) {
+		return false;
+	}
+	ModernRefResolver resolver = { 0 };
+	bool ok = modern_ref_resolver_init (&resolver, ctx, meta, req->num_clusters, req->num_base_objects);
+	if (!ok) {
+		modern_cluster_meta_free (meta, req->num_clusters);
+		return false;
+	}
+	for (ut64 i = 0; i < req->num_clusters; i++) {
+		ModernClusterMeta *m = &meta[i];
+		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
+			continue;
+		}
+		ClusterStream s = {
+			.ctx = ctx,
+			.cursor = m->fill_offset,
+			.end = m->fill_end,
+};
+		for (ut64 pool_index = 0; pool_index < m->count; pool_index++) {
+			ut64 length = 0;
+			if (!cs_read_unsigned (&s, &length)) {
+				ok = false;
+				break;
+			}
+			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
+				ModernPoolEntry entry;
+				if (!modern_read_pool_entry (&s, ctx, entry_index, &entry)) {
+					ok = false;
+					break;
+				}
+				ut64 pp_offset = modern_pool_entry_pp_offset (ctx, entry_index);
+				if (pp_offsets && !ht_up_find (pp_offsets, pp_offset, NULL)) {
+					continue;
+				}
+				if (entry.behavior != 0 || entry.type != 1 || !entry.ref || entry.ref >= resolver.refs_count || R_STR_ISEMPTY (resolver.strings_by_ref[entry.ref])) {
+					continue;
+				}
+				DartModernPoolStringRefInfo info = {
+					.pp_offset = pp_offset,
+					.pool_ref = m->start_ref + pool_index,
+					.pool_index = pool_index,
+					.entry_index = entry_index,
+					.target_ref = entry.ref,
+					.target_kind = "object_pool.entry",
+					.field_index = entry_index,
+					.string_ref = entry.ref,
+					.string_addr = resolver.string_addr_by_ref[entry.ref],
+					.string_value = resolver.strings_by_ref[entry.ref],
+};
+				cb (&info, user);
+			}
+			if (!ok) {
+				break;
+			}
+		}
+		if (!ok) {
+			break;
+		}
+	}
+	modern_ref_resolver_fini (&resolver);
+	modern_cluster_meta_free (meta, req->num_clusters);
+	return ok;
+}
+
 static bool modern_object_pool_string_ref_exists(RList *refs, ut64 pool_ref, ut64 entry_index) {
 	if (!refs) {
 		return false;
