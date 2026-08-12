@@ -1,0 +1,67 @@
+NAME=r2-authpass-tls-flags
+FILE=-
+CMDS=<<EOF
+!!sh -c 'p=../src/r2/core_flutter.so; [ -f "$p" ] || p=../src/r2/core_flutter.dylib; r2 -q -i "$p" -e scr.color=0 -e bin.relocs.apply=true -c "r2flutter -A" -c "f~onBadCertificateWrapper" -c "f~registerBadCertificateCallback" -c "f~secureHandshake" -c q bins/ios/AuthPass.app/Frameworks/App.framework/App 2>/dev/null | awk "/method\\._RawSecureSocket_.*\\._onBadCertificateWrapper_/ { print \"wrapper=\" \$1 } /method\\._SecureFilterImpl_.*\\.registerBadCertificateCallback$/ { print \"register=\" \$1 } /method\\._SecureFilterImpl_.*\\._registerBadCertificateCallback_/ { print \"register_impl=\" \$1 } /method\\._RawSecureSocket_.*\\._secureHandshake_/ { print \"handshake=\" \$1 }"'
+EOF
+EXPECT=<<EOF
+wrapper=0x003199d4
+register=0x003194ec
+register_impl=0x0031954c
+handshake=0x0031749c
+EOF
+RUN
+
+NAME=r2-authpass-wrapper-disasm
+FILE=-
+CMDS=<<EOF
+!!sh -c 'p=../src/r2/core_flutter.so; [ -f "$p" ] || p=../src/r2/core_flutter.dylib; r2 -q -i "$p" -e scr.color=0 -e bin.relocs.apply=true -c "r2flutter -A" -c "s 0x3199d4" -c "pd 24" -c q bins/ios/AuthPass.app/Frameworks/App.framework/App 2>/dev/null | awk "/0x003199f0/ { print \"load_callback\" } /0x00319a10/ { print \"call_callback\" } /0x00319a1c/ { print \"return_callback_result\" }"'
+EOF
+EXPECT=<<EOF
+load_callback
+call_callback
+return_callback_result
+EOF
+RUN
+
+NAME=r2-authpass-handshake-disasm
+FILE=-
+CMDS=<<EOF
+!!sh -c 'p=../src/r2/core_flutter.so; [ -f "$p" ] || p=../src/r2/core_flutter.dylib; r2 -q -i "$p" -e scr.color=0 -e bin.relocs.apply=true -c "r2flutter -A" -c "s 0x31749c" -c "pd 104" -c q bins/ios/AuthPass.app/Frameworks/App.framework/App 2>/dev/null | awk "/0x003174e4/ { print \"call_handshake\" } /0x0031752c/ { print \"false_singleton\" } /0x00317554/ { print \"schedule_filter\" } /0x003175ac/ { print \"true_singleton\" }"'
+EOF
+EXPECT=<<EOF
+call_handshake
+false_singleton
+schedule_filter
+true_singleton
+EOF
+RUN
+
+NAME=r2-authpass-callsite-xrefs
+FILE=-
+CMDS=<<EOF
+!!sh -c 'p=../src/r2/core_flutter.so; [ -f "$p" ] || p=../src/r2/core_flutter.dylib; r2 -q -i "$p" -e scr.color=0 -e bin.relocs.apply=true -c "r2flutter -A" -c "s 0x3199bc" -c "pd 1" -c "s 0x316cd8" -c "pd 1" -c "s 0x319530" -c "pd 1" -c "s 0x317028" -c "pd 1" -c "s 0x317514" -c "pd 1" -c "s 0x3178b4" -c "pd 1" -c "s 0x317e04" -c "pd 1" -c q bins/ios/AuthPass.app/Frameworks/App.framework/App 2>/dev/null | awk "/0x003199bc/ && /onBadCertificateWrapper/ { print \"wrapper_xref=0x3199bc\" } /0x00316cd8/ && /registerBadCertificateCallback/ { print \"register_xref=0x316cd8\" } /0x00319530/ && /_registerBadCertificateCallback_/ { print \"register_impl_xref=0x319530\" } /0x00317028/ && /_secureHandshake_/ { print \"handshake_xref=0x317028\" } /0x00317514/ && /_secureHandshake_/ { print \"handshake_xref=0x317514\" } /0x003178b4/ && /_secureHandshake_/ { print \"handshake_xref=0x3178b4\" } /0x00317e04/ && /_secureHandshake_/ { print \"handshake_xref=0x317e04\" }"'
+EOF
+EXPECT=<<EOF
+wrapper_xref=0x3199bc
+register_xref=0x316cd8
+register_impl_xref=0x319530
+handshake_xref=0x317028
+handshake_xref=0x317514
+handshake_xref=0x3178b4
+handshake_xref=0x317e04
+EOF
+RUN
+
+NAME=r2-authpass-qjs-bypass
+FILE=-
+CMDS=<<EOF
+!!sh -c 't=$(mktemp /tmp/r2flutter-authpass.XXXXXX); cp bins/ios/AuthPass.app/Frameworks/App.framework/App "$t"; p=../src/r2/core_flutter.so; [ -f "$p" ] || p=../src/r2/core_flutter.dylib; r2 -q -w -i "$p" -e bin.relocs.apply=true -i ../scripts/dart_cert_bypass.qjs "$t" 2>/dev/null | awk -F= "/^target=/ { print \"target=\" \$2 } /^vaddr=/ { print \"vaddr=\" \$2 } /^after=/ { print \"after=\" \$2 } /^status=/ { print \"status=\" \$2 }"; r2 -q -n -a arm -b 64 -e scr.color=0 -c "s 0x3199d4" -c "p8 8" -c q "$t"; rm -f "$t"'
+EOF
+EXPECT=<<EOF
+target=method._RawSecureSocket_14069316._onBadCertificateWrapper_14069316
+vaddr=0x3199d4
+after=c0820091c0035fd6
+status=patched
+c0820091c0035fd6
+EOF
+RUN

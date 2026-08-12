@@ -1257,3 +1257,14 @@ Net effect on `test/bins/android/mafia/libapp.so` (14 MB): `-p` dropped from
 ~2.6s to ~0.05s (~50x), with byte-identical output across all actions and the
 whole custom testsuite still green. The shared read cache also speeds up the
 heavier `-x`/`-z` walkers.
+
+## AuthPass iOS TLS wrapper behavior
+
+`test/bins/ios/AuthPass.app` uses Dart 3.2.5 with `CID_SHIFT1` tags. Its
+`_RawSecureSocket._onBadCertificateWrapper` differs from the Android SSL test
+fixtures: the normal path loads the app-provided callback, calls it indirectly
+with `blr x2`, and returns the callback result unchanged. The Dart true/false
+singletons are still recoverable from the nearby handshake/schedule-filter
+cluster (`x22 + 0x20` is true, `x22 + 0x30` is false), so the same AArch64 entry
+patch (`add x0, x22, 0x20; ret`) is valid when the goal is to force acceptance
+at the Dart bad-certificate wrapper boundary.

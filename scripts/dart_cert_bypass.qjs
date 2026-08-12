@@ -1,0 +1,136 @@
+/*
+ * Patch Dart AOT RawSecureSocket bad-certificate wrappers in an opened r2 file.
+ *
+ * Usage:
+ *   r2 -w -e bin.relocs.apply=true -i scripts/dart_cert_bypass.qjs libapp.so
+ *   r2 -w -e bin.relocs.apply=true -i scripts/dart_cert_bypass.qjs Runner.app/Frameworks/App.framework/App
+ *
+ * The opened file must be the Dart AOT image itself, not an APK/IPA/bundle
+ * directory. Android usually uses libapp.so. iOS Flutter apps usually use
+ * Frameworks/App.framework/App.
+ *
+ * This script is intentionally suffix-agnostic: it resolves the
+ * method._RawSecureSocket_*._onBadCertificateWrapper_* flag produced by
+ * r2flutter, translates the method vaddr to a raw file offset, and writes:
+ *
+ *   add x0, x22, 0x20
+ *   ret
+ *
+ * Those bytes are AArch64-specific and return Dart true in the observed
+ * Android/iOS AOT snapshots.
+ */
+(function () {
+	"use strict";
+
+	function trim (s) {
+		return String (s || "").replace (/^\s+|\s+$/g, "");
+	}
+
+	function cmd (s) {
+		return r2.cmd (s);
+	}
+
+	function cmdj (s) {
+		try {
+			return r2.cmdj (s);
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function fail (msg) {
+		console.log ("error=" + msg);
+		throw new Error (msg);
+	}
+
+	function hex (n) {
+		var s = Number (n).toString (16);
+		if (s.length & 1) {
+			s = "0" + s;
+		}
+		return "0x" + s;
+	}
+
+	function findWrapperFlag () {
+		var out = cmd ("f~onBadCertificateWrapper");
+		var lines = out.split (/\r?\n/);
+		for (var i = 0; i < lines.length; i++) {
+			var line = trim (lines[i]);
+			var m = line.match (/^(0x[0-9a-fA-F]+)\s+\d+\s+(method\._RawSecureSocket_.*\._onBadCertificateWrapper_.*)$/);
+			if (m) {
+				return {
+					addr: parseInt (m[1], 16),
+					name: m[2],
+				};
+			}
+		}
+		return null;
+	}
+
+	function fileOffsetFor (addr) {
+		var sections = cmdj ("iSj") || [];
+		for (var i = 0; i < sections.length; i++) {
+			var s = sections[i];
+			var vaddr = Number (s.vaddr);
+			var vsize = Number (s.vsize || s.size);
+			var paddr = Number (s.paddr);
+			if (!isFinite (vaddr) || !isFinite (vsize) || !isFinite (paddr)) {
+				continue;
+			}
+			if (addr >= vaddr && addr < vaddr + vsize) {
+				return {
+					offset: paddr + (addr - vaddr),
+					section: s.name || "",
+				};
+			}
+		}
+		return {
+			offset: addr,
+			section: "unmapped-fallback",
+		};
+	}
+
+	cmd ("e scr.color=0");
+	cmd ("e bin.relocs.apply=true");
+
+	var arch = trim (cmd ("e asm.arch"));
+	var bits = trim (cmd ("e asm.bits"));
+	if (arch.indexOf ("arm") === -1 || bits !== "64") {
+		fail ("unsupported-arch-" + arch + "-" + bits + "-expected-arm64");
+	}
+
+	var flag = findWrapperFlag ();
+	if (!flag) {
+		cmd ("r2flutter -A");
+		flag = findWrapperFlag ();
+	}
+	if (!flag) {
+		fail ("missing-RawSecureSocket-onBadCertificateWrapper-flag");
+	}
+
+	var loc = fileOffsetFor (flag.addr);
+	var oldIoVa = trim (cmd ("e io.va"));
+	var oldSeek = trim (cmd ("s"));
+	var patch = "c0820091c0035fd6";
+
+	cmd ("e io.va=false");
+	var before = trim (cmd ("p8 8 @ " + hex (loc.offset)));
+	cmd ("wx " + patch + " @ " + hex (loc.offset));
+	var after = trim (cmd ("p8 8 @ " + hex (loc.offset)));
+	cmd ("e io.va=" + oldIoVa);
+	if (oldSeek) {
+		cmd ("s " + oldSeek);
+	}
+
+	if (after !== patch) {
+		fail ("write-failed-before-" + before + "-after-" + after);
+	}
+
+	console.log ("target=" + flag.name);
+	console.log ("vaddr=" + hex (flag.addr));
+	console.log ("file_offset=" + hex (loc.offset));
+	console.log ("section=" + loc.section);
+	console.log ("before=" + before);
+	console.log ("after=" + after);
+	console.log ("status=" + (before === patch ? "already-patched" : "patched"));
+})();
