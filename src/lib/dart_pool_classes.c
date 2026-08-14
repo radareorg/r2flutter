@@ -2054,7 +2054,6 @@ static char *dart_class_ic_args(const DartClassInfo *ci) {
 	if (ci->instance_size > 0) {
 		r_strbuf_appendf (sb, " size=%u", ci->instance_size);
 	}
-	r_strbuf_append (sb, " lang=dart");
 	const char *ns = ci->library_name;
 	if (R_STR_ISNOTEMPTY (ns) && !ns[strspn (ns, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:/-")]) {
 		r_strbuf_appendf (sb, " ns=%s", ns);
@@ -2069,8 +2068,7 @@ static char *dart_class_ic_args(const DartClassInfo *ci) {
 
 static char *dart_field_ic_args(const DartFieldInfo *fi) {
 	char *attrs = r_bin_attr_tostring (dart_field_attrbits (fi), false);
-	char *res = r_str_newf (" %s offset=0x%x%s%s", field_c_type (fi), fi->offset,
-		R_STR_ISNOTEMPTY (attrs)? " ": "", r_str_get (attrs));
+	char *res = r_str_newf (" %s offset=0x%x%s%s", field_c_type (fi), fi->offset, R_STR_ISNOTEMPTY (attrs)? " ": "", r_str_get (attrs));
 	free (attrs);
 	return res;
 }
@@ -2372,6 +2370,7 @@ char *dart_pool_dump_classes(DartCtx *ctx, int fmt) {
 		dump_class_text (sb, ci, fmt, type_view, quiet);
 	}
 	if (fmt == 'r') {
+		r_strbuf_append (sb, "e bin.lang=dart\n");
 		if (!quiet) {
 			r_strbuf_append (sb, "# Dart class symbols and analysis metadata\n");
 		}
@@ -2763,6 +2762,7 @@ int dart_pool_apply_classes_to_core(DartCtx *ctx) {
 	int method_count = 0;
 	int type_field_count = 0;
 	int anal_method_count = 0;
+	r_core_cmd0 (ctx->core, "e bin.lang=dart");
 	RListIter *it;
 	DartClassInfo *ci;
 	r_list_foreach (classes, it, ci) {

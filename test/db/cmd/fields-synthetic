@@ -94,7 +94,8 @@ CMDS=<<EOF
 EOF
 EXPECT=<<EOF
 # Dart class symbols and analysis metadata
-ic+dart_TestClass size=48 lang=dart ns=package:test @ 0
+e bin.lang=dart
+ic+dart_TestClass size=48 ns=package:test @ 0
 ac dart_TestClass
 ic+dart_TestInterface @ 0
 ic+dart_TestClass:dart_TestInterface
@@ -103,7 +104,7 @@ acb dart_TestClass dart_TestInterface 0
 ic+dart_TestClass..callback void * offset=0x28
 ic+dart_TestClass.compute @ 0x0
 # method dart_TestClass.compute kind=RegularFunction mode=instance cc=dyncc:x0+8,^:x0!T0 signature=(int) => String
-ic+dart_TestInterface lang=dart ns=package:test @ 0
+ic+dart_TestInterface ns=package:test @ 0
 EOF
 RUN
 
