@@ -2,6 +2,10 @@
 
 #include "dart_pool_parse_priv.h"
 
+#ifndef R_BIN_ATTR_MIXIN
+#error r2flutter requires radare2 6.2.2 or newer (ic+ attribute support)
+#endif
+
 static DartFieldInfo *dart_field_info_clone(const DartFieldInfo *fi) {
 	if (!fi) {
 		return NULL;
@@ -1998,6 +2002,90 @@ static void append_comment_cmd(RStrBuf *sb, ut64 addr, const char *msg) {
 	free (b64);
 }
 
+static ut64 dart_class_attrbits(const DartClassInfo *ci) {
+	ut64 a = 0;
+	if (ci->flags & DART_CLASS_ABSTRACT) {
+		a |= R_BIN_ATTR_ABSTRACT;
+	}
+	if (ci->flags & DART_CLASS_ENUM) {
+		a |= R_BIN_ATTR_ENUM;
+	}
+	if (ci->flags & DART_CLASS_MIXIN) {
+		a |= R_BIN_ATTR_MIXIN;
+	}
+	return a;
+}
+
+static ut64 dart_field_attrbits(const DartFieldInfo *fi) {
+	ut64 a = 0;
+	if (fi->flags & DART_FIELD_STATIC) {
+		a |= R_BIN_ATTR_STATIC;
+	}
+	if (fi->flags & DART_FIELD_FINAL) {
+		a |= R_BIN_ATTR_FINAL;
+	}
+	if (fi->flags & DART_FIELD_CONST) {
+		a |= R_BIN_ATTR_CONST;
+	}
+	if (fi->flags & DART_FIELD_LATE) {
+		a |= R_BIN_ATTR_LATE;
+	}
+	return a;
+}
+
+static ut64 dart_method_attrbits(const DartMethodInfo *mi) {
+	const char *kind = method_kind_name (mi->kind_tag);
+	ut64 a = method_is_static (mi)? R_BIN_ATTR_STATIC: 0;
+	if (strstr (kind, "Getter")) {
+		a |= R_BIN_ATTR_GETTER;
+	} else if (strstr (kind, "Setter")) {
+		a |= R_BIN_ATTR_SETTER;
+	} else if (!strcmp (kind, "Constructor")) {
+		a |= R_BIN_ATTR_CONSTRUCTOR;
+	}
+	return a;
+}
+
+// the dart_*_ic_args helpers build the ic+ argument string (leading space, may be empty)
+// using the attribute names that r_bin_attr_forclass/symbol/field parse back
+
+static char *dart_class_ic_args(const DartClassInfo *ci) {
+	RStrBuf *sb = r_strbuf_new ("");
+	if (ci->instance_size > 0) {
+		r_strbuf_appendf (sb, " size=%u", ci->instance_size);
+	}
+	r_strbuf_append (sb, " lang=dart");
+	const char *ns = ci->library_name;
+	if (R_STR_ISNOTEMPTY (ns) && !ns[strspn (ns, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:/-")]) {
+		r_strbuf_appendf (sb, " ns=%s", ns);
+	}
+	char *attrs = r_bin_attr_tostring (dart_class_attrbits (ci), false);
+	if (R_STR_ISNOTEMPTY (attrs)) {
+		r_strbuf_appendf (sb, " %s", attrs);
+	}
+	free (attrs);
+	return r_strbuf_drain (sb);
+}
+
+static char *dart_field_ic_args(const DartFieldInfo *fi) {
+	char *attrs = r_bin_attr_tostring (dart_field_attrbits (fi), false);
+	char *res = r_str_newf (" %s offset=0x%x%s%s", field_c_type (fi), fi->offset,
+		R_STR_ISNOTEMPTY (attrs)? " ": "", r_str_get (attrs));
+	free (attrs);
+	return res;
+}
+
+static char *dart_method_ic_args(const DartMethodInfo *mi) {
+	char *attrs = r_bin_attr_tostring (dart_method_attrbits (mi), false);
+	if (R_STR_ISEMPTY (attrs)) {
+		free (attrs);
+		return strdup ("");
+	}
+	char *res = r_str_newf (" %s", attrs);
+	free (attrs);
+	return res;
+}
+
 static void append_ic_inheritance_cmd(RStrBuf *sb, const char *class_name, const char *base_name) {
 	if (!sb || R_STR_ISEMPTY (class_name) || R_STR_ISEMPTY (base_name)) {
 		return;
@@ -2011,15 +2099,19 @@ static void append_ic_field_cmd(RStrBuf *sb, const char *class_name, const DartF
 		return;
 	}
 	char *field_name = member_export_name (fi->name, "field");
-	r_strbuf_appendf (sb, "ic+%s..%s %s @ 0x%x\n", class_name, field_name, field_c_type (fi), fi->offset);
+	char *args = dart_field_ic_args (fi);
+	r_strbuf_appendf (sb, "ic+%s..%s%s\n", class_name, field_name, args);
+	free (args);
 	free (field_name);
 }
 
-static void append_ic_method_cmd(RStrBuf *sb, const char *class_name, const char *method_name, ut64 addr) {
+static void append_ic_method_cmd(RStrBuf *sb, const char *class_name, const char *method_name, ut64 addr, const DartMethodInfo *mi) {
 	if (!sb || R_STR_ISEMPTY (class_name) || R_STR_ISEMPTY (method_name)) {
 		return;
 	}
-	r_strbuf_appendf (sb, "ic+%s.%s @ 0x%" PFMT64x "\n", class_name, method_name, addr);
+	char *args = dart_method_ic_args (mi);
+	r_strbuf_appendf (sb, "ic+%s.%s%s @ 0x%" PFMT64x "\n", class_name, method_name, args, addr);
+	free (args);
 }
 
 static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool quiet) {
@@ -2031,7 +2123,9 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 	if (!quiet) {
 		r_strbuf_appendf (sb, "# r2 class %s original=%s\n", class_ref, ci->name);
 	}
-	r_strbuf_appendf (sb, "ic+%s @ 0\n", class_ref);
+	char *cargs = dart_class_ic_args (ci);
+	r_strbuf_appendf (sb, "ic+%s%s @ 0\n", class_ref, cargs);
+	free (cargs);
 	r_strbuf_appendf (sb, "ac %s\n", class_ref);
 #if 0
 	// TOO SLOW
@@ -2088,7 +2182,7 @@ static void dump_class_r2_metadata(RStrBuf *sb, const DartClassInfo *ci, bool qu
 			const char *method_ref = R_STR_ISNOTEMPTY (method_name)? method_name: "method";
 			char *cc = method_dyncc (ci, mi);
 			ut64 addr = method_export_addr (mi);
-			append_ic_method_cmd (sb, class_ref, method_ref, addr);
+			append_ic_method_cmd (sb, class_ref, method_ref, addr, mi);
 			if (!quiet) {
 				r_strbuf_appendf (sb, "# method %s.%s kind=%s mode=%s cc=%s", class_ref, method_ref, method_kind_name (mi->kind_tag), method_mode_name (mi), cc);
 				if (R_STR_ISNOTEMPTY (mi->signature)) {
@@ -2326,8 +2420,15 @@ static RBinClass *core_bin_get_or_add_class(RCore *core, const char *class_name,
 	}
 	klass->origin = R_BIN_CLASS_ORIGIN_USER;
 	klass->addr = 0;
-	klass->instance_size = ci? ci->instance_size: 0;
 	klass->index = r_list_length (klasses);
+	if (ci) {
+		klass->attr.size = ci->instance_size;
+		klass->attr.flags = dart_class_attrbits (ci);
+		klass->attr.lang = R_BIN_LANG_DART;
+		if (R_STR_ISNOTEMPTY (ci->library_name)) {
+			klass->attr.ns = strdup (ci->library_name);
+		}
+	}
 	r_list_append (klasses, klass);
 	return klass;
 }
@@ -2391,9 +2492,10 @@ static void core_apply_bin_field(RBinClass *klass, const DartFieldInfo *fi, int 
 		field->vaddr = fi->offset;
 		field->paddr = fi->offset;
 		field->value = fi->offset;
-		field->size = 8;
-		field->offset = fi->offset;
-		field->kind = R_BIN_FIELD_KIND_FIELD;
+		field->attr.size = 8;
+		field->attr.offset = fi->offset;
+		field->attr.kind = R_BIN_FIELD_KIND_FIELD;
+		field->attr.flags = dart_field_attrbits (fi);
 		field->type = r_bin_name_new (R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic");
 		(*count)++;
 	}
@@ -2419,7 +2521,8 @@ static void core_apply_bin_method(RBinClass *klass, const DartMethodInfo *mi, in
 		sym->type = "method";
 		sym->paddr = addr;
 		sym->vaddr = addr;
-		sym->size = 0;
+		sym->attr.flags = dart_method_attrbits (mi);
+		sym->attr.lang = R_BIN_LANG_DART;
 		(*count)++;
 	}
 	free (method_name);
@@ -2589,7 +2692,9 @@ static void core_apply_ic_field(RCore *core, const char *class_name, const DartF
 		return;
 	}
 	char *field_name = member_export_name (fi->name, "field");
-	core_apply_ic_command (core, r_str_newf ("ic+%s..%s %s @ 0x%x", class_name, field_name, field_c_type (fi), fi->offset));
+	char *args = dart_field_ic_args (fi);
+	core_apply_ic_command (core, r_str_newf ("ic+%s..%s%s", class_name, field_name, args));
+	free (args);
 	free (field_name);
 }
 
@@ -2599,7 +2704,9 @@ static void core_apply_ic_method(RCore *core, const char *class_name, const Dart
 	}
 	char *method_name = member_export_name (mi->name, "method");
 	ut64 addr = method_export_addr (mi);
-	core_apply_ic_command (core, r_str_newf ("ic+%s.%s @ 0x%" PFMT64x, class_name, method_name, addr));
+	char *args = dart_method_ic_args (mi);
+	core_apply_ic_command (core, r_str_newf ("ic+%s.%s%s @ 0x%" PFMT64x, class_name, method_name, args, addr));
+	free (args);
 	free (method_name);
 }
 
@@ -2607,7 +2714,9 @@ static void core_apply_ic_class(RCore *core, const DartClassInfo *ci, const char
 	if (!core || !ci || R_STR_ISEMPTY (class_name)) {
 		return;
 	}
-	core_apply_ic_command (core, r_str_newf ("ic+%s @ 0", class_name));
+	char *cargs = dart_class_ic_args (ci);
+	core_apply_ic_command (core, r_str_newf ("ic+%s%s @ 0", class_name, cargs));
+	free (cargs);
 	if (R_STR_ISNOTEMPTY (ci->super_class_name)) {
 		char *super_name = class_export_name (ci->super_class_name);
 		core_apply_ic_inheritance (core, class_name, super_name);

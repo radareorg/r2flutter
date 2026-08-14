@@ -35,8 +35,10 @@ references are necessarily best effort.
 
 ## Build and install
 
-You need a recent `radare2` installation, including its development headers,
-and `r2` must be on `PATH`. The build obtains the required flags from `r2 -H`.
+You need `radare2` 6.2.2 or newer (or a git build of 6.2.1), including its
+development headers, and `r2` must be on `PATH`. The build obtains the
+required flags from `r2 -H`. Older radare2 versions lack the `ic+` attribute
+support used to register class metadata and are rejected at compile time.
 
 ```sh
 git clone https://github.com/trufae/r2flutter.git
