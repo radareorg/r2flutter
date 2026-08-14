@@ -35,6 +35,10 @@ rank; each item states the concrete failure it causes.
 | `540efcf` | **P0.2 largely landed — the modern gate is now open.** `dart_modern_is_supported_snapshot` accepts `cws == 8` **and** `CID_SHIFT1`, not just `cws == 4` / OBJECT_HEADER. The fill desync that blocked this (the roadmap's cluster-12 failure on `hello.aot`) is resolved by `modern_skip_fill_instance` (version-dependent instance fill shape) and `modern_load_rodata_strings`, which reads the six RO-data string classes from the data image where uncompressed builds put them. **Result:** iOS Runner (3.4.3) recovers **6389 method names** where it emitted `func.<addr>` placeholders before; `hello.aot` (3.11.5) recovers 1130/1325. Tests `dump-funcs-ios-runner`/`-authpass`/`dump-it-ios-runner` updated to assert real names. **Still gated:** class/field extraction (`modern_can_extract_classes` keeps `cws == 4`), so `-c` on cws=8 still shows the weak `size=0` fallback — see the trimmed P0.2. |
 | `b6ea0b8` | **Synthetic fixture reconciled** with the varint-tag switch. `6a7e01b` correctly made the legacy class parser read cluster tags as varints (Dart writes them with `Read<uint32_t>`, a varint), which broke `bins/synthetic/field_snapshot.bin` — it stores raw LE u32 tags. Rather than re-encode the blob, the parser branches on `synthetic_legacy_parse`: raw u32 for the fixture, varint for real snapshots. All tests green again. The fixture still has no generator (see P4). |
 | `02efb30` | **String comments in `-AAA` disasm**: `PP+N` ObjectPool loads that resolve to a string now emit a `; dart: string "…"` comment at the referencing instruction. New test `analysis-string-comments`. |
+| `2db2a74` | **`-AAA` PP-string comments work on iOS.** A new direct resolver (`dart_modern_collect_direct_object_pool_string_refs`) resolves ObjectPool slots to string literals straight from the cluster graph, so `flutter_analysis.c` can annotate loads without a disasm round-trip. New test `analysis-string-comments-ios` asserts an `https` string comment on Runner. (Does **not** touch `-x`, which still round-trips through `pdj` — see the P3.1 note.) |
+| `bea45d8` | **Public API rename sweep**: `dart_modern_is_supported_snapshot`→`modern_supported`, `dart_ctx_effective_version/_hash`→`dart_ctx_version/_hash`, `dart_pool_enumerate`→`dart_pool_scan`, `dart_pool_dump_pp`→`dump_pool`, `dart_pool_extract_object_pool_strings`→`extract_pool_strings`, `dart_pool_dump_entrypoint`→`dump_entry`. No behaviour change. |
+| `43671cf` / `ef2fd32` / `791547c` | Test-only (authpass tutorial uses pure r2 commands; extras/analysis output) and README. No source behaviour change. |
+| *(uncommitted)* | **P0.2 second half — class/field extraction on `cws == 8`.** Two changes: `modern_extract_classes` now calls `modern_load_rodata_strings` after the cluster walk (the string classes live in the RO-data image on uncompressed builds, so their names were unresolved — every class came out `class_NNNN size=…`), and `modern_can_extract_classes` drops the `cws == 4` gate. The fill readers already decoded varints and scaled by `compressed_word_size`, so no reader change was needed. **Result** (OBJECT_HEADER cws=8): `hello.aot` 480/501 classes with real names+sizes+fields+methods (was 0), Runner 2233/2254 (was 0). cws=4 byte-identical (mafia unchanged). Graceful fallback preserved where the modern walk can't run: 2.18.2 (`android/first`) still desyncs in fill and AuthPass is `CID_SHIFT1` (class gate still requires OBJECT_HEADER) — both byte-identical to before. Goldens `classes-ios`/`types-ios`/`xrefs-ios` regenerated to the real output. |
 
 Corrections to earlier assumptions, worth remembering:
 - **The CID tables are not the problem.** Flooring is exactly correct 2.10→3.12,
@@ -63,44 +67,44 @@ decoder, because `dart_modern_is_supported_snapshot()` gated on
 | Sample | Dart | tag_style | cws | modern **name** path | modern **class/field** path |
 |--------|------|-----------|-----|-----------------|-----------------|
 | `android/mafia` | 3.9.2 | OBJECT_HEADER | 4 | **yes** | **yes** |
-| `android/first` | 2.18.2 | OBJECT_HEADER | 8 | **yes** (was no) | no (cws==4 gate) |
-| `ios/Runner.app` | 3.4.3 | OBJECT_HEADER | 8 | **yes** (was no) | no |
-| `ios/AuthPass.app` | 3.2.5 | CID_SHIFT1 | 8 | **yes** (was no) | no |
-| `macos/hello.aot` | 3.11.5 | OBJECT_HEADER | 8 | **yes** (was no) | no |
+| `android/first` | 2.18.2 | OBJECT_HEADER | 8 | **yes** | no — fill desync (see below) |
+| `ios/Runner.app` | 3.4.3 | OBJECT_HEADER | 8 | **yes** | **yes** (2233/2254) |
+| `ios/AuthPass.app` | 3.2.5 | CID_SHIFT1 | 8 | **yes** | no — class gate is OBJECT_HEADER-only |
+| `macos/hello.aot` | 3.11.5 | OBJECT_HEADER | 8 | **yes** | **yes** (480/501) |
 
-So function/method **name** recovery now runs on all five; only class/field
-extraction is still `cws == 4`-only. That is the remaining half of P0.2.
-
-The single *class-path* sample is still 3.9.2, which **nearly matched** the CID
-table `modern_get_fill_spec` used to hardcode — which is why the P0.1 bug was
-invisible to CI, and why its fix still has no end-to-end test (P0.3).
+Name recovery runs on all five; class/field extraction now runs on every
+**OBJECT_HEADER** sample regardless of pointer width. Two hold-outs remain, both
+falling back gracefully (byte-identical to the old string-scan output):
+- **`android/first` (2.18.2)**: the modern fill walk desyncs at cluster 0
+  (`cid=92`) — a genuinely version-dependent fill shape in a pre-3.0 release, the
+  same class of problem P0.1 addressed for CIDs but for fill *layout*. This is the
+  only remaining fill-desync case in the corpus.
+- **`ios/AuthPass.app` (3.2.5, CID_SHIFT1)**: `modern_can_extract_classes` still
+  requires OBJECT_HEADER. The name path handles CID_SHIFT1; extending class
+  extraction to it is untried.
 
 ---
 
 ## P0 — correctness bugs with no test coverage
 
-### P0.2 (remaining half) Class/field extraction on `cws == 8` snapshots
-The **name** path is done — `540efcf` opened `dart_modern_is_supported_snapshot`
-to `cws == 8` and `CID_SHIFT1`, and iOS/macOS samples now recover real method
-names (see status table). What is left is **class/field** extraction:
-`modern_can_extract_classes` (`dart_pool_modern.c`) still returns
-`cws == 4`. On a cws=8 snapshot `-c` falls back to the `size=0` string-scan
-(`class extraction: ObjectHeader fill parser unavailable for cws=8, using string
-fallback`), so fields, instance sizes and interfaces are not recovered.
+### P0.2 (done for OBJECT_HEADER; two edge cases left)
+Class/field extraction on `cws == 8` **landed** (see status table): the gate
+dropped and `modern_load_rodata_strings` now runs on the class path. `hello.aot`
+and Runner recover real classes, fields and methods. Two follow-ups remain, both
+lower-value than the main win and both currently falling back cleanly:
 
-**Do not re-derive — already established:**
-- *Format delta is exactly `Serializer::ReadOnlyObjectType`*: six classes
-  (`PcDescriptors`, `CodeSourceMap`, `CompressedStackMaps`, `String`,
-  `OneByteString`, `TwoByteString`) move to the RO-data image with no fill
-  records. Handled by `modern_walk_is_rodata` + `modern_load_rodata_strings`.
-- *The fill desync is resolved.* The old cluster-12 failure on `hello.aot` came
-  from a version-dependent instance fill shape; `modern_skip_fill_instance`
-  fixes it, and the name-scan fill walk now completes on cws=8.
-- *Instance/class fill reads target-word-sized fields.* This is where the
-  remaining work is: `modern_read_class_fill`/`modern_read_field_fill` were
-  written for the compressed layout. Extending them, then dropping the `cws == 4`
-  in `modern_can_extract_classes`, is the task. Verify with `hello.aot -c`:
-  today garbage, target is real class names + non-zero sizes.
+1. **2.18.2 fill desync** (`android/first`). The modern walk fails at cluster 0
+   (`cid=92`, an `Array`/string cluster in that era). Some pre-3.0 fill shape
+   differs from `rules[]`. To fix: bisect the first divergent cluster by diffing
+   per-class `ReadFill` between an old SDK and current (`third_party` has both),
+   using byte-per-object as the oracle, then make the affected rule version-aware
+   — same method the roadmap sketched for the (now-resolved) cluster-12 case.
+   Guard rails: `-c` must stay byte-identical on the working samples.
+2. **CID_SHIFT1 class extraction** (`ios/AuthPass.app`, 3.2.5).
+   `modern_can_extract_classes` requires OBJECT_HEADER; the name path already
+   handles CID_SHIFT1, so the cluster walk works — the untested part is whether
+   the class *fill* reader is correct under the shifted tag encoding. Try opening
+   it and check AuthPass `-c` against a known class list.
 
 ### P0.3 Test corpus does not cover the decoders we ship
 Progress: iOS **name** recovery on cws=8 is now asserted
@@ -109,8 +113,9 @@ real-binary coverage (`xrefs-android`/`-ios`). Remaining gaps:
 - a **Dart 3.4/3.5-era compressed-pointer** app (P0.1 is fixed but still has no
   end-to-end regression test; it was verified only by resolving `rules[]` against
   each layout in isolation);
-- **cws=8 class/field** extraction has no positive test yet — it can't, until the
-  remaining half of P0.2 lands and `hello.aot -c` produces real classes;
+- cws=8 class/field extraction now has positive tests (`classes-ios`,
+  `types-ios` on Runner); a `hello.aot -c` custom golden would broaden it to the
+  macOS/OBJECT_HEADER path;
 - more **iOS** binaries generally, ideally real obfuscated/stripped release
   `App`s (also broadens the `0716a95` structural path, per `COMMIT2.md`);
 - a **32-bit ARM** app if one can be found (validates P1.2).
@@ -264,15 +269,12 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## Suggested execution order
 
-1. **P0.2 (remaining half)** — class/field extraction on `cws == 8`. The name
-   path already landed (`540efcf`); this finishes the largest quality win. Drop
-   the `cws == 4` in `modern_can_extract_classes` once
-   `modern_read_class_fill`/`modern_read_field_fill` handle the uncompressed
-   layout. Verify with `hello.aot -c`.
-2. **P0.3** — grow the corpus alongside 1: a real cws=8 class-extraction golden,
-   and a 3.4/3.5-era compressed sample for the still-untested P0.1 fix.
-3. **Finish `-x`**: replace the `pdj` JSON round-trip with `r_anal_op` decoding
+1. **P0.2 edge cases** — the 2.18.2 fill desync and CID_SHIFT1 class extraction
+   (both above). Smaller than the main win; do only if those eras matter.
+2. **Finish `-x`**: replace the `pdj` JSON round-trip with `r_anal_op` decoding
    (~2× more), then reconsider the 4096-entry cap that hides ~89% of IT entries.
+3. **P0.3** — a 3.4/3.5-era compressed sample for the still-untested P0.1 fix; a
+   `hello.aot -c` golden for the macOS class path.
 4. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
 5. **P1.2** — arch gating.
 6. **Write a synthetic-fixture generator** (see P4) so parser fixes stop needing

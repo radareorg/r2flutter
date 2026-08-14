@@ -4,12 +4,12 @@ CMDS=<<EOF
 !!../bin/r2flutter -c bins/ios/Runner.app 2>/dev/null | sed -n '1,6p'
 EOF
 EXPECT=<<EOF
-class _Uint16List (size=0)
-class _ExternalInt64Array (size=0)
-class FutureOr (size=0)
-class _Set (size=0)
-class Int32List. (size=0)
-class Float32List (size=0)
+class Pointer (size=32)
+  methods:
+    0x00000000 get:hashCode (GetterFunction)
+    0x00000000 == (RegularFunction)
+class NativeType (size=16)
+class NativeFunction (size=16)
 EOF
 RUN
 
@@ -20,11 +20,11 @@ CMDS=<<EOF
 EOF
 EXPECT=<<EOF
 # Dart classes extracted from snapshot
-# class _Uint16List (size=0)
-"td struct dart__Uint16List { };"
-# class _ExternalInt64Array (size=0)
-"td struct dart__ExternalInt64Array { };"
-# class FutureOr (size=0)
-"td struct dart_FutureOr { };"
+# class Pointer (size=32)
+#   type_params: 1
+"td struct dart_Pointer { };"
+#   method 0x00000000 get:hashCode (GetterFunction)
+#   method 0x00000000 == (RegularFunction)
+# class NativeType (size=16)
 EOF
 RUN

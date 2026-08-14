@@ -4,10 +4,10 @@ CMDS=<<EOF
 !!../bin/r2flutter -l 4 -x bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
-scan class.name class _Uint16List -> string _Uint16List @ 0x1b1db0
-scan class.name class _ExternalInt64Array -> string _ExternalInt64Array @ 0x1b1dd0
-scan class.name class FutureOr -> string FutureOr @ 0x1b1e20
-scan class.name class _Set -> string _Set @ 0x1b1e70
+metadata class.name class Pointer [ref=36652] -> string Pointer [ref=151] @ 0x1b24d0
+metadata method.owner method Pointer.get:hashCode [ref=31064] -> class Pointer [ref=36652]
+metadata method.name method Pointer.get:hashCode [ref=31064] -> string get:hashCode [ref=7217] @ 0x2b0230
+metadata method.signature method Pointer.get:hashCode [ref=31064] -> type type#1 [ref=1]
 EOF
 RUN
 
@@ -17,7 +17,7 @@ CMDS=<<EOF
 !!../bin/r2flutter -j -l 3 -x bins/ios/Runner.app 2>/dev/null
 EOF
 EXPECT=<<EOF
-[{"kind":"class.name","origin":"scan","src":{"type":"class","name":"_Uint16List"},"dst":{"type":"string","name":"_Uint16List","addr":1777072}},{"kind":"class.name","origin":"scan","src":{"type":"class","name":"_ExternalInt64Array"},"dst":{"type":"string","name":"_ExternalInt64Array","addr":1777104}},{"kind":"class.name","origin":"scan","src":{"type":"class","name":"FutureOr"},"dst":{"type":"string","name":"FutureOr","addr":1777184}}]
+[{"kind":"class.name","origin":"metadata","src":{"type":"class","name":"Pointer","ref":36652},"dst":{"type":"string","name":"Pointer","ref":151,"addr":1778896}},{"kind":"method.owner","origin":"metadata","src":{"type":"method","name":"Pointer.get:hashCode","ref":31064},"dst":{"type":"class","name":"Pointer","ref":36652}},{"kind":"method.name","origin":"metadata","src":{"type":"method","name":"Pointer.get:hashCode","ref":31064},"dst":{"type":"string","name":"get:hashCode","ref":7217,"addr":2818608}}]
 EOF
 RUN
 
@@ -28,9 +28,8 @@ CMDS=<<EOF
 EOF
 EXPECT=<<EOF
 # Dart xrefs
-# scan class.name class _Uint16List -> string _Uint16List @ 0x1b1db0
-'@0x1b1db0'CCu base64:X1VpbnQxNkxpc3Q=
-# scan class.name class _ExternalInt64Array -> string _ExternalInt64Array @ 0x1b1dd0
-'@0x1b1dd0'CCu base64:X0V4dGVybmFsSW50NjRBcnJheQ==
+# metadata class.name class Pointer [ref=36652] -> string Pointer [ref=151] @ 0x1b24d0
+'@0x1b24d0'CCu base64:UG9pbnRlcg==
+# metadata method.owner method Pointer.get:hashCode [ref=31064] -> class Pointer [ref=36652]
 EOF
 RUN

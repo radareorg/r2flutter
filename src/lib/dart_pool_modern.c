@@ -3596,7 +3596,10 @@ static bool modern_can_extract_classes(DartCtx *ctx) {
 	if (!ctx || !ctx->layout || ctx->layout->tag_style != DART_TAG_STYLE_OBJECT_HEADER) {
 		return false;
 	}
-	return ctx->compressed_word_size == 4;
+	// Both pointer widths are supported: the class/field fill readers decode
+	// varint-encoded fields and scale word counts by ctx->compressed_word_size,
+	// and rodata strings are loaded for cws==8 above.
+	return ctx->compressed_word_size == 4 || ctx->compressed_word_size == 8;
 }
 
 static char *modern_dup_ref_name(DartCtx *ctx, char **strings_by_ref, ut64 refs_count, ut64 ref, const char *fallback, ut64 id) {
@@ -3942,6 +3945,14 @@ bool modern_extract_classes(const ModernReq *req, RList *class_list) {
 	w.user = &user;
 	if (!modern_walk_run (&w, &s)) {
 		goto fail;
+	}
+	// Uncompressed snapshots keep the string classes in the read-only data
+	// image (Serializer::ReadOnlyObjectType), so their clusters carry no fill
+	// records and modern_classes_read_strings never sees them. Load them from
+	// the image before names are resolved; no-op for cws==4 (inline strings).
+	if (ctx->iso_data && req->cluster_end > ctx->iso_data) {
+		modern_load_rodata_strings (ctx, meta, req->num_clusters, ctx->iso_data,
+			req->cluster_end - ctx->iso_data, strings_by_ref, NULL, total_refs);
 	}
 	modern_attach_methods (tmp_methods, &extract);
 	modern_finalize_class_names (ctx, tmp_classes, strings_by_ref, total_refs);
