@@ -2,8 +2,8 @@
 
 #include "dart_pool_parse_priv.h"
 
-#ifndef R_BIN_ATTR_MIXIN
-#error r2flutter requires radare2 6.2.2 or newer (ic+ attribute support)
+#ifdef R_BIN_ATTR_MIXIN
+#define R2_HAS_BIN_ATTR 1
 #endif
 
 static DartFieldInfo *dart_field_info_clone(const DartFieldInfo *fi) {
@@ -2002,6 +2002,7 @@ static void append_comment_cmd(RStrBuf *sb, ut64 addr, const char *msg) {
 	free (b64);
 }
 
+#ifdef R2_HAS_BIN_ATTR
 static ut64 dart_class_attrbits(const DartClassInfo *ci) {
 	ut64 a = 0;
 	if (ci->flags & DART_CLASS_ABSTRACT) {
@@ -2045,11 +2046,13 @@ static ut64 dart_method_attrbits(const DartMethodInfo *mi) {
 	}
 	return a;
 }
+#endif
 
 // the dart_*_ic_args helpers build the ic+ argument string (leading space, may be empty)
 // using the attribute names that r_bin_attr_forclass/symbol/field parse back
 
 static char *dart_class_ic_args(const DartClassInfo *ci) {
+#ifdef R2_HAS_BIN_ATTR
 	RStrBuf *sb = r_strbuf_new ("");
 	if (ci->instance_size > 0) {
 		r_strbuf_appendf (sb, " size=%u", ci->instance_size);
@@ -2064,16 +2067,25 @@ static char *dart_class_ic_args(const DartClassInfo *ci) {
 	}
 	free (attrs);
 	return r_strbuf_drain (sb);
+#else
+	(void)ci;
+	return strdup ("");
+#endif
 }
 
 static char *dart_field_ic_args(const DartFieldInfo *fi) {
+#ifdef R2_HAS_BIN_ATTR
 	char *attrs = r_bin_attr_tostring (dart_field_attrbits (fi), false);
-	char *res = r_str_newf (" %s offset=0x%x%s%s", field_c_type (fi), fi->offset, R_STR_ISNOTEMPTY (attrs)? " ": "", r_str_get (attrs));
+	char *res = r_str_newf (" %s%s%s", field_c_type (fi), R_STR_ISNOTEMPTY (attrs)? " ": "", r_str_get (attrs));
 	free (attrs);
 	return res;
+#else
+	return r_str_newf (" %s", field_c_type (fi));
+#endif
 }
 
 static char *dart_method_ic_args(const DartMethodInfo *mi) {
+#ifdef R2_HAS_BIN_ATTR
 	char *attrs = r_bin_attr_tostring (dart_method_attrbits (mi), false);
 	if (R_STR_ISEMPTY (attrs)) {
 		free (attrs);
@@ -2082,6 +2094,10 @@ static char *dart_method_ic_args(const DartMethodInfo *mi) {
 	char *res = r_str_newf (" %s", attrs);
 	free (attrs);
 	return res;
+#else
+	(void)mi;
+	return strdup ("");
+#endif
 }
 
 static void append_ic_inheritance_cmd(RStrBuf *sb, const char *class_name, const char *base_name) {
@@ -2098,7 +2114,7 @@ static void append_ic_field_cmd(RStrBuf *sb, const char *class_name, const DartF
 	}
 	char *field_name = member_export_name (fi->name, "field");
 	char *args = dart_field_ic_args (fi);
-	r_strbuf_appendf (sb, "ic+%s..%s%s\n", class_name, field_name, args);
+	r_strbuf_appendf (sb, "'@0x%x'ic+%s..%s%s\n", fi->offset, class_name, field_name, args);
 	free (args);
 	free (field_name);
 }
@@ -2420,6 +2436,7 @@ static RBinClass *core_bin_get_or_add_class(RCore *core, const char *class_name,
 	klass->origin = R_BIN_CLASS_ORIGIN_USER;
 	klass->addr = 0;
 	klass->index = r_list_length (klasses);
+#ifdef R2_HAS_BIN_ATTR
 	if (ci) {
 		klass->attr.size = ci->instance_size;
 		klass->attr.flags = dart_class_attrbits (ci);
@@ -2428,6 +2445,9 @@ static RBinClass *core_bin_get_or_add_class(RCore *core, const char *class_name,
 			klass->attr.ns = strdup (ci->library_name);
 		}
 	}
+#else
+	klass->instance_size = ci? ci->instance_size: 0;
+#endif
 	r_list_append (klasses, klass);
 	return klass;
 }
@@ -2491,10 +2511,16 @@ static void core_apply_bin_field(RBinClass *klass, const DartFieldInfo *fi, int 
 		field->vaddr = fi->offset;
 		field->paddr = fi->offset;
 		field->value = fi->offset;
+#ifdef R2_HAS_BIN_ATTR
 		field->attr.size = 8;
 		field->attr.offset = fi->offset;
 		field->attr.kind = R_BIN_FIELD_KIND_FIELD;
 		field->attr.flags = dart_field_attrbits (fi);
+#else
+		field->size = 8;
+		field->offset = fi->offset;
+		field->kind = R_BIN_FIELD_KIND_FIELD;
+#endif
 		field->type = r_bin_name_new (R_STR_ISNOTEMPTY (fi->type_name)? fi->type_name: "dynamic");
 		(*count)++;
 	}
@@ -2520,8 +2546,12 @@ static void core_apply_bin_method(RBinClass *klass, const DartMethodInfo *mi, in
 		sym->type = "method";
 		sym->paddr = addr;
 		sym->vaddr = addr;
+#ifdef R2_HAS_BIN_ATTR
 		sym->attr.flags = dart_method_attrbits (mi);
 		sym->attr.lang = R_BIN_LANG_DART;
+#else
+		sym->size = 0;
+#endif
 		(*count)++;
 	}
 	free (method_name);
@@ -2692,7 +2722,7 @@ static void core_apply_ic_field(RCore *core, const char *class_name, const DartF
 	}
 	char *field_name = member_export_name (fi->name, "field");
 	char *args = dart_field_ic_args (fi);
-	core_apply_ic_command (core, r_str_newf ("ic+%s..%s%s", class_name, field_name, args));
+	core_apply_ic_command (core, r_str_newf ("'@0x%x'ic+%s..%s%s", fi->offset, class_name, field_name, args));
 	free (args);
 	free (field_name);
 }

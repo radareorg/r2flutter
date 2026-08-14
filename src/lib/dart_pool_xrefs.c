@@ -524,73 +524,45 @@ static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTabl
 	if (!nops) {
 		return;
 	}
-	r_strf_var (cmd, 128, "pdj %" PFMT64u " @ 0x%" PFMT64x, nops, entry->address);
-	char *s = r_core_cmd_str (ctx->core, cmd);
-	if (!s) {
-		return;
-	}
-	RJson *j = r_json_parse (s);
-	if (!j) {
-		free (s);
-		return;
-	}
-	const RJson *ops = r_json_get (j, "ops");
-	const RJson *arr = ops? ops: j;
+	// Decode the function's instructions one at a time via r_core_anal_op and
+	// feed op->mnemonic to the operand parsers, rather than rendering the whole
+	// window to `pdj` JSON and parsing that back. Same disassembly text, minus
+	// the JSON build/parse round-trip; matches the -AAA path in flutter_analysis.
 	bool reg_valid[31] = { false };
 	ut64 reg_off[31] = { 0 };
-	for (size_t i = 0;; i++) {
-		const RJson *item = r_json_item (arr, i);
-		if (!item) {
+	ut64 at = entry->address;
+	for (ut64 i = 0; i < nops; i++) {
+		RAnalOp *op = r_core_anal_op (ctx->core, at, R_ARCH_OP_MASK_BASIC | R_ARCH_OP_MASK_DISASM);
+		if (!op || op->size <= 0 || R_STR_ISEMPTY (op->mnemonic)) {
+			r_anal_op_free (op);
 			break;
 		}
-		// pdj emits `disasm`/`opcode`; `disasm` carries flag and comment
-		// substitution, `opcode` is the raw mnemonic. Prefer the raw form and
-		// fall back, rather than reading keys that do not exist.
-		const char *opcode = r_json_get_str (item, "opcode");
-		const char *opstr = r_json_get_str (item, "disasm");
-		if (R_STR_ISEMPTY (opcode)) {
-			opcode = opstr;
-		}
-		if (R_STR_ISEMPTY (opstr)) {
-			opstr = opcode;
-		}
+		const char *m = op->mnemonic;
 		ut64 pp_off = 0;
-		bool have_pp = xref_parse_pp_offset (opstr, &pp_off) ||
-			xref_parse_mem_pp_offset (opstr, reg_valid, reg_off, &pp_off) ||
-			xref_parse_mem_pp_offset (opcode, reg_valid, reg_off, &pp_off);
-		if (have_pp) {
-			ut64 at = (ut64)r_json_get_num (item, "addr");
-			if (!at) {
-				at = entry->address;
-			}
-			if (!xref_pool_use_seen (seen, at, pp_off)) {
-				DartPoolUseInfo *ui = R_NEW0 (DartPoolUseInfo);
-				ui->at = at;
-				ui->fn_index = entry->index;
-				ui->pp_off = pp_off;
-				ui->fn_name = R_STR_ISNOTEMPTY (entry->name)? strdup (entry->name): xref_it_label (entry->index);
-				r_list_append (uses, ui);
-			}
+		bool have_pp = xref_parse_pp_offset (m, &pp_off) ||
+			xref_parse_mem_pp_offset (m, reg_valid, reg_off, &pp_off);
+		if (have_pp && !xref_pool_use_seen (seen, at, pp_off)) {
+			DartPoolUseInfo *ui = R_NEW0 (DartPoolUseInfo);
+			ui->at = at;
+			ui->fn_index = entry->index;
+			ui->pp_off = pp_off;
+			ui->fn_name = R_STR_ISNOTEMPTY (entry->name)? strdup (entry->name): xref_it_label (entry->index);
+			r_list_append (uses, ui);
 		}
 		int add_dst = -1;
 		ut64 add_off = 0;
-		bool have_add = xref_parse_add_pp_offset (opcode, reg_valid, reg_off, &add_dst, &add_off) ||
-			xref_parse_add_pp_offset (opstr, reg_valid, reg_off, &add_dst, &add_off);
-		if (have_add && add_dst >= 0 && add_dst < 31) {
+		if (xref_parse_add_pp_offset (m, reg_valid, reg_off, &add_dst, &add_off) && add_dst >= 0 && add_dst < 31) {
 			reg_valid[add_dst] = true;
 			reg_off[add_dst] = add_off;
 		} else {
-			int dst = xref_parse_dest_reg (opcode);
-			if (dst < 0) {
-				dst = xref_parse_dest_reg (opstr);
-			}
+			const int dst = xref_parse_dest_reg (m);
 			if (dst >= 0 && dst < 31) {
 				reg_valid[dst] = false;
 			}
 		}
+		at += op->size;
+		r_anal_op_free (op);
 	}
-	r_json_free (j);
-	free (s);
 }
 
 static RList *collect_pool_uses(DartCtx *ctx, RVecDartInstructionTableEntry *entries, ut64 limit) {

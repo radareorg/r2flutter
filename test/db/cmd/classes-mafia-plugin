@@ -1,10 +1,37 @@
 NAME=r2-plugin-C-mafia-future
-FILE=-
+FILE=bins/android/mafia/libapp.so
+ARGS=-NN -e bin.relocs.apply=true
 CMDS=<<EOF
-!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -escr.color=0 -e bin.relocs.apply=true -i \"\$p\" -qc \"r2flutter -C\" -qc \"ic dart_Future\" -qc q bins/android/mafia/libapp.so 2>&1"
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -C
+icqq~dart_Future
 EOF
 EXPECT=<<EOF
-INFO: Applied 8986 Dart classes, 1756 fields, 26609 methods
+dart_FutureOr
+dart_FutureProviderRef
+dart_FutureProvider
+dart_FutureBuilder
+dart_FutureProviderFamilyBuilder
+dart_FutureProviderFamily
+dart_FutureHandlerProviderElementMixin
+dart_FutureProviderElement
+dart_Future
+EOF
+RUN
+
+# Remove BROKEN=1 when radare2 6.2.2 is released.
+NAME=r2-plugin-C-mafia-future-method-attributes
+BROKEN=1
+FILE=bins/android/mafia/libapp.so
+ARGS=-NN -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -C
+ic dart_Future
+EOF
+EXPECT=<<EOF
 class dart_Future
 0x00000000 method dart_Future sC   Future_error
 0x00000000 method dart_Future sC   Future_

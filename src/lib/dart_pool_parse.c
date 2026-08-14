@@ -443,7 +443,11 @@ static void emit_stub_symbols(DartCtx *ctx,
 		if (!addr) {
 			continue;
 		}
+#ifdef R_BIN_ATTR_MIXIN
 		ut64 size = sym->attr.size;
+#else
+		ut64 size = sym->size;
+#endif
 		const char *nm = sym->name? r_bin_name_tostring2 (sym->name, 'o'): NULL;
 		if (!nm) {
 			nm = "sym.func";

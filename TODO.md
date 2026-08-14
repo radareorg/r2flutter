@@ -215,11 +215,25 @@ Memoising it took mafia `-f` from 1008 → 550 ms and the synthetic `-x` from 48
 time here.**
 
 `-x` was the next slowest; `25dc49e` fixed its correctness bugs and the window
-bound cut mafia `-x` 7783 → 4738 ms. A further ~2× remains: it still round-trips
-disassembly through `pdj` JSON text (`dart_pool_xrefs.c:527`) only to string-match
-`disasm`, where decoding with `r_anal_op` and inspecting operands directly would
-skip both the pretty-printer and the JSON. The 4096-entry scan cap also still
-hides ~89% of mafia's 37259 IT entries.
+bound cut mafia `-x` 7783 → 4738 ms. The `pdj` JSON round-trip is now gone too
+(*uncommitted*): `collect_pool_uses_from_entry` decodes each instruction with
+`r_core_anal_op` and feeds `op->mnemonic` to the existing operand parsers — the
+same disassembly text, minus the JSON build/parse, matching the `-AAA` path in
+`flutter_analysis.c`. Output byte-identical on all 5 samples; mafia `-x`
+6052 → 3842 ms (~1.6×). AuthPass gains less (12776 → 11398 ms) — it spends most
+of its `-x` time in name resolution, not disasm. A full structured-operand
+rewrite (reading `RAnalValue` instead of `op->mnemonic` text) could skip capstone
+text rendering too, but arm64 operand modelling is unreliable enough that it
+would need per-encoding output diffing — not worth the risk for the remainder.
+
+**The 4096-entry scan cap is justified, not a bug — measured.** Removing it
+(scanning all 37258 IT entries) takes mafia `-x` from ~3.8 s to **55.8 s**; the
+per-instruction disasm dominates and there is no cheap way around it. The real
+wart is that `-l` conflates two limits: the output-line cap (`append_xref_info`)
+*and* the pool-use entry-scan cap (`collect_pool_uses`, default 4096 when no
+`-l`). Passing `-l 100` to trim output also silently narrows the scan to 100
+entries. Untangling them (a separate scan-depth control) belongs with the
+frontend-parser work (P1.3), not here.
 
 ### P3.2 Brute-force InstructionTable header search
 `dart_pool_it.c:233-330` probes `{16,0,8,12} × delta -64..64 step 4`, then scans
@@ -272,18 +286,22 @@ repeatedly. Consider a small multi-window/LRU cache and a short-read-tolerant re
 
 ## Suggested execution order
 
-1. **P0.2 edge cases** — the 2.18.2 fill desync and CID_SHIFT1 class extraction
+1. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md
+   violations). While there, untangle `-l` for `-x`: give the pool-use scan its
+   own depth control instead of reusing the output-line limit (see P3.1).
+2. **P0.2 edge cases** — the 2.18.2 fill desync and CID_SHIFT1 class extraction
    (both above). Smaller than the main win; do only if those eras matter.
-2. **Finish `-x`**: replace the `pdj` JSON round-trip with `r_anal_op` decoding
-   (~2× more), then reconsider the 4096-entry cap that hides ~89% of IT entries.
-3. **P0.3** — a 3.4/3.5-era compressed sample for the still-untested P0.1 fix; a
-   `hello.aot -c` golden for the macOS class path.
-4. **P1.3** — shared frontend parser (fixes the `-r`/`r2 -n` AGENTS.md violations).
-5. **P1.2** — arch gating.
-6. **Write a synthetic-fixture generator** (see P4) so parser fixes stop needing
+3. **P0.3** — a 3.4/3.5-era compressed sample for the still-untested P0.1 fix
+   (needs an externally-collected app; the local SDK is 3.12.2).
+4. **P1.2** — arch gating.
+5. **Write a synthetic-fixture generator** (see P4) so parser fixes stop needing
    blob special-cases.
-7. **P3.2** — now a *lower* suspect than it looked; it never showed up in the
+6. **P3.2** — now a *lower* suspect than it looked; it never showed up in the
    `-x` profile. Remaining P2 cleanups and test hardening.
+
+Done since last revision: P0.2 name+class paths (`540efcf`, `f85bd3b`), the
+macOS class regression test (`75ad39a`), and the `-x` `r_anal_op` rewrite
+(uncommitted).
 
 `COMMIT2.md` tracks the narrower follow-ups left over from the discovery work
 (gapped layouts, more iOS fixtures, stripped ELF, P1.5 semantics).

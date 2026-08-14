@@ -1348,3 +1348,22 @@ inputs that the context or the request already determines. For example,
 derives the matching snapshot base from its cluster range, and the modern fill
 callback derives its fill specification from the walker. This removed duplicate
 arguments while retaining explicit parser state and ownership.
+
+## radare2 released-version compatibility
+
+The class metadata API changed after radare2 6.1: current git uses nested
+`RBinAttr` members and adds `R_BIN_ATTR_MIXIN` and `R_BIN_ATTR_LATE`, while
+6.1 stores the corresponding class, field, and symbol metadata directly.
+Gate the enhanced metadata path on `R_BIN_ATTR_MIXIN`.  The fallback must keep
+the older direct members (`instance_size`, `size`, `offset`, `kind`, and symbol
+`size`) and emit the older `ic+` argument form.  This lets package builds use
+released r2 versions while git builds retain the richer attributes.
+
+The same gate applies when reading existing symbols: use `sym->size` on the
+released API and `sym->attr.size` on the newer one.
+
+Current git r2 derives a class-field offset from the command address.  Emit
+field declarations as `'@0x<offset>'ic+Class..field <type>` rather than an
+`offset=0x<offset>` attribute (or a trailing `@` modifier).  This keeps the
+address separate from `ic+`'s metadata arguments and works for both script
+emission and direct core-command application.

@@ -3951,8 +3951,7 @@ bool modern_extract_classes(const ModernReq *req, RList *class_list) {
 	// records and modern_classes_read_strings never sees them. Load them from
 	// the image before names are resolved; no-op for cws==4 (inline strings).
 	if (ctx->iso_data && req->cluster_end > ctx->iso_data) {
-		modern_load_rodata_strings (ctx, meta, req->num_clusters, ctx->iso_data,
-			req->cluster_end - ctx->iso_data, strings_by_ref, NULL, total_refs);
+		modern_load_rodata_strings (ctx, meta, req->num_clusters, ctx->iso_data, req->cluster_end - ctx->iso_data, strings_by_ref, NULL, total_refs);
 	}
 	modern_attach_methods (tmp_methods, &extract);
 	modern_finalize_class_names (ctx, tmp_classes, strings_by_ref, total_refs);
