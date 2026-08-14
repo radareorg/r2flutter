@@ -113,14 +113,17 @@ real-binary coverage (`xrefs-android`/`-ios`). Remaining gaps:
 - a **Dart 3.4/3.5-era compressed-pointer** app (P0.1 is fixed but still has no
   end-to-end regression test; it was verified only by resolving `rules[]` against
   each layout in isolation);
-- cws=8 class/field extraction now has positive tests (`classes-ios`,
-  `types-ios` on Runner); a `hello.aot -c` custom golden would broaden it to the
-  macOS/OBJECT_HEADER path;
+- cws=8 class/field extraction is now covered on both paths: iOS (`classes-ios`,
+  `types-ios` on Runner) and macOS/standalone (`dump-classes-macos` on
+  `hello.aot`, added alongside this note). The macOS golden is a real regression
+  anchor — reverting the `cws==8` gate fails all six of its assertions;
 - more **iOS** binaries generally, ideally real obfuscated/stripped release
   `App`s (also broadens the `0716a95` structural path, per `COMMIT2.md`);
 - a **32-bit ARM** app if one can be found (validates P1.2).
-Buildable locally with the installed Dart SDK for the standalone cases; Flutter
-app samples need collecting.
+The remaining gaps (3.4/3.5-era compressed, obfuscated iOS, 32-bit) all need
+apps **collected externally** — the installed Dart SDK is 3.12.2, so a locally
+built AOT would exercise the modern decoder but *not* the old CID layout P0.1
+corrected, which is the one that still lacks an end-to-end test.
 
 ---
 

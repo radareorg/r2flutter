@@ -1,0 +1,18 @@
+{
+  "name": "dump-classes-macos",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-c", "bins/macos/hello/hello.aot"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "class _Closure@0150898 (size=64)",
+      "+0x428 dynamic _context@0150898",
+      "class _Uri@0150898 (size=96)",
+      "+0x0 dynamic _portMap@1026248 static final"
+    ],
+    "not_contains": [
+      "class _Uint16List (size=0)",
+      "class FutureOr (size=0)"
+    ]
+  }
+}
