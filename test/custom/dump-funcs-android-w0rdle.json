@@ -5,7 +5,8 @@
   "timeout": 30,
   "expect": {
     "contains": [
-      "0x175228 method.fn_0"
+      "method.WordService.getWordToFind",
+      "method.Flutterdle.updateAfterSuccessfulGuess"
     ]
   }
 }

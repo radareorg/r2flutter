@@ -1,0 +1,14 @@
+{
+  "name": "dump-strings-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-z", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "ph0wn",
+      "y@cht",
+      "answer",
+      "ph0wn{you_w1n_darts_stage1}"
+    ]
+  }
+}
