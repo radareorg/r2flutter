@@ -1,0 +1,12 @@
+{
+  "name": "signatures-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-j", "-f", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "\"signature\":\"String(_StringBase@0150898,dynamic)\"",
+      "\"signature\":\"dynamic(WordService)\""
+    ]
+  }
+}
