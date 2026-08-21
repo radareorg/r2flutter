@@ -1,0 +1,11 @@
+{
+  "name": "dump-funcs-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-f", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "0x175228 method.fn_0"
+    ]
+  }
+}

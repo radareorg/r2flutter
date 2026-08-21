@@ -1,0 +1,14 @@
+{
+  "name": "header-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-H", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "dart_version:  2.18.0",
+      "tag_style:     CID_SHIFT1",
+      "cid_string:         90",
+      "cid_object_pool:    21"
+    ]
+  }
+}
