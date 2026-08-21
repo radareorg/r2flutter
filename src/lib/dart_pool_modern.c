@@ -4075,6 +4075,12 @@ typedef struct {
 	ut64 *closure_parent_ref;
 	ut64 *code_owner_ref_by_index;
 	int *code_owner_cid_by_index;
+	// Signature recovery: FunctionType graph captured during the fill walk.
+	ut64 *function_sig_ref;    // function ref -> its FunctionType ref (signature)
+	ut64 *ftype_result_ref;    // FunctionType ref -> result_type object ref
+	ut32 *ftype_packed;        // FunctionType ref -> packed_parameter_counts
+	ut64 *type_class_id;       // Type ref -> declared class id (cid), 0 if absent
+	HtUP *classname_ref_by_cid; // class cid -> class name string ref
 	ut64 refs_count;
 	ut64 itlen;
 	ut64 next_code_index;
@@ -4127,6 +4133,11 @@ static bool modern_name_scan_read_class(ModernWalk *w, ClusterStream *s, const M
 		}
 		if (ref < u->refs_count) {
 			u->class_name_ref[ref] = name_ref;
+			// Map real class ids (not synthetic top-level ids) to their name so
+			// a Type's declared class id can be resolved to a class name.
+			if (!is_top_level && class_id && name_ref && name_ref < u->refs_count && u->classname_ref_by_cid && !ht_up_find (u->classname_ref_by_cid, class_id, NULL)) {
+				ht_up_insert (u->classname_ref_by_cid, class_id, (void *)(uintptr_t)name_ref);
+			}
 		}
 	}
 	return true;
@@ -4150,6 +4161,81 @@ static bool modern_name_scan_read_function(ModernWalk *w, ClusterStream *s, cons
 			u->function_owner_ref[ref] = owner_ref;
 			u->function_data_ref[ref] = data_ref;
 			u->function_code_index[ref] = code_index? code_index - 1: UT64_MAX;
+			u->function_sig_ref[ref] = sig_ref;
+		}
+	}
+	return true;
+}
+
+// FunctionType::ReadFill: 6 refs (type_test_stub, hash, type_parameters,
+// result_type, parameter_types, named_parameter_names) then uint8 flags +
+// packed_parameter_counts + packed_type_parameter_counts. We keep result_type
+// (for the return type) and packed_parameter_counts (for the arg count). Reads
+// must match modern_get_fill_spec (DART_CID_FUNCTION_TYPE) to stay aligned.
+static bool modern_name_scan_read_function_type(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
+	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, m->cid);
+	ut64 ref = m->start_ref;
+	for (ut64 j = 0; j < m->count; j++, ref++) {
+		ut64 result_ref = 0;
+		for (int k = 0; k < spec.num_refs; k++) {
+			ut64 rv = 0;
+			if (!cs_read_ref_id (s, &rv)) {
+				return false;
+			}
+			// In this serialization the FunctionType pointer fields are
+			// {type_test_stub, type_parameters, result_type, parameter_types,
+			// named_parameter_names, ...}; result_type is at index 2.
+			if (k == 2) {
+				result_ref = rv;
+			}
+		}
+		ut32 packed = 0;
+		for (int k = 0; k < spec.scalar_count; k++) {
+			if (k == 1) {
+				if (!cs_read_tagged32 (s, &packed)) {
+					return false;
+				}
+			} else if (!modern_skip_scalar (s, spec.scalars[k])) {
+				return false;
+			}
+		}
+		if (ref < u->refs_count) {
+			u->ftype_result_ref[ref] = result_ref? result_ref: UT64_MAX;
+			u->ftype_packed[ref] = packed;
+		}
+	}
+	return true;
+}
+
+// Type::ReadFill: 3 refs then (legacy) ReadUnsigned(type_class_id) + uint8, or
+// (3.x) a single packed flags word carrying the class id at bit 3. Capture the
+// declared class id so a return/param Type can be mapped to a class name.
+static bool modern_name_scan_read_type(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
+	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, m->cid);
+	ut64 ref = m->start_ref;
+	for (ut64 j = 0; j < m->count; j++, ref++) {
+		for (int k = 0; k < spec.num_refs; k++) {
+			ut64 rv = 0;
+			if (!cs_read_ref_id (s, &rv)) {
+				return false;
+			}
+		}
+		ut64 cid = 0;
+		for (int k = 0; k < spec.scalar_count; k++) {
+			if (k == 0) {
+				ut64 v = 0;
+				if (!cs_read_unsigned (s, &v)) {
+					return false;
+				}
+				cid = w->cids.legacy_format? v: ((v >> 3) & ((1U << 20) - 1));
+			} else if (!modern_skip_scalar (s, spec.scalars[k])) {
+				return false;
+			}
+		}
+		if (ref < u->refs_count) {
+			u->type_class_id[ref] = cid;
 		}
 	}
 	return true;
@@ -4268,12 +4354,133 @@ static bool modern_name_scan_read_patch_class(ModernWalk *w, ClusterStream *s, c
 static const ModernFillHandler modern_name_scan_fill_handlers[] = {
 	{ DART_CID_CLASS, modern_name_scan_read_class },
 	{ DART_CID_FUNCTION, modern_name_scan_read_function },
+	{ DART_CID_FUNCTION_TYPE, modern_name_scan_read_function_type },
+	{ DART_CID_TYPE, modern_name_scan_read_type },
 	{ DART_CID_CODE, modern_name_scan_read_code },
 	{ DART_CID_CLOSURE_DATA, modern_name_scan_read_closure_data },
 	{ DART_CID_LIBRARY, modern_name_scan_read_library },
 	{ DART_CID_PATCH_CLASS, modern_name_scan_read_patch_class },
 	{ 0, NULL },
 };
+
+// Map a Dart type object ref to a single-token type name (no generics), used to
+// spell return/receiver types. Builtins are recognised by their VM class id;
+// user classes are looked up in the cid->name map built during the class fill.
+static const char *modern_sig_type_name(const ModernNameScanWalk *u, const ModernCidCache *cids, ut64 ref) {
+	if (!ref || ref >= u->refs_count) {
+		return "dynamic";
+	}
+	if (u->ftype_result_ref[ref]) {
+		// The referenced object is itself a FunctionType.
+		return "Function";
+	}
+	ut64 cid = u->type_class_id[ref];
+	if (!cid) {
+		return "dynamic";
+	}
+	if (cid == (ut64)cids->one_byte_string || cid == (ut64)cids->two_byte_string || cid == (ut64)cids->string) {
+		return "String";
+	}
+	if (cid == (ut64)cids->array || cid == (ut64)cids->immutable_array || cid == (ut64)cids->growable_array) {
+		return "List";
+	}
+	if (cid == (ut64)cids->mint) {
+		return "int";
+	}
+	if (cid == (ut64)cids->double_) {
+		return "double";
+	}
+	if (cid == (ut64)cids->map || cid == (ut64)cids->const_map) {
+		return "Map";
+	}
+	if (cid == (ut64)cids->set || cid == (ut64)cids->const_set) {
+		return "Set";
+	}
+	if (u->classname_ref_by_cid) {
+		ut64 name_ref = (ut64)(uintptr_t)ht_up_find (u->classname_ref_by_cid, cid, NULL);
+		if (name_ref && name_ref < u->refs_count && R_STR_ISNOTEMPTY (u->strings_by_ref[name_ref])) {
+			return u->strings_by_ref[name_ref];
+		}
+	}
+	return "dynamic";
+}
+
+// The owner class name of a function, following PatchClass wrappers, or NULL
+// when the owner is a library/function (top-level: no receiver).
+static const char *modern_owner_class_name(const ModernNameScanWalk *u, ut64 owner_ref, int depth) {
+	if (!owner_ref || owner_ref >= u->refs_count || depth > 8) {
+		return NULL;
+	}
+	if (u->class_name_ref[owner_ref] && u->class_name_ref[owner_ref] < u->refs_count) {
+		const char *n = u->strings_by_ref[u->class_name_ref[owner_ref]];
+		// "::" is the synthetic top-level owner: not a real receiver class.
+		if (R_STR_ISNOTEMPTY (n) && strcmp (n, "::")) {
+			return n;
+		}
+		return NULL;
+	}
+	if (u->patch_wrapped_ref[owner_ref]) {
+		return modern_owner_class_name (u, u->patch_wrapped_ref[owner_ref], depth + 1);
+	}
+	return NULL;
+}
+
+// Build "RET(T,T,...)" for a function ref. The first arg of an instance method
+// is the receiver typed as the owner class; remaining positional params are
+// emitted as "dynamic" (their types live in an Array cluster that is not always
+// reachable). When the function has no FunctionType we still emit the receiver
+// for a class-owned method. Returns NULL when nothing is known.
+static char *modern_build_function_signature(const ModernNameScanWalk *u, const ModernCidCache *cids, const ModernRefNameMap *names, ut64 fref) {
+	(void)names;
+	if (fref >= u->refs_count) {
+		return NULL;
+	}
+	const char *owner = modern_owner_class_name (u, u->function_owner_ref[fref], 0);
+	ut64 sig = u->function_sig_ref[fref];
+	bool have_ftype = sig && sig < u->refs_count && u->ftype_result_ref[sig];
+	const char *ret = "dynamic";
+	ut32 implicit = 0;
+	ut32 fixed = 0;
+	if (have_ftype) {
+		ut64 result_ref = u->ftype_result_ref[sig];
+		if (result_ref == UT64_MAX) {
+			result_ref = 0;
+		}
+		ret = modern_sig_type_name (u, cids, result_ref);
+		ut32 packed = u->ftype_packed[sig];
+		implicit = packed & 1;
+		fixed = (packed >> 2) & 0x3fff;
+		if (fixed > 256) {
+			fixed = 0;
+		}
+	} else if (R_STR_ISNOTEMPTY (owner)) {
+		// No FunctionType: best-effort receiver-only prototype for an
+		// instance method so `this` is still typed.
+		implicit = 1;
+		fixed = 1;
+	} else {
+		return NULL;
+	}
+	RStrBuf sb;
+	r_strbuf_init (&sb);
+	r_strbuf_append (&sb, R_STR_ISNOTEMPTY (ret)? ret: "dynamic");
+	r_strbuf_append (&sb, "(");
+	for (ut32 i = 0; i < fixed; i++) {
+		if (i > 0) {
+			r_strbuf_append (&sb, ",");
+		}
+		if (i < implicit && R_STR_ISNOTEMPTY (owner)) {
+			r_strbuf_append (&sb, owner);
+		} else {
+			r_strbuf_append (&sb, "dynamic");
+		}
+	}
+	r_strbuf_append (&sb, ")");
+	const char *built = r_strbuf_get (&sb);
+	char *out = built? strdup (built): NULL;
+	r_strbuf_fini (&sb);
+	return out;
+}
 
 bool modern_scan_names(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 num_clusters, ut64 itlen) {
 	if (!modern_supported (ctx) || !itlen || cluster_start >= cluster_end) {
@@ -4298,7 +4505,12 @@ bool modern_scan_names(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 
 	// owners so we can synthesize AllocateXStub / TypeStub / VMStub names
 	// instead of letting the name_pool fallback shift every later entry.
 	int *code_owner_cid_by_index = (int *)calloc ((size_t)itlen, sizeof (int));
-	if (!strings_by_ref || !class_name_ref || !library_name_ref || !patch_wrapped_ref || !function_name_ref || !function_owner_ref || !function_data_ref || !function_code_index || !closure_parent_ref || !code_owner_ref_by_index || !code_owner_cid_by_index) {
+	ut64 *function_sig_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut64 *ftype_result_ref = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	ut32 *ftype_packed = (ut32 *)calloc ((size_t)total_refs, sizeof (ut32));
+	ut64 *type_class_id = (ut64 *)calloc ((size_t)total_refs, sizeof (ut64));
+	HtUP *classname_ref_by_cid = ht_up_new0 ();
+	if (!strings_by_ref || !class_name_ref || !library_name_ref || !patch_wrapped_ref || !function_name_ref || !function_owner_ref || !function_data_ref || !function_code_index || !closure_parent_ref || !code_owner_ref_by_index || !code_owner_cid_by_index || !function_sig_ref || !ftype_result_ref || !ftype_packed || !type_class_id || !classname_ref_by_cid) {
 		modern_cluster_meta_free (meta, num_clusters);
 		modern_free_strings (strings_by_ref, total_refs);
 		free (class_name_ref);
@@ -4311,6 +4523,11 @@ bool modern_scan_names(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 
 		free (closure_parent_ref);
 		free (code_owner_ref_by_index);
 		free (code_owner_cid_by_index);
+		free (function_sig_ref);
+		free (ftype_result_ref);
+		free (ftype_packed);
+		free (type_class_id);
+		ht_up_free (classname_ref_by_cid);
 		return false;
 	}
 	modern_load_vm_base_strings (ctx, strings_by_ref, NULL, total_refs);
@@ -4339,6 +4556,11 @@ bool modern_scan_names(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 
 		.closure_parent_ref = closure_parent_ref,
 		.code_owner_ref_by_index = code_owner_ref_by_index,
 		.code_owner_cid_by_index = code_owner_cid_by_index,
+		.function_sig_ref = function_sig_ref,
+		.ftype_result_ref = ftype_result_ref,
+		.ftype_packed = ftype_packed,
+		.type_class_id = type_class_id,
+		.classname_ref_by_cid = classname_ref_by_cid,
 		.refs_count = total_refs,
 		.itlen = itlen,
 };
@@ -4364,6 +4586,16 @@ bool modern_scan_names(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 
 		}
 		ctx->name_by_code_index = (char **)calloc ((size_t)itlen, sizeof (char *));
 		ctx->name_by_code_index_count = itlen;
+	}
+	if (!ctx->signature_by_code_index || ctx->signature_by_code_index_count != itlen) {
+		if (ctx->signature_by_code_index) {
+			for (ut64 i = 0; i < ctx->signature_by_code_index_count; i++) {
+				free (ctx->signature_by_code_index[i]);
+			}
+			free (ctx->signature_by_code_index);
+		}
+		ctx->signature_by_code_index = (char **)calloc ((size_t)itlen, sizeof (char *));
+		ctx->signature_by_code_index_count = ctx->signature_by_code_index? itlen: 0;
 	}
 	if (!ctx->owner_kind_by_code_index || ctx->owner_kind_by_code_index_count != itlen) {
 		free (ctx->owner_kind_by_code_index);
@@ -4457,6 +4689,23 @@ bool modern_scan_names(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 
 			ctx->owner_kind_by_code_index[ci] = DART_OWNER_FUNCTION;
 		}
 	}
+	// Recover a Dart signature (return type + receiver + arg count) for every
+	// function that has both a code index and a FunctionType signature ref.
+	if (ctx->signature_by_code_index) {
+		for (ut64 ref = 1; ref < total_refs; ref++) {
+			ut64 ci = function_code_index[ref];
+			if (!function_sig_ref[ref] || ci >= ctx->signature_by_code_index_count) {
+				continue;
+			}
+			if (ctx->signature_by_code_index[ci]) {
+				continue;
+			}
+			char *sig = modern_build_function_signature (&user, &w.cids, &ref_names, ref);
+			if (sig) {
+				ctx->signature_by_code_index[ci] = sig;
+			}
+		}
+	}
 	for (ut64 i = 0; i < ctx->name_by_code_index_count; i++) {
 		if (R_STR_ISNOTEMPTY (ctx->name_by_code_index[i])) {
 			mapped++;
@@ -4477,6 +4726,11 @@ bool modern_scan_names(DartCtx *ctx, ut64 cluster_start, ut64 cluster_end, ut64 
 	free (closure_parent_ref);
 	free (code_owner_ref_by_index);
 	free (code_owner_cid_by_index);
+	free (function_sig_ref);
+	free (ftype_result_ref);
+	free (ftype_packed);
+	free (type_class_id);
+	ht_up_free (classname_ref_by_cid);
 	return true;
 fail:
 	modern_cluster_meta_free (meta, num_clusters);
@@ -4491,5 +4745,10 @@ fail:
 	free (closure_parent_ref);
 	free (code_owner_ref_by_index);
 	free (code_owner_cid_by_index);
+	free (function_sig_ref);
+	free (ftype_result_ref);
+	free (ftype_packed);
+	free (type_class_id);
+	ht_up_free (classname_ref_by_cid);
 	return false;
 }

@@ -182,6 +182,9 @@ static void dump_func_json(PJ *pj, const DartFunction *fn) {
 	if (fn->size) {
 		pj_kn (pj, "size", fn->size);
 	}
+	if (R_STR_ISNOTEMPTY (fn->signature)) {
+		pj_ks (pj, "signature", fn->signature);
+	}
 	pj_end (pj);
 }
 
@@ -233,7 +236,145 @@ char *dart_dumper_dump_funcs(DartApp *app, int fmt) {
 	return drain_trimmed_strbuf (sb);
 }
 
-void dart_dumper_apply_to_core(DartApp *app) {
+// Map a single Dart type token to a C-ish spelling radare2's `afs` accepts.
+static void dart_type_to_c(RStrBuf *sb, const char *tok) {
+	if (R_STR_ISEMPTY (tok) || !strcmp (tok, "dynamic")) {
+		r_strbuf_append (sb, "void *");
+	} else if (!strcmp (tok, "void")) {
+		r_strbuf_append (sb, "void");
+	} else if (!strcmp (tok, "int")) {
+		r_strbuf_append (sb, "int64_t");
+	} else if (!strcmp (tok, "double")) {
+		r_strbuf_append (sb, "double");
+	} else if (!strcmp (tok, "bool")) {
+		r_strbuf_append (sb, "bool");
+	} else if (!strcmp (tok, "String")) {
+		r_strbuf_append (sb, "char *");
+	} else {
+		// Object / user-class type: an opaque pointer named after the class.
+		char *safe = strdup (tok);
+		r_name_filter (safe, 0);
+		r_strbuf_appendf (sb, "%s *", R_STR_ISNOTEMPTY (safe)? safe: "void");
+		free (safe);
+	}
+}
+
+// Turn a recovered Dart signature "RET(T,T,...)" into a radare2 `afs` prototype
+// and return it, or NULL if the signature is not in that canonical form.
+static char *dart_signature_to_afs_proto(const char *fname, const char *sig) {
+	if (R_STR_ISEMPTY (sig) || strchr (sig, ' ') || strchr (sig, '=')) {
+		return NULL; // not our canonical "RET(T,...)" form
+	}
+	const char *lp = strchr (sig, '(');
+	if (!lp) {
+		return NULL;
+	}
+	char *ret = r_str_ndup (sig, (int)(lp - sig));
+	if (R_STR_ISEMPTY (ret)) {
+		free (ret);
+		return NULL;
+	}
+	char *inside = strdup (lp + 1);
+	char *rp = strrchr (inside, ')');
+	if (rp) {
+		*rp = '\0';
+	}
+	char *safe_name = strdup (fname);
+	r_name_filter (safe_name, 0);
+	RStrBuf *sb = r_strbuf_new ("");
+	dart_type_to_c (sb, ret);
+	r_strbuf_appendf (sb, " %s(", R_STR_ISNOTEMPTY (safe_name)? safe_name: "fcn");
+	int argc = 0;
+	if (R_STR_ISNOTEMPTY (inside)) {
+		RList *args = r_str_split_list (inside, ",", 0);
+		RListIter *it;
+		char *a;
+		r_list_foreach (args, it, a) {
+			if (argc > 0) {
+				r_strbuf_append (sb, ", ");
+			}
+			dart_type_to_c (sb, r_str_trim_head_ro (a));
+			// The first parameter of an instance method is the receiver.
+			if (argc == 0) {
+				r_strbuf_append (sb, " this");
+			} else {
+				r_strbuf_appendf (sb, " arg%d", argc);
+			}
+			argc++;
+		}
+		r_list_free (args);
+	}
+	r_strbuf_append (sb, ")");
+	free (ret);
+	free (inside);
+	free (safe_name);
+	return r_strbuf_drain (sb);
+}
+
+static int dart_fn_addr_desc(const void *a, const void *b) {
+	const DartFunction *fa = *(const DartFunction *const *)a;
+	const DartFunction *fb = *(const DartFunction *const *)b;
+	if (fa->addr < fb->addr) {
+		return 1;
+	}
+	if (fa->addr > fb->addr) {
+		return -1;
+	}
+	return 0;
+}
+
+// Define a function at `addr` if needed and set its recovered signature so that
+// `afsj`/`afcrj` report real parameter and return types. Functions are analysed
+// in descending address order: a Dart function whose analysis overruns into the
+// next one then stops at the already-defined higher function instead of merging.
+void dart_dumper_apply_signatures(DartApp *app) {
+	if (!app || !app->core || !app->functions) {
+		return;
+	}
+	RCore *core = app->core;
+	size_t total = RVecDartFunction_length (app->functions);
+	if (!total) {
+		return;
+	}
+	DartFunction **order = (DartFunction **)malloc (total * sizeof (DartFunction *));
+	if (!order) {
+		return;
+	}
+	size_t n = 0;
+	DartFunction *fn;
+	R_VEC_FOREACH (app->functions, fn) {
+		if (fn->addr && R_STR_ISNOTEMPTY (fn->signature)) {
+			order[n++] = fn;
+		}
+	}
+	qsort (order, n, sizeof (DartFunction *), dart_fn_addr_desc);
+	// Keep the analysis local to each function start; the surrounding pass owns
+	// broader discovery. String ESIL emulation is very slow and irrelevant to
+	// prototypes, so disable it for the duration of this pass.
+	int prev_hasnext = r_config_get_i (core->config, "anal.hasnext");
+	int prev_emustr = r_config_get_i (core->config, "emu.str");
+	r_config_set_i (core->config, "anal.hasnext", 0);
+	r_config_set_i (core->config, "emu.str", 0);
+	for (size_t i = 0; i < n; i++) {
+		fn = order[i];
+		char *proto = dart_signature_to_afs_proto (fn->name? fn->name: "fcn", fn->signature);
+		if (!proto) {
+			continue;
+		}
+		if (!r_anal_get_function_at (core->anal, fn->addr)) {
+			r_core_cmdf (core, "af @ 0x%" PFMT64x, fn->addr);
+		}
+		if (r_anal_get_function_at (core->anal, fn->addr)) {
+			r_core_cmdf (core, "\"afs %s\" @ 0x%" PFMT64x, proto, fn->addr);
+		}
+		free (proto);
+	}
+	r_config_set_i (core->config, "anal.hasnext", prev_hasnext);
+	r_config_set_i (core->config, "emu.str", prev_emustr);
+	free (order);
+}
+
+void dart_dumper_apply_to_core(DartApp *app, bool apply_signatures) {
 	if (!app || !app->core) {
 		return;
 	}
@@ -258,4 +399,11 @@ void dart_dumper_apply_to_core(DartApp *app) {
 	}
 
 	r_core_cmd0 (core, "e emu.str=true");
+	// Applying signatures forces analysis (af) of every typed function, which is
+	// slow on a large snapshot; only do it at the deepest level (-AAA). Lighter
+	// consumers (e.g. the reflow decompiler) read per-function signatures from
+	// the fast `-fj` dump instead.
+	if (apply_signatures) {
+		dart_dumper_apply_signatures (app);
+	}
 }

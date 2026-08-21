@@ -51,6 +51,11 @@ typedef struct {
 	HtUP *name_by_ep;
 	char **name_by_code_index;
 	ut64 name_by_code_index_count;
+	// Recovered Dart signature per code index, format "RET(T,T,...)" where the
+	// first param of an instance method is the receiver typed as the owner
+	// class. Parallel to name_by_code_index; NULL where unresolved.
+	char **signature_by_code_index;
+	ut64 signature_by_code_index_count;
 	ut8 *owner_kind_by_code_index;
 	ut64 owner_kind_by_code_index_count;
 	RList *name_pool;

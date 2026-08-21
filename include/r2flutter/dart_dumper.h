@@ -9,7 +9,8 @@ extern "C" {
 
 char *dart_dumper_dump_r2(DartApp *app);
 char *dart_dumper_dump_funcs(DartApp *app, int fmt);
-void dart_dumper_apply_to_core(DartApp *app);
+void dart_dumper_apply_to_core(DartApp *app, bool apply_signatures);
+void dart_dumper_apply_signatures(DartApp *app);
 
 #ifdef __cplusplus
 }

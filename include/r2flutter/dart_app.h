@@ -18,6 +18,7 @@ typedef struct DartFunction {
 	ut64 addr;
 	ut64 size;
 	int quality;
+	char *signature; // recovered Dart signature "RET(T,T,...)", or NULL
 } DartFunction;
 
 void dart_function_fini(DartFunction *fn);

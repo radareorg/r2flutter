@@ -404,6 +404,14 @@ cleanup:
 		ctx->name_by_code_index = NULL;
 		ctx->name_by_code_index_count = 0;
 	}
+	if (ctx->signature_by_code_index) {
+		for (ut64 i = 0; i < ctx->signature_by_code_index_count; i++) {
+			free (ctx->signature_by_code_index[i]);
+		}
+		free (ctx->signature_by_code_index);
+		ctx->signature_by_code_index = NULL;
+		ctx->signature_by_code_index_count = 0;
+	}
 	if (ctx->owner_kind_by_code_index) {
 		free (ctx->owner_kind_by_code_index);
 		ctx->owner_kind_by_code_index = NULL;
@@ -547,6 +555,7 @@ void dart_instruction_table_entry_fini(DartInstructionTableEntry *ie) {
 		return;
 	}
 	R_FREE (ie->name);
+	R_FREE (ie->signature);
 }
 
 void dart_instruction_table_entry_free(DartInstructionTableEntry *ie) {
@@ -1163,6 +1172,7 @@ static void collect_it_entry_cb(const DartInstructionTableEntry *entry, void *us
 	}
 	*dup = *entry;
 	dup->name = entry->name? strdup (entry->name): NULL;
+	dup->signature = entry->signature? strdup (entry->signature): NULL;
 }
 
 RVecDartInstructionTableEntry *dart_pool_extract_instruction_table(DartCtx *ctx) {

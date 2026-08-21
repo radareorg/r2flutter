@@ -149,6 +149,7 @@ typedef struct DartInstructionTableEntry {
 	ut32 stack_map_offset;
 	bool has_code;
 	char *name;
+	char *signature;
 } DartInstructionTableEntry;
 
 void dart_instruction_table_entry_fini(DartInstructionTableEntry *ie);

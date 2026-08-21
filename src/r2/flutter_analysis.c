@@ -1124,7 +1124,7 @@ bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 		return false;
 	}
 	dart_app_load_info (app);
-	dart_dumper_apply_to_core (app);
+	dart_dumper_apply_to_core (app, true);
 
 	FlutterAnalModel model;
 	if (!flutter_model_load (&model, core, &app->dctx)) {

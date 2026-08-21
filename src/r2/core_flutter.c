@@ -130,7 +130,7 @@ static bool r2flutter_analyze(RCore *core, DartCtx *dctx, int quiet) {
 		}
 	}
 
-	dart_dumper_apply_to_core (app);
+	dart_dumper_apply_to_core (app, false);
 
 	dart_app_free (app);
 	return true;

@@ -23,6 +23,16 @@ static char *read_it_name(DartCtx *ctx, ut64 addr) {
 	return NULL;
 }
 
+static char *resolve_it_entry_signature(DartCtx *ctx, const DartInstructionTableEntry *entry) {
+	if (ctx && ctx->signature_by_code_index && entry->has_code && entry->code_index < ctx->signature_by_code_index_count) {
+		const char *sig = ctx->signature_by_code_index[entry->code_index];
+		if (R_STR_ISNOTEMPTY (sig)) {
+			return strdup (sig);
+		}
+	}
+	return NULL;
+}
+
 static char *resolve_it_entry_name(DartCtx *ctx, HtUP *sym_by_addr, ut64 data_image_base, const DartInstructionTableEntry *entry) {
 	char *out = NULL;
 	if (ctx && ctx->name_by_code_index && entry->has_code && entry->code_index < ctx->name_by_code_index_count) {
@@ -392,8 +402,10 @@ int dart_it_emit_fixed(const DartItEmitRequest *req) {
 			.has_code = has_code,
 };
 		entry.name = resolve_it_entry_name (ctx, req->sym_by_addr, req->data_image_base, &entry);
+		entry.signature = resolve_it_entry_signature (ctx, &entry);
 		emit_it_entry_record (&entry, req);
 		free (entry.name);
+		free (entry.signature);
 		emitted++;
 	}
 	return 0;
@@ -452,8 +464,10 @@ int dart_it_emit_varint(const DartItEmitRequest *req) {
 			.has_code = has_code,
 };
 		entry.name = resolve_it_entry_name (ctx, req->sym_by_addr, req->data_image_base, &entry);
+		entry.signature = resolve_it_entry_signature (ctx, &entry);
 		emit_it_entry_record (&entry, req);
 		free (entry.name);
+		free (entry.signature);
 		emitted++;
 	}
 	return 0;

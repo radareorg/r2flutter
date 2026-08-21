@@ -231,6 +231,7 @@ char *dart_app_extract_payload(const char *path, const DartAppEmbeddedPayload *p
 
 void dart_function_fini(DartFunction *fn) {
 	free (fn->name);
+	free (fn->signature);
 }
 
 static ut64 dart_normalize_code_addr(ut64 addr) {
@@ -284,7 +285,7 @@ static char *dart_strdup_filtered(const char *name) {
 	return dup;
 }
 
-static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr, ut64 size, int quality) {
+static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr, ut64 size, int quality, const char *signature) {
 	if (!app || !app->functions || !addr) {
 		return;
 	}
@@ -299,6 +300,9 @@ static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr,
 		}
 		if (size > fn->size) {
 			fn->size = size;
+		}
+		if (R_STR_ISNOTEMPTY (signature) && !fn->signature) {
+			fn->signature = strdup (signature);
 		}
 		if (quality > fn->quality || (!fn->name && filtered)) {
 			free (fn->name);
@@ -321,6 +325,7 @@ static void dart_app_add_or_update_fn(DartApp *app, const char *name, ut64 addr,
 	newfn->addr = addr;
 	newfn->size = size;
 	newfn->quality = quality;
+	newfn->signature = R_STR_ISNOTEMPTY (signature)? strdup (signature): NULL;
 	if (filtered) {
 		newfn->name = filtered;
 	} else {
@@ -490,7 +495,8 @@ static void dart_app_load_it_functions(DartApp *app) {
 			entry->name? entry->name: "method.unknown",
 			dart_normalize_code_addr (entry->address),
 			0,
-			dart_function_name_quality (entry->name));
+			dart_function_name_quality (entry->name),
+			entry->signature);
 	}
 	dart_instruction_table_list_free (entries);
 }
@@ -520,7 +526,8 @@ static void dart_app_merge_class_methods(DartApp *app) {
 				fullname? fullname: mi->name,
 				dart_normalize_code_addr (mi->entry_point),
 				0,
-				dart_function_name_quality (fullname? fullname: mi->name));
+				dart_function_name_quality (fullname? fullname: mi->name),
+				mi->signature);
 			free (fullname);
 		}
 	}
@@ -570,7 +577,8 @@ static void add_fn_cb(const char *name, ut64 addr, ut64 size, void *user) {
 		name,
 		dart_normalize_code_addr (addr),
 		size,
-		dart_function_name_quality (name));
+		dart_function_name_quality (name),
+		NULL);
 }
 
 void dart_app_load_info(DartApp *app) {

@@ -307,7 +307,7 @@ int main(int argc, char **argv) {
 				R_LOG_INFO ("Loaded %zu functions from Dart snapshot", count);
 			}
 		}
-		dart_dumper_apply_to_core (app);
+		dart_dumper_apply_to_core (app, false);
 		break;
 	case 'z':
 		output = string_depth >= 2? dart_pool_dump_strings_fuzzy (&dctx, fmt): dart_pool_dump_strings (&dctx, fmt);
