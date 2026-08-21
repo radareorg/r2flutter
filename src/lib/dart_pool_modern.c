@@ -376,9 +376,23 @@ typedef struct {
 	int typed_data_internal_base;
 	int typed_data_internal_limit;
 	int typed_data_stride;
+	// Pre-3.0 snapshots (Dart 2.x) use an older serialization format for a
+	// handful of clusters and for the object pool entry bits. The exact byte
+	// layout of those readers is gated on this flag; everything else is shared.
+	bool legacy_format;
 	// every CID this layout defines, indexed by kind; -1 when the kind is absent
 	int by_kind[DART_CID_KIND_COUNT];
 } ModernCidCache;
+
+// True for Dart 2.x snapshots, whose serializer predates the format changes
+// that landed with Dart 3.0 (object pool entry snapshot-behavior bits, extra
+// fields in several clusters, the 1<<20 top-level class-id base, etc.).
+static bool modern_layout_is_legacy(const DartVerLayout *layout) {
+	if (!layout || !layout->dart_version) {
+		return false;
+	}
+	return dart_version_compare (layout->dart_version, "3.0.0") < 0;
+}
 
 static ModernCidCache modern_cid_cache_init(const DartVerLayout *layout) {
 	ModernCidCache cids = {
@@ -438,6 +452,7 @@ static ModernCidCache modern_cid_cache_init(const DartVerLayout *layout) {
 		.typed_data_internal_base = dart_cid_typed_data_base (layout),
 		.typed_data_internal_limit = dart_cid_typed_data_limit (layout),
 		.typed_data_stride = dart_cid_typed_data_stride (layout),
+		.legacy_format = modern_layout_is_legacy (layout),
 };
 	for (int kind = 0; kind < DART_CID_KIND_COUNT; kind++) {
 		cids.by_kind[kind] = dart_cid_get (layout, (DartCidKind)kind);
@@ -633,7 +648,17 @@ static ModernAllocKind modern_alloc_kind(const ModernCidCache *cids, int compres
 	if (modern_cid_eq (cid, cids->weak_serialization_reference)) {
 		return MODERN_ALLOC_EMPTY;
 	}
-	if (cids->instance >= 0 && cid >= cids->instance) {
+	// Serializer::ReadCluster routes to an InstanceCluster only for the generic
+	// instance class id or for user-defined class ids past the predefined range.
+	// Every other predefined class id has its own cluster, and the ones with a
+	// non-trivial alloc record are matched above; whatever falls through here is
+	// a predefined class whose ReadAlloc is ReadAllocFixedSize (a bare count).
+	// Treating it as an instance would consume the two extra Read<int32_t> words
+	// and swallow the following cluster.
+	if (cids->instance >= 0 && cid == cids->instance) {
+		return MODERN_ALLOC_INSTANCE;
+	}
+	if (cids->num_predefined_cids > 0 && cid >= cids->num_predefined_cids) {
 		return MODERN_ALLOC_INSTANCE;
 	}
 	return MODERN_ALLOC_SIMPLE;
@@ -841,13 +866,18 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 		});
 	}
 	if (modern_cid_eq (cid, cids->function)) {
+		// AOT Function::ReadFill: ReadFromTo (4 refs: name, owner, signature,
+		// data) + ReadUnsigned(code_index) + Read<uint32_t> kind_tag. On Dart 2.x
+		// kind_tag is a Dart tagged varint, so read it as such; the token-position
+		// word is only present with a non-product gen_snapshot (released Flutter
+		// apps omit it). Newer snapshots keep the previous decoding.
 		return modern_fill_spec (&(ModernFillSpecRule){
 			.kind = MODERN_FILL_REFS,
 			.num_refs = 4,
 			.name_idx = 0,
 			.owner_idx = 1,
 			.scalar_count = 2,
-			.scalars = { MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_RAW32 },
+			.scalars = { MODERN_SCALAR_UNSIGNED, cids->legacy_format? MODERN_SCALAR_TAGGED32: MODERN_SCALAR_RAW32 },
 		});
 	}
 	if (modern_cid_eq (cid, cids->mint)) {
@@ -942,6 +972,9 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 		{ DART_CID_LIBRARY_PREFIX, MODERN_FILL_REFS, 2, 0, -1, 2, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL } },
 		{ DART_CID_TYPE_ARGUMENTS, MODERN_FILL_TYPE_ARGUMENTS, 0, -1, -1, 0, { 0 } },
 		{ DART_CID_TYPE, MODERN_FILL_REFS, 3, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
+		// TypeRef::ReadFill is a bare ReadFromTo over {type_test_stub, type}. The
+		// class id is only present in Dart 2.x tables (removed in 3.0).
+		{ DART_CID_TYPE_REF, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
 		// Serializer::Write<uint32_t/uint16_t> both use the Dart tagged
 		// integer stream through BaseWriteStream::Raw.
 		{ DART_CID_FUNCTION_TYPE, MODERN_FILL_REFS, 6, -1, -1, 3, { MODERN_SCALAR_UINT8, MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32 } },
@@ -970,12 +1003,37 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 		{ DART_CID_SET, MODERN_FILL_REFS, 5, -1, -1, 0, { 0 } },
 		{ DART_CID_CONST_SET, MODERN_FILL_REFS, 5, -1, -1, 0, { 0 } },
 };
+	// Dart 2.x serialized a few clusters with a different trailing field layout
+	// than the newer format the table above encodes. Verified against the Dart
+	// 2.18 AOT (kFullAOT, PRODUCT) serializer in runtime/vm/app_snapshot.cc.
+	static const ModernFillSpecRule legacy_rules[] = {
+		// PatchClass::to_snapshot stops at script_ in AOT: 3 refs, no scalars.
+		{ DART_CID_PATCH_CLASS, MODERN_FILL_REFS, 3, -1, -1, 0, { 0 } },
+		// FfiTrampolineData: ReadFromTo (4) + ReadUnsigned(callback_id).
+		{ DART_CID_FFI_TRAMPOLINE_DATA, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
+		// Type: ReadFromTo (3) + ReadUnsigned(type_class_id) + Read<uint8_t>.
+		{ DART_CID_TYPE, MODERN_FILL_REFS, 3, -1, -1, 2, { MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_UINT8 } },
+		// TypeParameter: ReadFromTo (3) + Read<int32_t> + 3x Read<uint8_t>.
+		{ DART_CID_TYPE_PARAMETER, MODERN_FILL_REFS, 3, -1, -1, 4, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8, MODERN_SCALAR_UINT8, MODERN_SCALAR_UINT8 } },
+		// SubtypeTestCache::ReadFill reads only the cache_ ref.
+		{ DART_CID_SUBTYPE_TEST_CACHE, MODERN_FILL_REFS, 1, -1, -1, 0, { 0 } },
+};
+	if (cids->legacy_format) {
+		for (size_t i = 0; i < R_ARRAY_SIZE (legacy_rules); i++) {
+			if (modern_cid_of_kind (cids, legacy_rules[i].cid_kind) == cid) {
+				return modern_fill_spec (&legacy_rules[i]);
+			}
+		}
+	}
 	for (size_t i = 0; i < R_ARRAY_SIZE (rules); i++) {
 		if (modern_cid_of_kind (cids, rules[i].cid_kind) == cid) {
 			return modern_fill_spec (&rules[i]);
 		}
 	}
-	if (cids->instance >= 0 && cid >= cids->instance) {
+	// Mirror ReadCluster: only the generic instance id and user-defined class
+	// ids past the predefined range use the instance fill layout.
+	if ((cids->instance >= 0 && cid == cids->instance) ||
+		(cids->num_predefined_cids > 0 && cid >= cids->num_predefined_cids)) {
 		return modern_fill_spec_kind (MODERN_FILL_INSTANCE);
 	}
 	return modern_fill_spec_unknown ();
@@ -1321,7 +1379,7 @@ static bool modern_skip_fill_class(ClusterStream *s, const ModernClusterMeta *me
 			return false;
 		}
 		bool is_predefined = j < meta->main_count;
-		bool is_top_level = class_id >= (1U << 20);
+		bool is_top_level = class_id >= (1U << 16);
 		if (is_predefined || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (s, &bitmap)) {
@@ -1682,9 +1740,33 @@ static bool modern_read_pool_entry(ClusterStream *s, DartCtx *ctx, ut64 index, M
 	if (!cs_read_u8 (s, &entry->bits)) {
 		return false;
 	}
-	entry->type = entry->bits & 0x0f;
-	entry->patch = (entry->bits >> 4) & 1;
-	entry->behavior = entry->bits >> 5;
+	if (ctx && ctx->layout && modern_layout_is_legacy (ctx->layout)) {
+		// Dart 2.x ObjectPoolBuilderEntry packs the entry type into TypeBits [0,7)
+		// and the patchability into bit 7. The serializer emits payloads by
+		// EntryType: kTaggedObject=0 (a ref), kImmediate=1 (a tagged word), and
+		// kNativeFunction=2 / kSwitchableCallMissEntryPoint=3 /
+		// kMegamorphicCallEntryPoint=4 (no payload). Downstream code keys off an
+		// internal convention -- 0 immediate, 1 tagged_object, 2 payload-less --
+		// so remap here. There is no separate "behavior" field in this format.
+		const ut8 raw_type = entry->bits & 0x7f;
+		entry->patch = (entry->bits >> 7) & 1;
+		entry->behavior = 0;
+		switch (raw_type) {
+		case 0:
+			entry->type = 1; // kTaggedObject -> tagged_object
+			break;
+		case 1:
+			entry->type = 0; // kImmediate -> immediate
+			break;
+		default:
+			entry->type = 2; // native / switchable / megamorphic: no payload
+			break;
+		}
+	} else {
+		entry->type = entry->bits & 0x0f;
+		entry->patch = (entry->bits >> 4) & 1;
+		entry->behavior = entry->bits >> 5;
+	}
 	entry->value_offset = s->cursor;
 	return modern_decode_pool_entry (s, ctx, entry->type, entry->behavior, &entry->ref, &entry->raw);
 }
@@ -1764,7 +1846,7 @@ static bool modern_resolver_read_class_fill(ModernWalk *w, ClusterStream *s, con
 			return false;
 		}
 		bool is_predefined = j < meta->main_count;
-		bool is_top_level = class_id >= (1U << 20);
+		bool is_top_level = class_id >= (1U << 16);
 		if (is_predefined || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (s, &bitmap)) {
@@ -2833,7 +2915,7 @@ static bool modern_collect_class_strings(ModernPoolStringRefCollector *collector
 			return false;
 		}
 		bool is_predefined = i < meta->main_count;
-		bool is_top_level = class_id >= (1U << 20);
+		bool is_top_level = class_id >= (1U << 16);
 		if (is_predefined || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (&s, &bitmap)) {
@@ -3734,7 +3816,7 @@ static bool modern_read_class_fill(ModernWalk *w, ClusterStream *s, const Modern
 			return false;
 		}
 		bool is_predefined = j < meta->main_count;
-		bool is_top_level = class_id >= (1U << 20);
+		bool is_top_level = class_id >= (1U << 16);
 		if (is_predefined || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (s, &bitmap)) {
@@ -4036,7 +4118,7 @@ static bool modern_name_scan_read_class(ModernWalk *w, ClusterStream *s, const M
 		if (!cs_read_tagged32 (s, &class_id) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32)) {
 			return false;
 		}
-		const bool is_top_level = class_id >= (1U << 20);
+		const bool is_top_level = class_id >= (1U << 16);
 		if (j < m->main_count || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (s, &bitmap)) {
