@@ -1,0 +1,14 @@
+{
+  "name": "header-json-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-Hj", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "json": {
+      "dart_version": "2.18.0",
+      "hash": "b0e899ec5a90e4661501f0b69e9dd70f",
+      "cws": 4,
+      "tag_style": "CID_SHIFT1"
+    }
+  }
+}

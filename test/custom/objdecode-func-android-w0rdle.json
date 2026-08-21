@@ -1,0 +1,12 @@
+{
+  "name": "objdecode-func-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-O", "pp+1240", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "target.kind:    function",
+      "target.name:    \"method."
+    ]
+  }
+}

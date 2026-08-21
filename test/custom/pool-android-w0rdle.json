@@ -1,0 +1,14 @@
+{
+  "name": "pool-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-p", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "length:          12351 entries"
+    ],
+    "not_contains": [
+      "PP not resolved"
+    ]
+  }
+}

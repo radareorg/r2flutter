@@ -1,0 +1,14 @@
+{
+  "name": "methods-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-f", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "method.WordService.getWordToFind",
+      "method.WordService._readFile_746434692",
+      "method.Flutterdle.didWin",
+      "method.CachingAssetBundle.loadString"
+    ]
+  }
+}

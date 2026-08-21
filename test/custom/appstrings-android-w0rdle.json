@@ -1,0 +1,12 @@
+{
+  "name": "appstrings-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-q", "-z", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "assets/allowed_guesses.txt",
+      "ph0wn CTF is awesome"
+    ]
+  }
+}

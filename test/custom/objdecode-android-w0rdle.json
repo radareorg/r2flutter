@@ -1,0 +1,12 @@
+{
+  "name": "objdecode-android-w0rdle",
+  "cwd": "test",
+  "cmd": ["../bin/r2flutter", "-O", "pp+36864", "bins/android/w0rdle/libapp.so"],
+  "timeout": 30,
+  "expect": {
+    "contains": [
+      "target.kind:    string",
+      "target.name:    \"floatingActionButtonTheme\""
+    ]
+  }
+}
