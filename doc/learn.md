@@ -1367,3 +1367,17 @@ field declarations as `'@0x<offset>'ic+Class..field <type>` rather than an
 `offset=0x<offset>` attribute (or a trailing `@` modifier).  This keeps the
 address separate from `ic+`'s metadata arguments and works for both script
 emission and direct core-command application.
+## Snapshot Header Fields Are Versioned Data
+
+The clustered header after the feature string is not a stable five-value
+tuple. Dart 2.10 writes four fields; 2.12-2.13 add a separate canonical-cluster
+count; 2.14-2.15 carry a field-table length but no instruction-table data
+offset; 2.16-2.17 write six fields; and 2.18+ use the modern five-field
+`num_base_objects`, `num_objects`, `num_clusters`, `instructions_table_len`,
+`instructions_table_rodata_offset` layout.
+
+The parser must select the ordered header schema from the snapshot hash before
+locating the first allocation cluster. Treating every header as the modern
+five-field form consumes a cluster byte on 2.10, starts before the final header
+field on 2.16-2.17, and mistakes the canonical-cluster count for the total on
+2.12-2.13.

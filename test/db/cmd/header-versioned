@@ -1,0 +1,17 @@
+NAME=version-specific-snapshot-headers
+FILE=-
+CMDS=<<EOF
+!!python3 -c 'import sys; open(sys.argv[1], "wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-header-210.bin 50414421f5f5dcdc5a000000000000000300000000000000386565346566376136376466393834356662613333313733343139386139353370726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e74657273008283818780
+!!../bin/r2flutter -j -H /tmp/r2flutter-header-210.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); c=d["cluster"]; print(d["dart_version"], c["clusters"], c["it_len"], c["it_off"], d["header_fields"])'
+!!python3 -c 'import sys; open(sys.argv[1], "wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-header-212.bin 50414421f5f5dcdc5b000000000000000300000000000000356239373239326232356630613731353631336237613238653037333466373770726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e7465727300828381828780
+!!../bin/r2flutter -j -H /tmp/r2flutter-header-212.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); c=d["cluster"]; print(d["dart_version"], c["clusters"], c["it_len"], c["it_off"], d["header_fields"])'
+!!python3 -c 'import sys; open(sys.argv[1], "wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-header-217.bin 50414421f5f5dcdc5c000000000000000300000000000000313434316436623133623836323366613766626636313433336162656264333170726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082838187858980
+!!../bin/r2flutter -j -H /tmp/r2flutter-header-217.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); c=d["cluster"]; print(d["dart_version"], c["clusters"], c["it_len"], c["it_off"], d["header_fields"])'
+!!rm -f /tmp/r2flutter-header-210.bin /tmp/r2flutter-header-212.bin /tmp/r2flutter-header-217.bin
+EOF
+EXPECT=<<EOF
+2.10.0 1 0 0 4
+2.12.0 3 0 0 5
+2.17.6 1 5 9 6
+EOF
+RUN

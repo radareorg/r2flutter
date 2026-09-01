@@ -140,6 +140,70 @@ char *dart_utf16le_to_utf8(const ut8 *buf, ut64 size) {
 	return out;
 }
 
+static const DartVerLayout *dart_snapshot_header_layout(DartCtx *ctx, const char *hash) {
+	if (ctx && ctx->layout) {
+		return ctx->layout;
+	}
+	if (ctx && R_STR_ISNOTEMPTY (ctx->dart_version_override)) {
+		const DartVerLayout *layout = dart_profile_from_version (ctx->dart_version_override);
+		if (layout) {
+			return layout;
+		}
+	}
+	const char *version = dart_version_from_hash (hash);
+	const DartVerLayout *layout = version? dart_profile_from_version (version): NULL;
+	return layout? layout: dart_newest_profile ();
+}
+
+static bool dart_snapshot_header_set_fields(DartSnapshotHeader *out, const DartVerLayout *layout, const ut64 *fields, int count) {
+	if (!out || !layout || !fields || count != layout->header_fields) {
+		return false;
+	}
+	switch (layout->header_style) {
+	case DART_HEADER_STYLE_210:
+		out->nb = fields[0];
+		out->no = fields[1];
+		out->nc = fields[2];
+		out->field_table_len = fields[3];
+		break;
+	case DART_HEADER_STYLE_212:
+		if (UT64_MAX - fields[2] < fields[3]) {
+			return false;
+		}
+		out->nb = fields[0];
+		out->no = fields[1];
+		out->ncc = fields[2];
+		out->nc = fields[2] + fields[3];
+		out->field_table_len = fields[4];
+		break;
+	case DART_HEADER_STYLE_214:
+		out->nb = fields[0];
+		out->no = fields[1];
+		out->nc = fields[2];
+		out->field_table_len = fields[3];
+		out->itlen = fields[4];
+		break;
+	case DART_HEADER_STYLE_216:
+		out->nb = fields[0];
+		out->no = fields[1];
+		out->nc = fields[2];
+		out->field_table_len = fields[3];
+		out->itlen = fields[4];
+		out->itdata = fields[5];
+		break;
+	case DART_HEADER_STYLE_MODERN:
+		out->nb = fields[0];
+		out->no = fields[1];
+		out->nc = fields[2];
+		out->itlen = fields[3];
+		out->itdata = fields[4];
+		break;
+	default:
+		return false;
+	}
+	return true;
+}
+
 bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out) {
 	if (!ctx || !out) {
 		return false;
@@ -181,20 +245,18 @@ bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out)
 	}
 	out->flags[tocopy] = '\0';
 	cursor += (ut64)scanned + 1;
+	const DartVerLayout *layout = dart_snapshot_header_layout (ctx, out->hash);
+	if (!layout || layout->header_fields < 4 || layout->header_fields > 6) {
+		return false;
+	}
 	ut64 next = cursor;
-	if (!dart_read_unsigned_at (ctx, next, &out->nb, &next)) {
-		return false;
+	ut64 fields[6] = { 0 };
+	for (int i = 0; i < layout->header_fields; i++) {
+		if (!dart_read_unsigned_at (ctx, next, &fields[i], &next)) {
+			return false;
+		}
 	}
-	if (!dart_read_unsigned_at (ctx, next, &out->no, &next)) {
-		return false;
-	}
-	if (!dart_read_unsigned_at (ctx, next, &out->nc, &next)) {
-		return false;
-	}
-	if (!dart_read_unsigned_at (ctx, next, &out->itlen, &next)) {
-		return false;
-	}
-	if (!dart_read_unsigned_at (ctx, next, &out->itdata, &next)) {
+	if (!dart_snapshot_header_set_fields (out, layout, fields, layout->header_fields)) {
 		return false;
 	}
 	out->cluster_start = next;
@@ -202,7 +264,7 @@ bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out)
 	return true;
 }
 
-bool dart_snapshot_header_read_buf(const ut8 *buf, ut64 size, DartSnapshotHeader *out) {
+bool dart_snapshot_header_read_buf(const ut8 *buf, ut64 size, const DartVerLayout *layout, DartSnapshotHeader *out) {
 	if (!buf || !out || size < DART_SNAPSHOT_FIXED_SIZE + DART_SNAPSHOT_HASH_SIZE + 1) {
 		return false;
 	}
@@ -236,20 +298,20 @@ bool dart_snapshot_header_read_buf(const ut8 *buf, ut64 size, DartSnapshotHeader
 	}
 	out->flags[tocopy] = '\0';
 	cursor += (ut64)scanned + 1;
+	if (!layout) {
+		layout = dart_snapshot_header_layout (NULL, out->hash);
+	}
+	if (!layout || layout->header_fields < 4 || layout->header_fields > 6) {
+		return false;
+	}
 	ut64 next = cursor;
-	if (!dart_read_unsigned_buf (buf, size, next, &out->nb, &next)) {
-		return false;
+	ut64 fields[6] = { 0 };
+	for (int i = 0; i < layout->header_fields; i++) {
+		if (!dart_read_unsigned_buf (buf, size, next, &fields[i], &next)) {
+			return false;
+		}
 	}
-	if (!dart_read_unsigned_buf (buf, size, next, &out->no, &next)) {
-		return false;
-	}
-	if (!dart_read_unsigned_buf (buf, size, next, &out->nc, &next)) {
-		return false;
-	}
-	if (!dart_read_unsigned_buf (buf, size, next, &out->itlen, &next)) {
-		return false;
-	}
-	if (!dart_read_unsigned_buf (buf, size, next, &out->itdata, &next)) {
+	if (!dart_snapshot_header_set_fields (out, layout, fields, layout->header_fields)) {
 		return false;
 	}
 	if (next >= out->total_len) {

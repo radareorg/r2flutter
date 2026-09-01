@@ -52,6 +52,14 @@ TAG_STYLE_NAMES = {
     "OBJECT_HEADER": "DART_TAG_STYLE_OBJECT_HEADER",
 }
 
+HEADER_STYLE_NAMES = {
+    "modern": "DART_HEADER_STYLE_MODERN",
+    "2.10": "DART_HEADER_STYLE_210",
+    "2.12": "DART_HEADER_STYLE_212",
+    "2.14": "DART_HEADER_STYLE_214",
+    "2.16": "DART_HEADER_STYLE_216",
+}
+
 TAG_STYLE_VALUES = {v: k for k, v in TAG_STYLE_NAMES.items()}
 
 CID_KIND_TO_CLASS_NAME = [
@@ -555,7 +563,7 @@ def infer_profile_for_version(version):
         tag_style = "CID_INT32"
     if (2, 16) <= ver_tuple < (2, 18):
         hdr = 6
-    elif ver_tuple >= (2, 13):
+    elif ver_tuple >= (2, 12):
         hdr = 5
     else:
         hdr = 4
@@ -571,6 +579,19 @@ def infer_profile_for_version(version):
         "tag_style": tag_style,
         "header_fields": hdr,
     }
+
+
+def header_style_for_version(version):
+    ver_tuple = parse_version(version)
+    if ver_tuple < (2, 12):
+        return HEADER_STYLE_NAMES["2.10"]
+    if ver_tuple < (2, 14):
+        return HEADER_STYLE_NAMES["2.12"]
+    if ver_tuple < (2, 16):
+        return HEADER_STYLE_NAMES["2.14"]
+    if ver_tuple < (2, 18):
+        return HEADER_STYLE_NAMES["2.16"]
+    return HEADER_STYLE_NAMES["modern"]
 
 
 def profile_diff(existing, inferred):
@@ -686,10 +707,11 @@ def gen_profile_entries(offsets):
     for ver in sorted(profiles.keys(), key=parse_version):
         v = profiles[ver]
         tag_name = TAG_STYLE_NAMES.get(v["tag_style"], "0")
+        header_style = header_style_for_version(ver)
         lines.append(f'\t{{ "", "{ver}", {v["cws"]}, {v["heap_object_tag"]}, '
                      f'{v["max_alignment"]}, {v["it_cap"]}, {tag_name}, '
-                     f'{v["header_fields"]} }}, // Dart {ver}')
-    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0 }")
+                     f'{v["header_fields"]}, {header_style} }}, // Dart {ver}')
+    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0 }")
     lines.append("};")
     return "\n".join(lines)
 
@@ -728,11 +750,14 @@ def gen_dart_offsets_h(offsets):
     lines.append(f"#define DART_HASH_ENTRIES_COUNT {len(hashes)}")
     lines.append("")
     lines.append("// Default offset arrays (identical across all known Dart versions)")
-    lines.append(f"#define DART_DEFAULT_EP_OFFSETS {{ {', '.join(str(x) for x in ep)} }}")
+    lines.append("#define DART_DEFAULT_EP_OFFSETS \\")
+    lines.append(f"\t{{ {', '.join(str(x) for x in ep)} }}")
     lines.append(f"#define DART_DEFAULT_EP_OFFSETS_COUNT {len(ep)}")
-    lines.append(f"#define DART_DEFAULT_OWNER_OFFSETS {{ {', '.join(str(x) for x in owner)} }}")
+    lines.append("#define DART_DEFAULT_OWNER_OFFSETS \\")
+    lines.append(f"\t{{ {', '.join(str(x) for x in owner)} }}")
     lines.append(f"#define DART_DEFAULT_OWNER_OFFSETS_COUNT {len(owner)}")
-    lines.append(f"#define DART_DEFAULT_NAME_OFFSETS {{ {', '.join(str(x) for x in name)} }}")
+    lines.append("#define DART_DEFAULT_NAME_OFFSETS \\")
+    lines.append(f"\t{{ {', '.join(str(x) for x in name)} }}")
     lines.append(f"#define DART_DEFAULT_NAME_OFFSETS_COUNT {len(name)}")
     lines.append("")
     lines.append("#endif // R2C_DART_OFFSETS_H")

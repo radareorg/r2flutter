@@ -410,7 +410,7 @@ static void scan_packed_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, 
 		return;
 	}
 	DartSnapshotHeader hdr;
-	if (!dart_snapshot_header_read_buf (buf, total_len, &hdr)) {
+	if (!dart_snapshot_header_read_buf (buf, total_len, ctx->layout, &hdr)) {
 		free (buf);
 		return;
 	}

@@ -45,6 +45,7 @@ static const struct {
 	{ "8ee4ef7a67df9845fba331734198a953", "2.10.0" },
 	{ "d979fa911b038a8682e98cc8c8569261", "2.10.0" },
 	// Dart 2.12.x
+	{ "5b97292b25f0a715613b7a28e0734f77", "2.12.0" },
 	{ "e036be9d5df68283e1a043e348fa7ff4", "2.12.0" },
 	// Dart 2.13.x
 	{ "0c7f1aa25fc597a7b3b9a19ed390afa1", "2.13.0" },
@@ -129,31 +130,31 @@ static const struct {
 
 // Range-start version profiles. CID tables are generated in dart_cid.c.
 static const DartVerLayout version_profiles[] = {
-	{ "", "2.10.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_INT32, 4 }, // Dart 2.10.0
-	{ "", "2.12.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_INT32, 4 }, // Dart 2.12.0
-	{ "", "2.13.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_INT32, 5 }, // Dart 2.13.0
-	{ "", "2.14.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 2.14.0
-	{ "", "2.15.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 2.15.0
-	{ "", "2.16.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 6 }, // Dart 2.16.0
-	{ "", "2.17.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 6 }, // Dart 2.17.0
-	{ "", "2.18.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 2.18.0
-	{ "", "2.18.2", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 2.18.2
-	{ "", "2.18.3", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 2.18.3
-	{ "", "2.19.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 2.19.0
-	{ "", "3.0.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 3.0.0
-	{ "", "3.1.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 3.1.0
-	{ "", "3.2.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 3.2.0
-	{ "", "3.3.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5 }, // Dart 3.3.0
-	{ "", "3.4.0", 8, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.4.0
-	{ "", "3.5.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.5.0
-	{ "", "3.6.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.6.0
-	{ "", "3.7.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.7.0
-	{ "", "3.8.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.8.0
-	{ "", "3.9.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.9.0
-	{ "", "3.10.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.10.0
-	{ "", "3.11.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.11.0
-	{ "", "3.12.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5 }, // Dart 3.12.0
-	{ { 0 }, NULL, 0, 0, 0, 0, 0, 0 }
+	{ "", "2.10.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_INT32, 4, DART_HEADER_STYLE_210 }, // Dart 2.10.0
+	{ "", "2.12.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_INT32, 5, DART_HEADER_STYLE_212 }, // Dart 2.12.0
+	{ "", "2.13.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_INT32, 5, DART_HEADER_STYLE_212 }, // Dart 2.13.0
+	{ "", "2.14.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, DART_HEADER_STYLE_214 }, // Dart 2.14.0
+	{ "", "2.15.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, DART_HEADER_STYLE_214 }, // Dart 2.15.0
+	{ "", "2.16.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 6, DART_HEADER_STYLE_216 }, // Dart 2.16.0
+	{ "", "2.17.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 6, DART_HEADER_STYLE_216 }, // Dart 2.17.0
+	{ "", "2.18.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, DART_HEADER_STYLE_MODERN }, // Dart 2.18.0
+	{ "", "2.18.2", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 2.18.2
+	{ "", "2.18.3", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, DART_HEADER_STYLE_MODERN }, // Dart 2.18.3
+	{ "", "2.19.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, DART_HEADER_STYLE_MODERN }, // Dart 2.19.0
+	{ "", "3.0.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.0.0
+	{ "", "3.1.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.1.0
+	{ "", "3.2.0", 8, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.2.0
+	{ "", "3.3.0", 4, 1, 16, 20000, DART_TAG_STYLE_CID_SHIFT1, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.3.0
+	{ "", "3.4.0", 8, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.4.0
+	{ "", "3.5.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.5.0
+	{ "", "3.6.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.6.0
+	{ "", "3.7.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.7.0
+	{ "", "3.8.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.8.0
+	{ "", "3.9.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.9.0
+	{ "", "3.10.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.10.0
+	{ "", "3.11.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.11.0
+	{ "", "3.12.0", 4, 1, 16, 20000, DART_TAG_STYLE_OBJECT_HEADER, 5, DART_HEADER_STYLE_MODERN }, // Dart 3.12.0
+	{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0 }
 };
 
 const char *dart_version_from_hash(const char *hash) {

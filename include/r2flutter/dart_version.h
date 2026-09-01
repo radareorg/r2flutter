@@ -19,6 +19,16 @@ typedef enum {
 	DART_TAG_STYLE_OBJECT_HEADER = 2 // v3.4.3+ and known 2.18.2 exception
 } DartTagStyle;
 
+// Ordered fields following the snapshot feature string. The field count alone
+// is insufficient because the meaning of the five-field layouts changed.
+typedef enum {
+	DART_HEADER_STYLE_MODERN = 0, // nb, no, nc, itlen, itdata (2.18+)
+	DART_HEADER_STYLE_210, // nb, no, nc, field_table_len
+	DART_HEADER_STYLE_212, // nb, no, canonical_nc, nc, field_table_len
+	DART_HEADER_STYLE_214, // nb, no, nc, field_table_len, itlen
+	DART_HEADER_STYLE_216 // nb, no, nc, field_table_len, itlen, itdata
+} DartHeaderStyle;
+
 // How the Dart version/layout for a snapshot was determined. Reported so users
 // can tell whether decoding rests on an exact match or a best-effort guess.
 typedef enum {
@@ -39,6 +49,7 @@ typedef struct {
 	ut64 it_cap;
 	DartTagStyle tag_style;
 	int header_fields;
+	DartHeaderStyle header_style;
 } DartVerLayout;
 
 // Lookup Dart version from a snapshot hash (MD5)

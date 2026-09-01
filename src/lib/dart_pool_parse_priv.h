@@ -62,6 +62,8 @@ typedef struct {
 	ut64 nb;
 	ut64 no;
 	ut64 nc;
+	ut64 ncc;
+	ut64 field_table_len;
 	ut64 itlen;
 	ut64 itdata;
 	ut64 cluster_start;
@@ -225,7 +227,7 @@ bool dart_read_unsigned_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_nex
 bool dart_read_unsigned_buf(const ut8 *buf, ut64 size, ut64 pos, ut64 *out_val, ut64 *out_next);
 char *dart_utf16le_to_utf8(const ut8 *buf, ut64 size);
 bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out);
-bool dart_snapshot_header_read_buf(const ut8 *buf, ut64 size, DartSnapshotHeader *out);
+bool dart_snapshot_header_read_buf(const ut8 *buf, ut64 size, const DartVerLayout *layout, DartSnapshotHeader *out);
 DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp);
 void dart_ctx_fini_layout(DartCtx *ctx, DartVerLayout *owned);
 int find_snapshots(DartCtx *ctx);

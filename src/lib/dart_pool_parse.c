@@ -783,6 +783,12 @@ static void dump_header_snapshot_json(DartCtx *ctx, PJ *pj, const char *label, u
 	pj_kn (pj, "base_objects", sh.nb);
 	pj_kn (pj, "objects", sh.no);
 	pj_kn (pj, "clusters_count", sh.nc);
+	if (sh.ncc) {
+		pj_kn (pj, "canonical_clusters_count", sh.ncc);
+	}
+	if (sh.field_table_len) {
+		pj_kn (pj, "field_table_len", sh.field_table_len);
+	}
 	pj_kn (pj, "it_length", sh.itlen);
 	pj_kn (pj, "it_data_off", sh.itdata);
 	pj_kn (pj, "cluster_start", sh.cluster_start);

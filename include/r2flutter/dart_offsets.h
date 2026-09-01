@@ -27,6 +27,7 @@ static const DartHashEntry dart_hash_entries[] = {
 	{ "41be3daaabd524b8aa7423bc24584957", 4 }, // Dart 3.12.0
 	{ "501ef5cbd64ca70b6b42672346af6a8a", 4 }, // Dart 2.19.0
 	{ "5191d02bb1d36a9f8609aa7495894e76", 4 }, // Dart 3.1.0
+	{ "5b97292b25f0a715613b7a28e0734f77", 8 }, // Dart 2.12.0
 	{ "6093345773c65683f60c20c8e62cbe4a", 8 }, // Dart 2.16.0
 	{ "617d044d9faa87a98c29f8aad5d2f220", 4 }, // Dart 3.0.3
 	{ "659a72e41e3276e882709901c27de33d", 8 }, // Dart 2.14.0
@@ -75,7 +76,7 @@ static const DartHashEntry dart_hash_entries[] = {
 	{ "fe53c4fdba846005b70514aec3840296", 8 }, // Dart 3.4.0
 };
 
-#define DART_HASH_ENTRIES_COUNT 61
+#define DART_HASH_ENTRIES_COUNT 62
 
 // Default offset arrays (identical across all known Dart versions)
 #define DART_DEFAULT_EP_OFFSETS \
