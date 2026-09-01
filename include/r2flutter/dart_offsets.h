@@ -12,6 +12,7 @@ typedef struct {
 } DartHashEntry;
 
 static const DartHashEntry dart_hash_entries[] = {
+	{ "0451907c2eaa8467e848c0067bfe8ed4", 4 }, // Dart 3.13.0
 	{ "0c7f1aa25fc597a7b3b9a19ed390afa1", 8 }, // Dart 2.13.0
 	{ "0eb277b50d6ce4069261c69150ce52c9", 4 }, // Dart 2.17.0
 	{ "1441d6b13b8623fa7fbf61433abebd31", 4 }, // Dart 2.17.6
@@ -36,6 +37,7 @@ static const DartHashEntry dart_hash_entries[] = {
 	{ "77b867742ae1ace67fbbb9a9a0d0334e", 4 }, // Dart 3.3.0
 	{ "77bd0a83c49bfc555a44a0740f15003a", 4 }, // Dart 2.18.0
 	{ "78da37fed6bf1489361a312568249f3f", 4 }, // Dart 3.11.5
+	{ "7a1ea3f6f5cf1089a7f6e55d7f20dbfd", 4 }, // Dart 3.14.0
 	{ "7a5b240780941844bae88eca5dbaa7b8", 8 }, // Dart 2.13.0
 	{ "7b96ef6dda75bdd1d70be8c2f7cb814e", 8 }, // Dart 2.15.0
 	{ "7dbbeeb8ef7b91338640dca3927636de", 4 }, // Dart 3.1.3
@@ -76,7 +78,7 @@ static const DartHashEntry dart_hash_entries[] = {
 	{ "fe53c4fdba846005b70514aec3840296", 8 }, // Dart 3.4.0
 };
 
-#define DART_HASH_ENTRIES_COUNT 62
+#define DART_HASH_ENTRIES_COUNT 64
 
 // Default offset arrays (identical across all known Dart versions)
 #define DART_DEFAULT_EP_OFFSETS \

@@ -135,10 +135,9 @@ static const DartVerLayout *load_layout_from_json(const char *hash, DartVerLayou
 	const char *version = dart_version_from_hash (hash);
 	const DartVerLayout *base_profile = version? dart_profile_from_version (version): NULL;
 	if (!base_profile) {
-		// Unknown hash: fingerprint against the newest known profile so the
-		// decode path (-f/-A) uses the same real layout the -H report shows,
-		// not a degenerate zeroed struct. cws is still refined from the flags.
-		base_profile = dart_newest_profile ();
+		// Keep discovery and decoding on the same conservative profile. A newer
+		// single-snapshot layout requires an exact hash or structural probing.
+		base_profile = dart_fingerprint_profile ();
 	}
 	memcpy (out, base_profile, sizeof (*out));
 	r_str_ncpy (out->hash, hash, sizeof (out->hash));
@@ -174,6 +173,10 @@ static DartVerLayout *dart_pick_layout_owned_for_ctx(DartCtx *ctx) {
 	return dart_layout_from_hash (dart_ctx_hash (ctx));
 }
 
+static ut64 dart_ctx_primary_data(const DartCtx *ctx) {
+	return ctx? (ctx->vm_data? ctx->vm_data: ctx->iso_data): 0;
+}
+
 static void extract_snapshot_hash_flags(DartCtx *ctx, ut64 vm_data) {
 	if (!ctx || !vm_data) {
 		return;
@@ -197,11 +200,12 @@ static void extract_snapshot_hash_flags(DartCtx *ctx, ut64 vm_data) {
 }
 
 static void derive_layout_from_flags(DartCtx *ctx) {
-	if (!ctx || !ctx->vm_data) {
+	const ut64 data = dart_ctx_primary_data (ctx);
+	if (!ctx || !data) {
 		return;
 	}
 	DartSnapshotHeader hdr;
-	if (!dart_snapshot_header_read (ctx, ctx->vm_data, &hdr)) {
+	if (!dart_snapshot_header_read (ctx, data, &hdr)) {
 		return;
 	}
 	const char *flags = hdr.flags;
@@ -230,7 +234,7 @@ static void derive_layout_from_flags(DartCtx *ctx) {
 }
 
 DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp) {
-	extract_snapshot_hash_flags (ctx, ctx->vm_data);
+	extract_snapshot_hash_flags (ctx, dart_ctx_primary_data (ctx));
 	ctx->layout = R_STR_ISEMPTY (ctx->dart_version_override)? load_layout_from_json (dart_ctx_hash (ctx), tmp): NULL;
 	DartVerLayout *owned = NULL;
 	if (!ctx->layout) {
@@ -582,7 +586,7 @@ static int prepare_header_data(DartCtx *ctx) {
 	if (ok != 0) {
 		return -1;
 	}
-	extract_snapshot_hash_flags (ctx, ctx->vm_data);
+	extract_snapshot_hash_flags (ctx, dart_ctx_primary_data (ctx));
 	ctx->layout = dart_pick_layout_owned_for_ctx (ctx);
 	derive_layout_from_flags (ctx);
 	dart_ctx_set_version_source (ctx);
@@ -615,6 +619,9 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		pj_kn (pj, "vm_instr", ctx->vm_instr);
 		pj_kn (pj, "iso_data", ctx->iso_data);
 		pj_kn (pj, "iso_instr", ctx->iso_instr);
+		if (ctx->layout && ctx->layout->single_snapshot) {
+			pj_kb (pj, "single_snapshot", true);
+		}
 		if (ctx->container_kind[0]) {
 			pj_k (pj, "container");
 			pj_o (pj);
@@ -662,24 +669,33 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	}
 	if (fmt == 'r') {
 		RStrBuf *sb = r_strbuf_new (quiet? "": "'# Dart AOT Snapshot Info\n");
+		const bool single = ctx->layout && ctx->layout->single_snapshot;
+		const ut64 data = dart_ctx_primary_data (ctx);
 		// Create flags for snapshot addresses
 		r_strbuf_appendf (sb, "'fs dart\n");
-		r_strbuf_appendf (sb, "'f dart.vm_data = 0x%" PFMT64x "\n", (ut64)ctx->vm_data);
-		r_strbuf_appendf (sb, "'f dart.vm_instr = 0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
-		r_strbuf_appendf (sb, "'f dart.iso_data = 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
-		r_strbuf_appendf (sb, "'f dart.iso_instr = 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+		if (single) {
+			r_strbuf_appendf (sb, "'f dart.snapshot_data = 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
+			r_strbuf_appendf (sb, "'f dart.snapshot_text = 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+			r_strbuf_appendf (sb, "'f dart.iso_data = 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
+			r_strbuf_appendf (sb, "'f dart.iso_instr = 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+		} else {
+			r_strbuf_appendf (sb, "'f dart.vm_data = 0x%" PFMT64x "\n", (ut64)ctx->vm_data);
+			r_strbuf_appendf (sb, "'f dart.vm_instr = 0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
+			r_strbuf_appendf (sb, "'f dart.iso_data = 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
+			r_strbuf_appendf (sb, "'f dart.iso_instr = 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+		}
 		if (ctx->container_kind[0]) {
 			r_strbuf_appendf (sb, "'f dart.container_payload = 0x%" PFMT64x "\n", (ut64)ctx->container_payload_offset);
 			r_strbuf_appendf (sb, "'f dart.container_payload_size = 0x%" PFMT64x "\n", (ut64)ctx->container_payload_size);
 		}
 		if (!quiet) {
 			// Add comments with metadata
-			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart snapshot hash: %s\n", (ut64)ctx->vm_data, ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
-			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart version: %s (%s)\n", (ut64)ctx->vm_data, version, version_source);
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart snapshot hash: %s\n", data, ctx->snapshot_hash[0]? ctx->snapshot_hash: "(unknown)");
+			r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart version: %s (%s)\n", data, version, version_source);
 			if (ctx->layout) {
 				const DartVerLayout *l = ctx->layout;
-				r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", (ut64)ctx->vm_data, dart_tag_style_to_string (l->tag_style));
-				r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Alignment: %d, CWS: %d\n", (ut64)ctx->vm_data, l->max_alignment, ctx->compressed_word_size);
+				r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Tag style: %s\n", data, dart_tag_style_to_string (l->tag_style));
+				r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Alignment: %d, CWS: %d\n", data, l->max_alignment, ctx->compressed_word_size);
 			}
 		}
 		return r_strbuf_drain (sb);
@@ -691,6 +707,9 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		if (ctx->layout) {
 			const DartVerLayout *l = ctx->layout;
 			r_strbuf_appendf (sb, " tag_style=%s alignment=%d", dart_tag_style_to_string (l->tag_style), l->max_alignment);
+			if (l->single_snapshot) {
+				r_strbuf_append (sb, " single_snapshot=true");
+			}
 		}
 		return r_strbuf_drain (sb);
 	}
@@ -708,10 +727,15 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 	}
 
 	r_strbuf_appendf (sb, "\n## Snapshot Addresses\n");
-	r_strbuf_appendf (sb, "vm_data:       0x%" PFMT64x "\n", (ut64)ctx->vm_data);
-	r_strbuf_appendf (sb, "vm_instr:      0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
-	r_strbuf_appendf (sb, "iso_data:      0x%" PFMT64x "\n", (ut64)ctx->iso_data);
-	r_strbuf_appendf (sb, "iso_instr:     0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+	if (ctx->layout && ctx->layout->single_snapshot) {
+		r_strbuf_appendf (sb, "snapshot_data: 0x%" PFMT64x "\n", (ut64)ctx->iso_data);
+		r_strbuf_appendf (sb, "snapshot_text: 0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+	} else {
+		r_strbuf_appendf (sb, "vm_data:       0x%" PFMT64x "\n", (ut64)ctx->vm_data);
+		r_strbuf_appendf (sb, "vm_instr:      0x%" PFMT64x "\n", (ut64)ctx->vm_instr);
+		r_strbuf_appendf (sb, "iso_data:      0x%" PFMT64x "\n", (ut64)ctx->iso_data);
+		r_strbuf_appendf (sb, "iso_instr:     0x%" PFMT64x "\n", (ut64)ctx->iso_instr);
+	}
 	if (ctx->container_kind[0]) {
 		r_strbuf_appendf (sb, "\n## Container\n");
 		r_strbuf_appendf (sb, "kind:          %s\n", ctx->container_kind);
@@ -721,8 +745,9 @@ char *dart_pool_dump_header(DartCtx *ctx, int fmt) {
 		r_strbuf_appendf (sb, "macho_off:     0x%" PFMT64x "\n", (ut64)ctx->container_macho_offset);
 	}
 
-	ut64 addrs[2] = { ctx->vm_data, ctx->iso_data };
-	const char *labels[2] = { "VM", "Isolate" };
+	const bool single = ctx->layout && ctx->layout->single_snapshot;
+	ut64 addrs[2] = { single? ctx->iso_data: ctx->vm_data, single? 0: ctx->iso_data };
+	const char *labels[2] = { single? "Combined": "VM", "Isolate" };
 	for (int si = 0; si < 2; si++) {
 		if (!addrs[si]) {
 			continue;
@@ -840,6 +865,9 @@ static char *dump_header_ext_json(DartCtx *ctx, int detail) {
 	pj_kn (pj, "vm_instr", ctx->vm_instr);
 	pj_kn (pj, "iso_data", ctx->iso_data);
 	pj_kn (pj, "iso_instr", ctx->iso_instr);
+	if (ctx->layout && ctx->layout->single_snapshot) {
+		pj_kb (pj, "single_snapshot", true);
+	}
 	pj_ki (pj, "cws", ctx->compressed_word_size);
 	pj_ks (pj, "dart_version", version);
 	pj_ks (pj, "version_source", dart_version_source_str (ctx? ctx->version_source: DART_VERSION_SOURCE_UNKNOWN));
@@ -875,8 +903,12 @@ static char *dump_header_ext_json(DartCtx *ctx, int detail) {
 		pj_end (pj);
 	}
 	pj_ka (pj, "snapshots");
-	dump_header_snapshot_json (ctx, pj, "VM", ctx->vm_data, detail);
-	dump_header_snapshot_json (ctx, pj, "Isolate", ctx->iso_data, detail);
+	if (ctx->layout && ctx->layout->single_snapshot) {
+		dump_header_snapshot_json (ctx, pj, "Combined", ctx->iso_data, detail);
+	} else {
+		dump_header_snapshot_json (ctx, pj, "VM", ctx->vm_data, detail);
+		dump_header_snapshot_json (ctx, pj, "Isolate", ctx->iso_data, detail);
+	}
 	pj_end (pj);
 	pj_end (pj);
 	return pj_drain (pj);
@@ -970,15 +1002,23 @@ static char *dart_pool_dump_header_ext_level(DartCtx *ctx, int fmt, int detail) 
 		char *header = dart_pool_dump_header (ctx, fmt);
 		RStrBuf *sb = r_strbuf_new (header? header: "");
 		free (header);
-		dump_header_ext_snapshot_r2 (ctx, sb, "VM", "vm", ctx->vm_data, detail);
-		dump_header_ext_snapshot_r2 (ctx, sb, "Isolate", "isolate", ctx->iso_data, detail);
+		if (ctx->layout && ctx->layout->single_snapshot) {
+			dump_header_ext_snapshot_r2 (ctx, sb, "Combined", "snapshot", ctx->iso_data, detail);
+		} else {
+			dump_header_ext_snapshot_r2 (ctx, sb, "VM", "vm", ctx->vm_data, detail);
+			dump_header_ext_snapshot_r2 (ctx, sb, "Isolate", "isolate", ctx->iso_data, detail);
+		}
 		return r_strbuf_drain (sb);
 	}
 	char *header = dart_pool_dump_header (ctx, fmt);
 	RStrBuf *sb = r_strbuf_new (header? header: "");
 	free (header);
-	dump_header_ext_snapshot_text (ctx, sb, "VM", ctx->vm_data, detail);
-	dump_header_ext_snapshot_text (ctx, sb, "Isolate", ctx->iso_data, detail);
+	if (ctx->layout && ctx->layout->single_snapshot) {
+		dump_header_ext_snapshot_text (ctx, sb, "Combined", ctx->iso_data, detail);
+	} else {
+		dump_header_ext_snapshot_text (ctx, sb, "VM", ctx->vm_data, detail);
+		dump_header_ext_snapshot_text (ctx, sb, "Isolate", ctx->iso_data, detail);
+	}
 	return r_strbuf_drain (sb);
 }
 

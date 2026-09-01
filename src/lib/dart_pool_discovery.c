@@ -22,6 +22,16 @@ static bool looks_like_data_snapshot(DartCtx *ctx, ut64 base, ut64 *out_total_le
 	return true;
 }
 
+static bool dart_snapshot_is_single(DartCtx *ctx, ut64 base) {
+	DartSnapshotHeader hdr;
+	if (!base || !dart_snapshot_header_read (ctx, base, &hdr)) {
+		return false;
+	}
+	const char *version = dart_version_from_hash (hdr.hash);
+	const DartVerLayout *layout = version? dart_profile_from_version (version): NULL;
+	return layout && layout->single_snapshot;
+}
+
 static void pick_vm_iso_by_size(const ut64 *addrs, const ut64 *lens, int count, ut64 *vm_out, ut64 *iso_out) {
 	if (count < 1) {
 		return;
@@ -157,6 +167,13 @@ static void locate_instr_images_structural(DartCtx *ctx) {
 	if (!vm_instr || vm_instr >= data_lo || !dart_image_at (ctx, vm_instr, data_lo, &sz1)) {
 		return;
 	}
+	if (dart_snapshot_is_single (ctx, ctx->iso_data? ctx->iso_data: ctx->vm_data)) {
+		ctx->iso_instr = vm_instr;
+		if (ctx->verbose > 0) {
+			fprintf (stderr, "[r2flutter] located single instruction image structurally: snapshot_instr=0x%" PFMT64x "\n", (ut64)vm_instr);
+		}
+		return;
+	}
 	ut64 iso_instr = dart_align_up (vm_instr + sz1, DART_IMAGE_ALIGN);
 	if (iso_instr <= vm_instr || iso_instr >= data_lo || !dart_image_at (ctx, iso_instr, data_lo, &sz2)) {
 		return;
@@ -194,6 +211,8 @@ int find_snapshots(DartCtx *ctx) {
 		"_kDartIsolateSnapshotInstructions",
 		"DartIsolateSnapshotInstructions",
 };
+	const char *single_data_names[2] = { "_kDartSnapshotData", "DartSnapshotData" };
+	const char *single_text_names[2] = { "_kDartSnapshotText", "DartSnapshotText" };
 	ut64 *outs[4] = { &ctx->vm_data, &ctx->vm_instr, &ctx->iso_data, &ctx->iso_instr };
 	if (core->bin) {
 		RVecRBinSymbol *v = r_bin_get_symbols_vec (core->bin);
@@ -216,10 +235,21 @@ int find_snapshots(DartCtx *ctx) {
 						*outs[idx] = rebase_bin_addr (ctx, sym->vaddr);
 					}
 				}
+				for (int k = 0; k < 2; k++) {
+					if (!strcmp (nm, single_data_names[k]) && sym->vaddr) {
+						ctx->iso_data = rebase_bin_addr (ctx, sym->vaddr);
+					}
+					if (!strcmp (nm, single_text_names[k]) && sym->vaddr) {
+						ctx->iso_instr = rebase_bin_addr (ctx, sym->vaddr);
+					}
+				}
 			}
 		}
 	}
 	if (ctx->vm_data && ctx->vm_instr && ctx->iso_data && ctx->iso_instr) {
+		return 0;
+	}
+	if (ctx->iso_data && ctx->iso_instr && dart_snapshot_is_single (ctx, ctx->iso_data)) {
 		return 0;
 	}
 
@@ -280,7 +310,11 @@ int find_snapshots(DartCtx *ctx) {
 			// the ones still unset so scan guesses cannot overwrite good values.
 			ut64 scan_vm_data = 0;
 			ut64 scan_iso_data = 0;
-			pick_vm_iso_by_size (data_addrs, data_lens, data_cnt, &scan_vm_data, &scan_iso_data);
+			if (data_cnt == 1 && dart_snapshot_is_single (ctx, data_addrs[0])) {
+				scan_iso_data = data_addrs[0];
+			} else {
+				pick_vm_iso_by_size (data_addrs, data_lens, data_cnt, &scan_vm_data, &scan_iso_data);
+			}
 			if (!ctx->vm_data) {
 				ctx->vm_data = scan_vm_data;
 			}

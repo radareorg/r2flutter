@@ -21,9 +21,10 @@ cluster layouts next, then metadata/value restoration and profile detection.
 - [x] **R2F-DAE-004 — Parse versioned Code cluster layouts**
   - Profile Code reference counts, text-offset deltas, and leading refs.
   - Commit: `Parse Versioned Code Cluster Layouts`
-- [ ] **R2F-DAE-005 — Support Dart 3.13 single snapshots**
+- [x] **R2F-DAE-005 — Support Dart 3.13 single snapshots**
   - Add hashes/CIDs and merged VM/isolate snapshot handling.
   - Add the alternate symbols and 3.13 Class, Code, and Closure layouts.
+  - Test complete and truncated combined snapshots, including partial-fill failure reporting.
   - Commit: `Support Dart 3.13 Single Snapshots`
 - [ ] **R2F-DAE-006 — Retain serialized class layout metadata**
   - Keep class ID, library/super references, next-field offset, and bitmap.

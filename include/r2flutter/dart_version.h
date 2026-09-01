@@ -77,6 +77,10 @@ typedef struct {
 	int code_refs;
 	int code_leading_refs;
 	bool code_has_text_offset;
+	bool single_snapshot;
+	bool class_alloc_fixed;
+	bool closure_variable;
+	bool class_top_level_cid20;
 } DartVerLayout;
 
 // Lookup Dart version from a snapshot hash (MD5)
@@ -87,14 +91,17 @@ const char *dart_version_from_hash(const char *hash);
 // Returns NULL if the version string is not a dotted numeric version.
 const DartVerLayout *dart_profile_from_version(const char *version);
 
-// Pick a layout structure based on hash, with fallback to defaults
+// Pick a layout structure based on hash, with fallback to a compatible baseline
 // Returns a newly allocated DartVerLayout (caller must free)
-// If hash is unknown, fingerprints against the newest known layout profile
+// If hash is unknown, fingerprints against the newest split-snapshot profile.
 DartVerLayout *dart_layout_from_hash(const char *hash);
 
-// Newest known layout profile (used as the fingerprint baseline for unknown
-// git/dev builds, whose snapshot format tracks the latest release).
+// Newest known layout profile.
 const DartVerLayout *dart_newest_profile(void);
+
+// Conservative profile used until an unknown hash can be structurally probed.
+// Single-snapshot mechanics require positive evidence and are not inherited.
+const DartVerLayout *dart_fingerprint_profile(void);
 
 // Human-readable name for a DartVersionSource value.
 const char *dart_version_source_str(int source);

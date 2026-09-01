@@ -19,6 +19,7 @@ typedef enum {
 	MODERN_ALLOC_CONTEXT_SCOPE,
 	MODERN_ALLOC_RECORD,
 	MODERN_ALLOC_TYPED_DATA,
+	MODERN_ALLOC_VARIABLE,
 	MODERN_ALLOC_INSTANCE,
 	MODERN_ALLOC_EMPTY,
 	MODERN_ALLOC_UNKNOWN,
@@ -39,6 +40,7 @@ typedef enum {
 	MODERN_FILL_INLINE_BYTES,
 	MODERN_FILL_TYPED_DATA,
 	MODERN_FILL_RECORD,
+	MODERN_FILL_CLOSURE,
 	MODERN_FILL_INSTANCE,
 	MODERN_FILL_UNKNOWN,
 } ModernFillKind;
@@ -97,6 +99,7 @@ typedef struct {
 	bool fill_ok;
 	int next_field_offset_words;
 	ut8 *discarded_codes;
+	ut64 *alloc_items;
 } ModernClusterMeta;
 
 typedef struct {
@@ -258,6 +261,8 @@ static const char *modern_alloc_kind_name(ModernAllocKind kind) {
 		return "record";
 	case MODERN_ALLOC_TYPED_DATA:
 		return "typed_data";
+	case MODERN_ALLOC_VARIABLE:
+		return "variable";
 	case MODERN_ALLOC_INSTANCE:
 		return "instance";
 	case MODERN_ALLOC_EMPTY:
@@ -298,6 +303,8 @@ static const char *modern_fill_kind_name(ModernFillKind kind) {
 		return "typed_data";
 	case MODERN_FILL_RECORD:
 		return "record";
+	case MODERN_FILL_CLOSURE:
+		return "closure";
 	case MODERN_FILL_INSTANCE:
 		return "instance";
 	case MODERN_FILL_UNKNOWN:
@@ -380,6 +387,7 @@ typedef struct {
 	// handful of clusters. Their readers are gated on this flag; everything
 	// else is shared.
 	bool legacy_format;
+	bool closure_variable;
 	// every CID this layout defines, indexed by kind; -1 when the kind is absent
 	int by_kind[DART_CID_KIND_COUNT];
 } ModernCidCache;
@@ -453,6 +461,7 @@ static ModernCidCache modern_cid_cache_init(const DartVerLayout *layout) {
 		.typed_data_internal_limit = dart_cid_typed_data_limit (layout),
 		.typed_data_stride = dart_cid_typed_data_stride (layout),
 		.legacy_format = modern_layout_is_legacy (layout),
+		.closure_variable = layout && layout->closure_variable,
 };
 	for (int kind = 0; kind < DART_CID_KIND_COUNT; kind++) {
 		cids.by_kind[kind] = dart_cid_get (layout, (DartCidKind)kind);
@@ -603,6 +612,9 @@ static ModernAllocKind modern_alloc_kind(const ModernCidCache *cids, int compres
 	if (modern_cid_eq (cid, cids->double_)) {
 		return MODERN_ALLOC_SIMPLE;
 	}
+	if (cids->closure_variable && modern_cid_eq (cid, cids->closure)) {
+		return MODERN_ALLOC_VARIABLE;
+	}
 	if (modern_is_simple_alloc_cid (cids, cid)) {
 		return MODERN_ALLOC_SIMPLE;
 	}
@@ -725,14 +737,24 @@ static bool modern_skip_alloc(ClusterStream *s, const ModernCidCache *cids, int 
 	case MODERN_ALLOC_CONTEXT_SCOPE:
 	case MODERN_ALLOC_RECORD:
 	case MODERN_ALLOC_TYPED_DATA:
+	case MODERN_ALLOC_VARIABLE:
 		if (!cs_read_unsigned (s, &count)) {
 			return false;
 		}
 		meta->count = count;
+		if (kind == MODERN_ALLOC_VARIABLE && count) {
+			meta->alloc_items = (ut64 *)calloc ((size_t)count, sizeof (ut64));
+			if (!meta->alloc_items) {
+				return false;
+			}
+		}
 		for (ut64 i = 0; i < count; i++) {
 			ut64 item = 0;
 			if (!cs_read_unsigned (s, &item)) {
 				return false;
+			}
+			if (meta->alloc_items) {
+				meta->alloc_items[i] = item;
 			}
 			modern_cluster_record_item (meta, item);
 		}
@@ -745,6 +767,10 @@ static bool modern_skip_alloc(ClusterStream *s, const ModernCidCache *cids, int 
 			ut64 predefined = 0;
 			if (!cs_read_unsigned (s, &predefined)) {
 				return false;
+			}
+			if (s->ctx && s->ctx->layout && s->ctx->layout->class_alloc_fixed) {
+				meta->count = predefined;
+				return true;
 			}
 			if (cids->num_predefined_cids > 0 && predefined > (ut64)cids->num_predefined_cids) {
 				if (!cs_read_unsigned (s, &predefined)) {
@@ -949,6 +975,9 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 	}
 	if (modern_cid_eq (cid, cids->record)) {
 		return modern_fill_spec_kind (MODERN_FILL_RECORD);
+	}
+	if (cids->closure_variable && modern_cid_eq (cid, cids->closure)) {
+		return modern_fill_spec_kind (MODERN_FILL_CLOSURE);
 	}
 	static const ModernFillSpecRule rules[] = {
 		{ DART_CID_PATCH_CLASS, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
@@ -1249,6 +1278,24 @@ static bool modern_skip_fill_record(ClusterStream *s, const ModernClusterMeta *m
 	return true;
 }
 
+static bool modern_skip_fill_closure(ClusterStream *s, const ModernClusterMeta *meta) {
+	if (!meta->alloc_items && meta->count) {
+		return false;
+	}
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 value = 0;
+		if (!cs_read_unsigned (s, &value)) {
+			return false;
+		}
+		for (ut64 j = 0; j < 3 + meta->alloc_items[i]; j++) {
+			if (!cs_read_ref_id (s, &value)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 static bool modern_resync_fill_record(ClusterStream *s, const ModernClusterMeta *meta) {
 	if (meta->alloc_items_count != meta->count || !meta->count) {
 		return modern_skip_fill_record (s, meta);
@@ -1387,6 +1434,11 @@ static bool modern_skip_fill_object_pool(ClusterStream *s, const ModernClusterMe
 	return true;
 }
 
+static bool modern_class_is_top_level(const DartVerLayout *layout, ut32 cid) {
+	const ut32 offset = layout && layout->class_top_level_cid20? 1U << 20: 1U << 16;
+	return cid >= offset;
+}
+
 static bool modern_skip_fill_class(ClusterStream *s, const ModernClusterMeta *meta, const ModernFillSpec *spec) {
 	for (ut64 j = 0; j < meta->count; j++) {
 		ut32 class_id = 0;
@@ -1401,7 +1453,7 @@ static bool modern_skip_fill_class(ClusterStream *s, const ModernClusterMeta *me
 			return false;
 		}
 		bool is_predefined = j < meta->main_count;
-		bool is_top_level = class_id >= (1U << 16);
+		bool is_top_level = modern_class_is_top_level (s->ctx? s->ctx->layout: NULL, class_id);
 		if (is_predefined || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (s, &bitmap)) {
@@ -1440,6 +1492,8 @@ static bool modern_skip_fill_by_kind(ClusterStream *s, const ModernCidCache *cid
 		return modern_skip_fill_typed_data (s, cids, meta);
 	case MODERN_FILL_RECORD:
 		return modern_resync_fill_record (s, meta);
+	case MODERN_FILL_CLOSURE:
+		return modern_skip_fill_closure (s, meta);
 	case MODERN_FILL_INSTANCE:
 		return modern_skip_fill_instance (s->ctx, s, meta);
 	case MODERN_FILL_NONE:
@@ -1862,7 +1916,7 @@ static bool modern_resolver_read_class_fill(ModernWalk *w, ClusterStream *s, con
 			return false;
 		}
 		bool is_predefined = j < meta->main_count;
-		bool is_top_level = class_id >= (1U << 16);
+		bool is_top_level = modern_class_is_top_level (w->ctx? w->ctx->layout: NULL, class_id);
 		if (is_predefined || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (s, &bitmap)) {
@@ -2673,6 +2727,7 @@ static void modern_cluster_meta_free(ModernClusterMeta *meta, ut64 num_clusters)
 	}
 	for (ut64 i = 0; i < num_clusters; i++) {
 		free (meta[i].discarded_codes);
+		free (meta[i].alloc_items);
 	}
 	free (meta);
 }
@@ -2931,7 +2986,7 @@ static bool modern_collect_class_strings(ModernPoolStringRefCollector *collector
 			return false;
 		}
 		bool is_predefined = i < meta->main_count;
-		bool is_top_level = class_id >= (1U << 16);
+		bool is_top_level = modern_class_is_top_level (resolver->ctx? resolver->ctx->layout: NULL, class_id);
 		if (is_predefined || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (&s, &bitmap)) {
@@ -3832,7 +3887,7 @@ static bool modern_read_class_fill(ModernWalk *w, ClusterStream *s, const Modern
 			return false;
 		}
 		bool is_predefined = j < meta->main_count;
-		bool is_top_level = class_id >= (1U << 16);
+		bool is_top_level = modern_class_is_top_level (ctx->layout, class_id);
 		if (is_predefined || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (s, &bitmap)) {
@@ -4140,7 +4195,7 @@ static bool modern_name_scan_read_class(ModernWalk *w, ClusterStream *s, const M
 		if (!cs_read_tagged32 (s, &class_id) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32) || !cs_read_tagged32 (s, &tmp32)) {
 			return false;
 		}
-		const bool is_top_level = class_id >= (1U << 16);
+		const bool is_top_level = modern_class_is_top_level (w->ctx? w->ctx->layout: NULL, class_id);
 		if (j < m->main_count || !is_top_level) {
 			ut64 bitmap = 0;
 			if (!cs_read_unsigned (s, &bitmap)) {

@@ -1425,3 +1425,31 @@ profile is applied while framing the Code stream and while recovering Code
 owners; DAE's Dart 2.18 negative fill adjustment is intentionally not copied,
 because it compensates for drift in DAE's own generic fill walker rather than
 a serialized SDK field.
+
+## Dart 3.13 Uses One Combined Snapshot
+
+Dart 3.13 replaces the separate VM and isolate AOT snapshots with one full
+snapshot (`kind=2`). Its exported symbols are `_kDartSnapshotData` and
+`_kDartSnapshotText`. r2flutter stores those addresses in its existing isolate
+slots internally so the parser APIs remain compatible, but reports a single
+`Combined` snapshot and does not invent VM addresses in user-facing output.
+Unknown hashes remain on the newest split-snapshot compatibility profile;
+otherwise merely adding a 3.13 profile would silently reinterpret older dev
+builds as combined snapshots. Exact hashes and explicit overrides are positive
+evidence for the new topology, while structural selection is handled
+separately.
+
+The same release changes three cluster details independently: Class allocation
+becomes a single fixed-size count, Code fill gains two leading references, and
+Closure becomes variable-sized with an allocation length followed during fill
+by one unsigned value, three fixed references, and that many variable
+references. The Class nullable-field bitmap is omitted only for synthetic
+top-level class IDs. That offset is itself versioned: `1 << 16` through Dart
+2.18 and `1 << 20` from Dart 2.19 onward. Applying the newer threshold to a
+2.18 snapshot, or the older threshold to 3.13, shifts subsequent fills for
+ordinary high class IDs.
+
+Keep partial cluster summaries when a fill is truncated. Earlier clusters are
+still useful, while the failing cluster is marked `failed` and later clusters
+remain `not_parsed`. This is more informative than rejecting the whole snapshot
+and makes malformed-input behavior explicit to JSON consumers.

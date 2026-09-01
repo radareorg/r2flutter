@@ -635,6 +635,17 @@ def code_layout_for_version(version):
     }
 
 
+def snapshot_layout_for_version(version):
+    parsed = parse_version(version)
+    modern_single = parsed >= (3, 13)
+    return {
+        "single": "true" if modern_single else "false",
+        "class_fixed": "true" if modern_single else "false",
+        "closure_variable": "true" if modern_single else "false",
+        "class_top_level_cid20": "true" if parsed >= (2, 19) else "false",
+    }
+
+
 def profile_diff(existing, inferred):
     diffs = []
     for key in ("cws", "heap_object_tag", "max_alignment", "it_cap", "tag_style", "header_fields"):
@@ -752,11 +763,14 @@ def gen_profile_entries(offsets):
         ref_encoding = ref_encoding_for_version(ver)
         pool_encoding = pool_encoding_for_version(ver)
         code = code_layout_for_version(ver)
+        snapshot = snapshot_layout_for_version(ver)
         lines.append(f'\t{{ "", "{ver}", {v["cws"]}, {v["heap_object_tag"]}, '
                      f'{v["max_alignment"]}, {v["it_cap"]}, {tag_name}, '
                      f'{v["header_fields"]}, {header_style}, {ref_encoding}, {pool_encoding}, '
-                     f'{code["alloc"]}, {code["refs"]}, {code["leading_refs"]}, {code["has_text_offset"]} }}, // Dart {ver}')
-    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }")
+                     f'{code["alloc"]}, {code["refs"]}, {code["leading_refs"]}, {code["has_text_offset"]}, '
+                     f'{snapshot["single"]}, {snapshot["class_fixed"]}, {snapshot["closure_variable"]}, '
+                     f'{snapshot["class_top_level_cid20"]} }}, // Dart {ver}')
+    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }")
     lines.append("};")
     return "\n".join(lines)
 
