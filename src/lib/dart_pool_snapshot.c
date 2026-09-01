@@ -1,5 +1,6 @@
 /* r2flutter - MIT - Copyright 2026 - pancake */
 
+#include <ctype.h>
 #include "dart_pool_parse_priv.h"
 
 // Window size for the read cache. Cluster streams are decoded one byte at a
@@ -204,7 +205,7 @@ static bool dart_snapshot_header_set_fields(DartSnapshotHeader *out, const DartV
 	return true;
 }
 
-bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out) {
+static bool dart_snapshot_outer_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out, ut64 *out_cursor) {
 	if (!ctx || !out) {
 		return false;
 	}
@@ -217,17 +218,34 @@ bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out)
 	if (out->magic != DART_SNAPSHOT_MAGIC) {
 		return false;
 	}
-	out->total_len = r_read_le64 (hdr + 4) + 4;
+	const ut64 stored_len = r_read_le64 (hdr + 4);
+	if (stored_len > UT64_MAX - 4) {
+		return false;
+	}
+	out->total_len = stored_len + 4;
+	if (out->total_len < DART_SNAPSHOT_FIXED_SIZE + DART_SNAPSHOT_HASH_SIZE + 1 || out->total_len > (1ULL << 34) || base > UT64_MAX - out->total_len) {
+		return false;
+	}
+	RIOMap *map = r_io_map_get_at (ctx->core->io, base);
+	if (map && base + out->total_len - 1 > r_io_map_to (map)) {
+		return false;
+	}
 	out->kind = r_read_le64 (hdr + 12);
 	ut64 cursor = base + DART_SNAPSHOT_FIXED_SIZE;
 	if (!read_mem (ctx, cursor, out->hash, DART_SNAPSHOT_HASH_SIZE)) {
 		return false;
 	}
 	out->hash[DART_SNAPSHOT_HASH_SIZE] = '\0';
+	for (int i = 0; i < DART_SNAPSHOT_HASH_SIZE; i++) {
+		if (!isxdigit ((ut8)out->hash[i])) {
+			return false;
+		}
+	}
 	cursor += DART_SNAPSHOT_HASH_SIZE;
 	ut8 b = 0;
 	int scanned = 0;
-	while (scanned < DART_SNAPSHOT_FEATURES_SCAN_MAX) {
+	const ut64 snapshot_end = base + out->total_len;
+	while (scanned < DART_SNAPSHOT_FEATURES_SCAN_MAX && cursor + (ut64)scanned < snapshot_end) {
 		if (!read_mem (ctx, cursor + scanned, &b, 1)) {
 			return false;
 		}
@@ -236,7 +254,7 @@ bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out)
 		}
 		scanned++;
 	}
-	if (b) {
+	if (b || cursor + (ut64)scanned >= snapshot_end) {
 		return false;
 	}
 	int tocopy = R_MIN (scanned, (int)sizeof (out->flags) - 1);
@@ -245,6 +263,24 @@ bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out)
 	}
 	out->flags[tocopy] = '\0';
 	cursor += (ut64)scanned + 1;
+	if (cursor >= snapshot_end) {
+		return false;
+	}
+	if (out_cursor) {
+		*out_cursor = cursor;
+	}
+	return true;
+}
+
+bool dart_snapshot_fingerprint_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out) {
+	return dart_snapshot_outer_read (ctx, base, out, NULL);
+}
+
+bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out) {
+	ut64 cursor = 0;
+	if (!dart_snapshot_outer_read (ctx, base, out, &cursor)) {
+		return false;
+	}
 	const DartVerLayout *layout = dart_snapshot_header_layout (ctx, out->hash);
 	if (!layout || layout->header_fields < 4 || layout->header_fields > 6) {
 		return false;

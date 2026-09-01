@@ -17,8 +17,8 @@ instruction tables, and strings directly.
 | Mach-O details | Thin Mach-O64 and fat Mach-O/fat64; arm64 slice is preferred. LC_NOTE owner `__dart_app_snap` is detected and the embedded Dart Mach-O payload is extracted to a temporary file. |
 | Architecture | ARM64/AArch64 is the real target. Instruction-table entrypoints are based on ARM64 code offsets, PP tracking uses `x27`, and the radare2 analysis pass understands AArch64 registers/op metadata. |
 | Snapshot kind | Clustered Dart AOT snapshots with magic `0xdcdcf5f5`, 32-byte snapshot hashes, feature strings, and unsigned varint header fields. |
-| Dart layouts | In-tree profiles cover Dart `2.10.0` through `3.12.1`, roughly Flutter `1.22.x` through `3.41.x`. Profiles are keyed at layout-change boundaries and resolved by floor: e.g. `3.7`/`3.8` share the `3.6.0` CID layout and `3.10`–`3.12` share the `3.9.0` layout. Verified byte-for-byte against every release's `runtime/vm/class_id.h` (2.10.0–3.12.1). |
-| Unknown hashes | Git/dev builds carry an unlisted snapshot hash. r2flutter **fingerprints** them: it applies the newest known layout profile (snapshot formats only change at release boundaries, so a fresh git build matches the latest release) and refines the compressed word size from the feature flags. The Dart version is reported as `~<version>+ (fingerprint)` and `version_source` is set to `fingerprint` (vs `exact-hash` / `override`) so the result is never silently presented as an exact match. |
+| Dart layouts | In-tree profiles cover Dart `2.10.0` through `3.14.0`. Profiles are keyed at layout-change boundaries and resolved by floor: e.g. `3.7`/`3.8` share the `3.6.0` CID layout and `3.10`–`3.12` share the `3.9.0` layout. CID tables through 3.12.1 were verified byte-for-byte against each release's `runtime/vm/class_id.h`; 3.13–3.14 add the combined-snapshot layout. |
+| Unknown hashes | Git/dev builds carry an unlisted snapshot hash. r2flutter first probes compatible split- or single-snapshot profiles by parsing the complete isolate cluster stream, checking reference/object counts and fill boundaries, and scoring Function/Class/Library records. A match is reported as `~<range-start>+ (structural-probe)` with `version_source=structural-probe`. If no profile validates, the existing newest-compatible split profile remains as a conservative `~<version>+ (fingerprint)` fallback. Exact hashes and explicit `-D` overrides bypass probing. |
 | Obfuscation maps | Flutter/Dart `--save-obfuscation-map` JSON arrays are supported with `-m <file>` or `e r2flutter.mapfile=<file>` in the plugin. |
 
 ## Layout Profiles
@@ -52,11 +52,13 @@ The CID column is compacted as:
 | 3.6.2 | 3.27.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | CID table update. |
 | 3.7.0 | 3.29.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
 | 3.8.1 | 3.32.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
-| 3.9.2 | 3.35.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Unknown-hash fallback baseline. |
-| 3.10.7 | 3.38.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Newest in-tree profile. |
+| 3.9.2 | 3.35.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Modern split profile family. |
+| 3.10.7 | 3.38.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
 | 3.11.5 | 3.39.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
 | 3.12.0 | 3.41.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
-| 3.12.1 | 3.41.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Same modern profile family. |
+| 3.12.1 | 3.41.x | `OBJECT_HEADER` | 4 | 5 | 175 | `5/7/18/93/94/95/90/61/23` | Newest split compatibility profile. |
+| 3.13.0 | — | `OBJECT_HEADER` | 4 | 5 | 176 | `5/7/18/93/94/95/90/61/23` | Combined snapshot; alternate Class/Code/Closure framing. |
+| 3.14.0 | — | `OBJECT_HEADER` | 4 | 5 | 176 | `5/7/18/93/94/95/90/61/23` | Same combined-snapshot profile family. |
 
 All profiles use heap object tag `1`, default alignment `16`, and instruction
 table capacity `20000` before feature-flag or `offsets.json` adjustments.
@@ -89,6 +91,8 @@ These hashes are mapped directly by `src/lib/dart_version.c`.
 | 3.11.5 | `78da37fed6bf1489361a312568249f3f` |
 | 3.12.0 | `41be3daaabd524b8aa7423bc24584957` |
 | 3.12.1 | `ace654289f5abc240509fc941453ebc5` |
+| 3.13.0 | `0451907c2eaa8467e848c0067bfe8ed4` |
+| 3.14.0 | `7a1ea3f6f5cf1089a7f6e55d7f20dbfd` |
 
 `include/r2flutter/dart_offsets.h` contains the hash→compressed_word_size lookup
 table and the default offset arrays, compiled statically into r2flutter. No

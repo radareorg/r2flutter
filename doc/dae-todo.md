@@ -34,6 +34,6 @@ cluster layouts next, then metadata/value restoration and profile detection.
   - Preserve Instance, Array, Map, and Set values by object reference.
   - Expose bounded recursive values through the object inspector.
   - Commit: `Retain Snapshot Object Value Graph`
-- [ ] **R2F-DAE-008 — Probe snapshot layouts for unknown hashes**
+- [x] **R2F-DAE-008 — Probe snapshot layouts for unknown hashes**
   - Validate candidate layouts structurally instead of selecting the newest.
   - Commit: `Probe Snapshot Layouts for Unknown Hashes`

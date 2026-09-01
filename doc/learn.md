@@ -1433,11 +1433,12 @@ snapshot (`kind=2`). Its exported symbols are `_kDartSnapshotData` and
 `_kDartSnapshotText`. r2flutter stores those addresses in its existing isolate
 slots internally so the parser APIs remain compatible, but reports a single
 `Combined` snapshot and does not invent VM addresses in user-facing output.
-Unknown hashes remain on the newest split-snapshot compatibility profile;
+Unknown hashes begin on the newest split-snapshot compatibility profile;
 otherwise merely adding a 3.13 profile would silently reinterpret older dev
 builds as combined snapshots. Exact hashes and explicit overrides are positive
-evidence for the new topology, while structural selection is handled
-separately.
+evidence for the new topology. Structural probing can upgrade an unknown
+`kind=2` snapshot to the single-snapshot profile only when discovery found one
+data snapshot and the complete cluster stream validates.
 
 The same release changes three cluster details independently: Class allocation
 becomes a single fixed-size count, Code fill gains two leading references, and
@@ -1496,3 +1497,37 @@ graphs retain string references but incorrectly report their values as
 incomplete. A truncated fill still produces a node with `complete=false` and
 no partially trusted edges, and an invalid reference is reported as
 `out_of_range`.
+
+## Unknown Hashes Need Structural Evidence Before Layout Selection
+
+The existing unknown-hash handling remains the safe final fallback, but it is
+not enough to select a historical or single-snapshot layout. Snapshot discovery
+now reads the invariant outer envelope (magic, bounded total length, kind,
+32-byte hexadecimal hash, and terminated feature string) without first
+guessing a versioned inner header. This avoids a circular dependency where the
+fallback profile determines which unknown snapshots can be discovered.
+
+For an unknown hash, r2flutter tries built-in profiles with the discovered
+split/combined topology. Each candidate must decode a sane versioned header,
+parse every allocation and fill cluster without drift, assign contiguous
+reference ranges, stay within the declared snapshot extent, and finish at
+exactly `num_objects + 1`. Structurally valid candidates are scored using the
+same useful semantic signal as DAE: four times the Function count plus Class
+and Library counts. Equal scores retain the earliest compatible range-start
+profile, because the bytes prove a wire-layout family rather than an exact SDK
+release; the displayed `~<version>+` is therefore an honest lower bound.
+
+Unlike DAE, r2flutter validates the primary application/isolate snapshot rather
+than requiring both VM and isolate fills. Its modern walker models the
+application metadata needed by r2flutter but does not claim complete support
+for every VM-only cluster found in Android snapshots, so making VM fill success
+mandatory would reject otherwise clean candidates. A real Android Dart 3.9
+snapshot narrows to the 3.9-3.12-compatible family, an iOS Dart 3.4 snapshot
+narrows to the 3.4-3.5 family, the legacy fixture uniquely selects 2.17, and a
+combined fixture selects the 3.13 family.
+
+Malformed fills never replace the initial compatibility profile. Explicit
+version/hash overrides and exact known hashes also bypass the probe, preserving
+deterministic user control and fast known-version behavior. Verbose mode reports
+candidate validity, scores, the selected range start, or the reason the parser
+kept the fingerprint fallback.

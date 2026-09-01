@@ -69,8 +69,8 @@ const char *dart_ctx_version(DartCtx *ctx) {
 	return dart_version_from_hash (dart_ctx_hash (ctx));
 }
 
-// Classify how the layout was determined, for honest reporting: exact hash
-// match, user override, best-effort fingerprint (unknown hash), or no snapshot.
+// Classify how the layout was determined, for honest reporting: exact hash,
+// user override, structural probe, conservative fingerprint, or no snapshot.
 static void dart_ctx_set_version_source(DartCtx *ctx) {
 	if (!ctx) {
 		return;
@@ -79,6 +79,8 @@ static void dart_ctx_set_version_source(DartCtx *ctx) {
 		ctx->version_source = DART_VERSION_SOURCE_OVERRIDE;
 	} else if (dart_version_from_hash (dart_ctx_hash (ctx))) {
 		ctx->version_source = DART_VERSION_SOURCE_EXACT;
+	} else if (ctx->layout_probed) {
+		ctx->version_source = DART_VERSION_SOURCE_PROBE;
 	} else if (R_STR_ISNOTEMPTY (dart_ctx_hash (ctx))) {
 		ctx->version_source = DART_VERSION_SOURCE_FINGERPRINT;
 	} else {
@@ -86,14 +88,17 @@ static void dart_ctx_set_version_source(DartCtx *ctx) {
 	}
 }
 
-// Effective version label including a marker when the layout was fingerprinted
-// from an unknown (git/dev build) hash rather than matched exactly.
+// Effective version label including the evidence used for an unknown hash.
 static const char *dart_ctx_version_label(DartCtx *ctx, char *buf, size_t bufsz) {
 	const char *v = dart_ctx_version (ctx);
 	if (v) {
 		return v;
 	}
-	if (ctx && ctx->version_source == DART_VERSION_SOURCE_FINGERPRINT && ctx->layout && ctx->layout->dart_version) {
+	if (ctx && ctx->layout && ctx->layout->dart_version && ctx->version_source == DART_VERSION_SOURCE_PROBE) {
+		snprintf (buf, bufsz, "~%s+ (structural-probe)", ctx->layout->dart_version);
+		return buf;
+	}
+	if (ctx && ctx->layout && ctx->layout->dart_version && ctx->version_source == DART_VERSION_SOURCE_FINGERPRINT) {
 		snprintf (buf, bufsz, "~%s+ (fingerprint)", ctx->layout->dart_version);
 		return buf;
 	}
@@ -184,7 +189,7 @@ static void extract_snapshot_hash_flags(DartCtx *ctx, ut64 vm_data) {
 	ctx->snapshot_hash[0] = '\0';
 	ctx->snapshot_hash_actual[0] = '\0';
 	DartSnapshotHeader hdr;
-	if (!dart_snapshot_header_read (ctx, vm_data, &hdr)) {
+	if (!dart_snapshot_fingerprint_read (ctx, vm_data, &hdr)) {
 		return;
 	}
 	memcpy (ctx->snapshot_hash_actual, hdr.hash, DART_SNAPSHOT_HASH_SIZE);
@@ -199,6 +204,92 @@ static void extract_snapshot_hash_flags(DartCtx *ctx, ut64 vm_data) {
 	}
 }
 
+static int dart_word_size_from_flags(const char *flags) {
+	const bool has_compressed = flags && strstr (flags, "compressed-pointer") != NULL;
+	const bool has_no_compressed = flags && (strstr (flags, "no-compressed-pointer") != NULL || strstr (flags, "no-compressed") != NULL);
+	return has_compressed && !has_no_compressed? 4: 8;
+}
+
+static bool dart_probe_snapshot_with_profile(DartCtx *ctx, const DartVerLayout *profile, ut64 base, ut64 *score) {
+	ctx->layout = profile;
+	DartSnapshotHeader sh = { 0 };
+	if (!dart_snapshot_header_read (ctx, base, &sh) || !sh.ok || !sh.nb || sh.no < sh.nb || !sh.nc ||
+		sh.no > 100000000 || sh.nc > 100000 || sh.cluster_start >= base + sh.total_len) {
+		return false;
+	}
+	const ModernReq req = {
+		ctx,
+		sh.cluster_start,
+		base + sh.total_len,
+		sh.nc,
+		sh.nb
+	};
+	return modern_probe_snapshot (&req, sh.no, score);
+}
+
+static bool dart_ctx_probe_layout(DartCtx *ctx) {
+	if (!ctx || !ctx->layout || R_STR_ISNOTEMPTY (ctx->dart_version_override) ||
+		R_STR_ISNOTEMPTY (ctx->snapshot_hash_override) || R_STR_ISEMPTY (ctx->snapshot_hash_actual) ||
+		dart_version_from_hash (ctx->snapshot_hash_actual)) {
+		return false;
+	}
+	const ut64 base = ctx->iso_data? ctx->iso_data: ctx->vm_data;
+	DartSnapshotHeader outer = { 0 };
+	if (!base || !dart_snapshot_fingerprint_read (ctx, base, &outer) || !outer.kind || outer.kind > 4) {
+		return false;
+	}
+	const bool one_data_snapshot = !ctx->vm_data || !ctx->iso_data || ctx->vm_data == ctx->iso_data;
+	const bool want_single = one_data_snapshot && outer.kind == 2;
+	const DartVerLayout *target = ctx->layout;
+	const int old_word_size = ctx->compressed_word_size;
+	const DartVerLayout *best = NULL;
+	ut64 best_score = 0;
+	int candidates = 0;
+	ctx->compressed_word_size = dart_word_size_from_flags (outer.flags);
+	for (int i = 0; i < dart_profile_count (); i++) {
+		const DartVerLayout *profile = dart_profile_at (i);
+		if (!profile || profile->single_snapshot != want_single) {
+			continue;
+		}
+		ut64 score = 0;
+		const bool valid = dart_probe_snapshot_with_profile (ctx, profile, base, &score);
+		if (ctx->verbose > 1) {
+			fprintf (stderr, "[r2flutter] layout probe profile=%s valid=%s semantic_score=%" PRIu64 "\n", profile->dart_version, r_str_bool (valid), (uint64_t)score);
+		}
+		if (!valid) {
+			continue;
+		}
+		candidates++;
+		if (!best || score > best_score) {
+			best = profile;
+			best_score = score;
+		}
+	}
+	ctx->layout = target;
+	ctx->compressed_word_size = old_word_size;
+	if (!best) {
+		if (ctx->verbose > 0) {
+			fprintf (stderr, "[r2flutter] layout probe found no structurally valid profile; keeping fingerprint fallback %s\n", target->dart_version);
+		}
+		return false;
+	}
+	char hash[DART_SNAPSHOT_HASH_SIZE + 1];
+	r_str_ncpy (hash, target->hash, sizeof (hash));
+	memcpy ((DartVerLayout *)target, best, sizeof (*best));
+	r_str_ncpy (((DartVerLayout *)target)->hash, hash, sizeof (((DartVerLayout *)target)->hash));
+	ctx->layout_probed = true;
+	if (best->single_snapshot && ctx->vm_data == ctx->iso_data) {
+		ctx->vm_data = 0;
+		if (ctx->vm_instr == ctx->iso_instr) {
+			ctx->vm_instr = 0;
+		}
+	}
+	if (ctx->verbose > 0) {
+		fprintf (stderr, "[r2flutter] layout probe selected profile %s from %d valid candidate%s (semantic_score=%" PRIu64 ")\n", best->dart_version, candidates, candidates == 1? "": "s", (uint64_t)best_score);
+	}
+	return true;
+}
+
 static void derive_layout_from_flags(DartCtx *ctx) {
 	const ut64 data = dart_ctx_primary_data (ctx);
 	if (!ctx || !data) {
@@ -208,15 +299,7 @@ static void derive_layout_from_flags(DartCtx *ctx) {
 	if (!dart_snapshot_header_read (ctx, data, &hdr)) {
 		return;
 	}
-	const char *flags = hdr.flags;
-	bool has_compressed = strstr (flags, "compressed-pointer") != NULL;
-	bool has_no_compressed = strstr (flags, "no-compressed-pointer") != NULL ||
-		strstr (flags, "no-compressed") != NULL;
-	if (has_compressed && !has_no_compressed) {
-		ctx->compressed_word_size = 4;
-	} else {
-		ctx->compressed_word_size = 8;
-	}
+	ctx->compressed_word_size = dart_word_size_from_flags (hdr.flags);
 	if (ctx->layout && ctx->compressed_word_size == 4) {
 		int major = 0;
 		int minor = 0;
@@ -234,6 +317,7 @@ static void derive_layout_from_flags(DartCtx *ctx) {
 }
 
 DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp) {
+	ctx->layout_probed = false;
 	extract_snapshot_hash_flags (ctx, dart_ctx_primary_data (ctx));
 	ctx->layout = R_STR_ISEMPTY (ctx->dart_version_override)? load_layout_from_json (dart_ctx_hash (ctx), tmp): NULL;
 	DartVerLayout *owned = NULL;
@@ -241,6 +325,7 @@ DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp) {
 		owned = dart_pick_layout_owned_for_ctx (ctx);
 		ctx->layout = owned;
 	}
+	(void)dart_ctx_probe_layout (ctx);
 	derive_layout_from_flags (ctx);
 	dart_ctx_set_version_source (ctx);
 	return owned;
@@ -249,6 +334,7 @@ DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp) {
 void dart_ctx_fini_layout(DartCtx *ctx, DartVerLayout *owned) {
 	dart_ver_layout_free (owned);
 	ctx->layout = NULL;
+	ctx->layout_probed = false;
 }
 
 static void dart_pool_print_snapshot_json(DartCtx *ctx) {
@@ -586,8 +672,10 @@ static int prepare_header_data(DartCtx *ctx) {
 	if (ok != 0) {
 		return -1;
 	}
+	ctx->layout_probed = false;
 	extract_snapshot_hash_flags (ctx, dart_ctx_primary_data (ctx));
 	ctx->layout = dart_pick_layout_owned_for_ctx (ctx);
+	(void)dart_ctx_probe_layout (ctx);
 	derive_layout_from_flags (ctx);
 	dart_ctx_set_version_source (ctx);
 	return 0;

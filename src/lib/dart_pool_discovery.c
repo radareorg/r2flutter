@@ -3,6 +3,21 @@
 #include "dart_pool_parse_priv.h"
 
 static bool looks_like_data_snapshot(DartCtx *ctx, ut64 base, ut64 *out_total_len) {
+	DartSnapshotHeader outer;
+	if (!dart_snapshot_fingerprint_read (ctx, base, &outer)) {
+		return false;
+	}
+	if (!outer.kind || outer.kind > 4) {
+		return false;
+	}
+	const bool known_layout = dart_version_from_hash (outer.hash) != NULL ||
+		R_STR_ISNOTEMPTY (ctx? ctx->dart_version_override: NULL);
+	if (!known_layout) {
+		if (out_total_len) {
+			*out_total_len = outer.total_len;
+		}
+		return true;
+	}
 	DartSnapshotHeader hdr;
 	if (!dart_snapshot_header_read (ctx, base, &hdr)) {
 		return false;
@@ -23,11 +38,11 @@ static bool looks_like_data_snapshot(DartCtx *ctx, ut64 base, ut64 *out_total_le
 }
 
 static bool dart_snapshot_is_single(DartCtx *ctx, ut64 base) {
-	DartSnapshotHeader hdr;
-	if (!base || !dart_snapshot_header_read (ctx, base, &hdr)) {
+	DartSnapshotHeader outer;
+	if (!base || !dart_snapshot_fingerprint_read (ctx, base, &outer)) {
 		return false;
 	}
-	const char *version = dart_version_from_hash (hdr.hash);
+	const char *version = dart_version_from_hash (outer.hash);
 	const DartVerLayout *layout = version? dart_profile_from_version (version): NULL;
 	return layout && layout->single_snapshot;
 }

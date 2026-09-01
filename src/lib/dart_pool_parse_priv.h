@@ -229,6 +229,7 @@ bool dart_read_unsigned_at(DartCtx *ctx, ut64 addr, ut64 *out_val, ut64 *out_nex
 bool dart_read_unsigned_buf(const ut8 *buf, ut64 size, ut64 pos, ut64 *out_val, ut64 *out_next);
 char *dart_utf16le_to_utf8(const ut8 *buf, ut64 size);
 bool dart_snapshot_header_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out);
+bool dart_snapshot_fingerprint_read(DartCtx *ctx, ut64 base, DartSnapshotHeader *out);
 bool dart_snapshot_header_read_buf(const ut8 *buf, ut64 size, const DartVerLayout *layout, DartSnapshotHeader *out);
 DartVerLayout *dart_ctx_init_layout(DartCtx *ctx, DartVerLayout *tmp);
 void dart_ctx_fini_layout(DartCtx *ctx, DartVerLayout *owned);
@@ -263,6 +264,7 @@ void skip_generic_cluster(ClusterStream *stream);
 bool modern_skip_n_bytes(ClusterStream *s, ut64 len);
 bool modern_supported(DartCtx *ctx);
 bool modern_emit_summary(const ModernSummaryReq *req);
+bool modern_probe_snapshot(const ModernReq *req, ut64 num_objects, ut64 *semantic_score);
 bool modern_build_pp(const ModernReq *req, DartPpInfo *out);
 bool modern_resolve_pp_slot(const ModernReq *req, ut64 pp_off, ModernPoolSlot *out);
 void modern_slot_fini(ModernPoolSlot *slot);

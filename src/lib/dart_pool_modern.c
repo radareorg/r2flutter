@@ -2759,6 +2759,48 @@ static ModernClusterMeta *modern_parse_cluster_meta(DartCtx *ctx, ut64 cluster_s
 	return meta;
 }
 
+bool modern_probe_snapshot(const ModernReq *req, ut64 num_objects, ut64 *semantic_score) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	if (semantic_score) {
+		*semantic_score = 0;
+	}
+	if (!ctx || !ctx->layout || !req->num_clusters || num_objects < req->num_base_objects) {
+		return false;
+	}
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
+	if (!meta) {
+		return false;
+	}
+	bool valid = true;
+	ut64 next_ref = req->num_base_objects + 1;
+	ut64 score = 0;
+	const int class_cid = dart_cid_get (ctx->layout, DART_CID_CLASS);
+	const int function_cid = dart_cid_get (ctx->layout, DART_CID_FUNCTION);
+	const int library_cid = dart_cid_get (ctx->layout, DART_CID_LIBRARY);
+	for (ut64 i = 0; i < req->num_clusters; i++) {
+		const ModernClusterMeta *m = &meta[i];
+		if (m->start_ref != next_ref || m->count > UT64_MAX - next_ref || !m->fill_parsed || !m->fill_ok ||
+			m->alloc_offset > m->alloc_end || m->fill_offset > m->fill_end || m->fill_end > req->cluster_end) {
+			valid = false;
+			break;
+		}
+		next_ref += m->count;
+		if (m->cid == function_cid) {
+			score += m->count * 4;
+		} else if (m->cid == class_cid || m->cid == library_cid) {
+			score += m->count;
+		}
+	}
+	if (valid) {
+		valid = num_objects < UT64_MAX && next_ref == num_objects + 1;
+	}
+	if (valid && semantic_score) {
+		*semantic_score = score;
+	}
+	modern_cluster_meta_free (meta, req->num_clusters);
+	return valid;
+}
+
 #define MODERN_VALUE_MAX_CHILDREN 128
 #define MODERN_VALUE_MAX_DEPTH 4
 

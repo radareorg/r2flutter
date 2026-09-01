@@ -2,7 +2,7 @@
 
 // Dart SDK version detection and layout profiles
 //
-// Supported Dart SDK versions: 2.10.0 - 3.12.2
+// Supported Dart SDK versions: 2.10.0 - 3.14.0
 // Based on Dart SDK source tags plus external snapshot-hash references.
 
 #include <r_core.h>
@@ -199,11 +199,25 @@ const char *dart_version_source_str(int source) {
 		return "exact-hash";
 	case DART_VERSION_SOURCE_OVERRIDE:
 		return "override";
+	case DART_VERSION_SOURCE_PROBE:
+		return "structural-probe";
 	case DART_VERSION_SOURCE_FINGERPRINT:
 		return "fingerprint";
 	default:
 		return "unknown";
 	}
+}
+
+int dart_profile_count(void) {
+	int count = 0;
+	while (version_profiles[count].dart_version) {
+		count++;
+	}
+	return count;
+}
+
+const DartVerLayout *dart_profile_at(int index) {
+	return index >= 0 && index < dart_profile_count ()? &version_profiles[index]: NULL;
 }
 
 const DartVerLayout *dart_profile_from_version(const char *version) {

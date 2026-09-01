@@ -51,12 +51,13 @@ typedef enum {
 } DartCodeAlloc;
 
 // How the Dart version/layout for a snapshot was determined. Reported so users
-// can tell whether decoding rests on an exact match or a best-effort guess.
+// can distinguish exact, structurally validated, and fallback profiles.
 typedef enum {
 	DART_VERSION_SOURCE_EXACT = 0, // snapshot hash matched a known SDK release
 	DART_VERSION_SOURCE_OVERRIDE = 1, // user forced a profile via -D
-	DART_VERSION_SOURCE_FINGERPRINT = 2, // unknown hash, layout inferred from evidence
-	DART_VERSION_SOURCE_UNKNOWN = 3 // no snapshot available
+	DART_VERSION_SOURCE_PROBE = 2, // unknown hash, layout selected by structural validation
+	DART_VERSION_SOURCE_FINGERPRINT = 3, // unknown hash, conservative fallback profile
+	DART_VERSION_SOURCE_UNKNOWN = 4 // no snapshot available
 } DartVersionSource;
 
 // Version layout information for Dart snapshots
@@ -90,6 +91,10 @@ const char *dart_version_from_hash(const char *hash);
 // Lookup version profile from a Dart version string using floor semantics.
 // Returns NULL if the version string is not a dotted numeric version.
 const DartVerLayout *dart_profile_from_version(const char *version);
+
+// Enumerate the built-in range-start profiles for structural probing.
+int dart_profile_count(void);
+const DartVerLayout *dart_profile_at(int index);
 
 // Pick a layout structure based on hash, with fallback to a compatible baseline
 // Returns a newly allocated DartVerLayout (caller must free)
