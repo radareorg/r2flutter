@@ -65,6 +65,12 @@ REF_ENCODING_NAMES = {
     "unsigned": "DART_REF_ENCODING_UNSIGNED",
 }
 
+POOL_ENCODING_NAMES = {
+    "modern": "DART_POOL_ENCODING_MODERN",
+    "low7": "DART_POOL_ENCODING_LOW7",
+    "low7_swapped": "DART_POOL_ENCODING_LOW7_SWAPPED",
+}
+
 TAG_STYLE_VALUES = {v: k for k, v in TAG_STYLE_NAMES.items()}
 
 CID_KIND_TO_CLASS_NAME = [
@@ -605,6 +611,15 @@ def ref_encoding_for_version(version):
     return REF_ENCODING_NAMES["ref_id128"]
 
 
+def pool_encoding_for_version(version):
+    ver_tuple = parse_version(version)
+    if ver_tuple < (3, 2):
+        return POOL_ENCODING_NAMES["low7"]
+    if ver_tuple < (3, 3):
+        return POOL_ENCODING_NAMES["low7_swapped"]
+    return POOL_ENCODING_NAMES["modern"]
+
+
 def profile_diff(existing, inferred):
     diffs = []
     for key in ("cws", "heap_object_tag", "max_alignment", "it_cap", "tag_style", "header_fields"):
@@ -720,10 +735,11 @@ def gen_profile_entries(offsets):
         tag_name = TAG_STYLE_NAMES.get(v["tag_style"], "0")
         header_style = header_style_for_version(ver)
         ref_encoding = ref_encoding_for_version(ver)
+        pool_encoding = pool_encoding_for_version(ver)
         lines.append(f'\t{{ "", "{ver}", {v["cws"]}, {v["heap_object_tag"]}, '
                      f'{v["max_alignment"]}, {v["it_cap"]}, {tag_name}, '
-                     f'{v["header_fields"]}, {header_style}, {ref_encoding} }}, // Dart {ver}')
-    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0, 0 }")
+                     f'{v["header_fields"]}, {header_style}, {ref_encoding}, {pool_encoding} }}, // Dart {ver}')
+    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0 }")
     lines.append("};")
     return "\n".join(lines)
 

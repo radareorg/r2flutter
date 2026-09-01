@@ -377,8 +377,8 @@ typedef struct {
 	int typed_data_internal_limit;
 	int typed_data_stride;
 	// Pre-3.0 snapshots (Dart 2.x) use an older serialization format for a
-	// handful of clusters and for the object pool entry bits. The exact byte
-	// layout of those readers is gated on this flag; everything else is shared.
+	// handful of clusters. Their readers are gated on this flag; everything
+	// else is shared.
 	bool legacy_format;
 	// every CID this layout defines, indexed by kind; -1 when the kind is absent
 	int by_kind[DART_CID_KIND_COUNT];
@@ -1740,27 +1740,21 @@ static bool modern_read_pool_entry(ClusterStream *s, DartCtx *ctx, ut64 index, M
 	if (!cs_read_u8 (s, &entry->bits)) {
 		return false;
 	}
-	if (ctx && ctx->layout && modern_layout_is_legacy (ctx->layout)) {
-		// Dart 2.x ObjectPoolBuilderEntry packs the entry type into TypeBits [0,7)
-		// and the patchability into bit 7. The serializer emits payloads by
-		// EntryType: kTaggedObject=0 (a ref), kImmediate=1 (a tagged word), and
-		// kNativeFunction=2 / kSwitchableCallMissEntryPoint=3 /
-		// kMegamorphicCallEntryPoint=4 (no payload). Downstream code keys off an
-		// internal convention -- 0 immediate, 1 tagged_object, 2 payload-less --
-		// so remap here. There is no separate "behavior" field in this format.
+	DartPoolEncoding encoding = ctx && ctx->layout? ctx->layout->pool_encoding: DART_POOL_ENCODING_MODERN;
+	if (encoding == DART_POOL_ENCODING_LOW7 || encoding == DART_POOL_ENCODING_LOW7_SWAPPED) {
+		// Dart 2.10-3.2 packs the type into bits [0,7) and patchability into
+		// bit 7, without a behavior field. Dart 3.2 swaps the values assigned to
+		// immediate and tagged entries. Remap both eras to the internal modern
+		// convention: 0 immediate, 1 tagged_object, 2 payload-less native.
 		const ut8 raw_type = entry->bits & 0x7f;
 		entry->patch = (entry->bits >> 7) & 1;
 		entry->behavior = 0;
-		switch (raw_type) {
-		case 0:
-			entry->type = 1; // kTaggedObject -> tagged_object
-			break;
-		case 1:
-			entry->type = 0; // kImmediate -> immediate
-			break;
-		default:
+		if (raw_type > 1) {
 			entry->type = 2; // native / switchable / megamorphic: no payload
-			break;
+		} else if (encoding == DART_POOL_ENCODING_LOW7_SWAPPED) {
+			entry->type = raw_type;
+		} else {
+			entry->type = raw_type ^ 1;
 		}
 	} else {
 		entry->type = entry->bits & 0x0f;

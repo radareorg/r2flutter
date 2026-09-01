@@ -15,7 +15,7 @@ cluster layouts next, then metadata/value restoration and profile detection.
   - Use unsigned LEB128 references through Dart 2.17.
   - Use the `ReadRefId` +128 encoding from Dart 2.18 onward.
   - Commit: `Add Versioned Snapshot Reference Decoding`
-- [ ] **R2F-DAE-003 — Handle versioned ObjectPool entry bits**
+- [x] **R2F-DAE-003 — Handle versioned ObjectPool entry bits**
   - Model low-seven-bit, swapped low-seven-bit, and modern bitfield eras.
   - Commit: `Handle Versioned ObjectPool Entry Bits`
 - [ ] **R2F-DAE-004 — Parse versioned Code cluster layouts**

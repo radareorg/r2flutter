@@ -1394,3 +1394,16 @@ All cluster reference reads must use the snapshot profile's reference codec.
 For example, Dart 2.17 encodes reference 300 as `2c 82`; interpreting those
 bytes with the newer codec produces a different reference and can silently
 misalign subsequent object fields.
+
+## ObjectPool Entries Have Three Bit-Packing Eras
+
+The ObjectPool cluster itself does not need separate parser implementations.
+r2flutter's normalized pool-entry model remains useful, but the byte-to-model
+translation must be selected independently from other legacy cluster rules.
+
+Dart 2.10 through 3.1 put the entry type in bits 0-6 and patchability in bit 7;
+type 0 is a tagged-object reference and type 1 an immediate. Dart 3.2 retains
+that bit width but swaps those two type values. Dart 3.3 and later use the
+modern layout: a four-bit type, bit 4 patchability, and bits 5-7 snapshot
+behavior. A broad Dart-2-versus-Dart-3 check therefore misdecodes 3.0-3.2 and
+may skip a serialized payload, shifting every following pool entry.

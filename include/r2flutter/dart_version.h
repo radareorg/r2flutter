@@ -37,6 +37,14 @@ typedef enum {
 	DART_REF_ENCODING_UNSIGNED
 } DartRefEncoding;
 
+// ObjectPool entry type/patch/behavior bit packing changed independently of
+// the surrounding cluster layout.
+typedef enum {
+	DART_POOL_ENCODING_MODERN = 0, // type[0..3], patch[4], behavior[5..7]
+	DART_POOL_ENCODING_LOW7, // type[0..6], patch[7], tagged=0, immediate=1
+	DART_POOL_ENCODING_LOW7_SWAPPED // type[0..6], patch[7], immediate=0, tagged=1
+} DartPoolEncoding;
+
 // How the Dart version/layout for a snapshot was determined. Reported so users
 // can tell whether decoding rests on an exact match or a best-effort guess.
 typedef enum {
@@ -59,6 +67,7 @@ typedef struct {
 	int header_fields;
 	DartHeaderStyle header_style;
 	DartRefEncoding ref_encoding;
+	DartPoolEncoding pool_encoding;
 } DartVerLayout;
 
 // Lookup Dart version from a snapshot hash (MD5)
