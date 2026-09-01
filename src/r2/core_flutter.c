@@ -102,7 +102,7 @@ static void r2flutter_help(RCore *core) {
 		"| r2flutter -l N     limit function/instruction-table/xref output\n"
 		"| r2flutter -m file  load Flutter obfuscation map JSON\n"
 		"| r2flutter -n       use heuristic name-pool fallback; names may be wrong\n"
-		"| r2flutter -O addr  decode Dart tagged/object pointer or ObjectPool PP slot\n"
+		"| r2flutter -O spec  decode a tagged pointer, PP slot, or snapshot ref:N\n"
 		"| r2flutter -p[j*]   print reconstructed ObjectPool PP value\n"
 		"| r2flutter -R       dump full radare2 script (like standalone -R)\n"
 		"| r2flutter -S[j*]   dump best-effort recovered SBOM/components\n"

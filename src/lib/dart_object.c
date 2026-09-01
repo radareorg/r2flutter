@@ -134,6 +134,17 @@ static bool dart_object_parse_pp_spec(const char *spec, ut64 *out) {
 	return dart_object_parse_u64 (p + 3, out);
 }
 
+static bool dart_object_parse_ref_spec(const char *spec, ut64 *out) {
+	if (R_STR_ISEMPTY (spec) || !out) {
+		return false;
+	}
+	const char *p = r_str_trim_head_ro (spec);
+	if (tolower ((ut8)p[0]) != 'r' || tolower ((ut8)p[1]) != 'e' || tolower ((ut8)p[2]) != 'f' || p[3] != ':') {
+		return false;
+	}
+	return dart_object_parse_u64 (p + 4, out);
+}
+
 static char *dart_object_bytes_preview(const ut8 *buf, ut64 len) {
 	RStrBuf *sb = r_strbuf_new ("");
 	for (ut64 i = 0; i < len; i++) {
@@ -378,11 +389,13 @@ static void dart_object_json_object_fields(PJ *pj, const DartObjectInfo *obj) {
 	}
 }
 
-static void dart_object_json_value(PJ *pj, const DartValueInfo *value, bool decode_raw) {
+static void dart_object_json_value(PJ *pj, const DartValueInfo *value, bool decode_raw, bool snapshot_ref) {
 	pj_ko (pj, "value");
 	pj_kn (pj, "raw", value->raw);
 	pj_kb (pj, "decoded", decode_raw);
-	if (!decode_raw) {
+	if (snapshot_ref) {
+		pj_ks (pj, "kind", "snapshot_ref");
+	} else if (!decode_raw) {
 		pj_ks (pj, "kind", "object_pool_ref");
 	} else if (value->selected >= 0) {
 		pj_ks (pj, "kind", "object");
@@ -465,7 +478,7 @@ static void dart_object_json_pool_slot(PJ *pj, const DartPpSlotInfo *slot) {
 	pj_end (pj);
 }
 
-static char *dart_object_dump_json(const char *spec, const DartValueInfo *value, const DartPpSlotInfo *slot, bool decode_raw) {
+static char *dart_object_dump_json(const char *spec, const DartValueInfo *value, const DartPpSlotInfo *slot, ModernValueGraph *graph, bool decode_raw) {
 	PJ *pj = pj_new ();
 	if (!pj) {
 		return strdup ("{\"error\":\"Failed to create JSON\"}");
@@ -482,6 +495,8 @@ static char *dart_object_dump_json(const char *spec, const DartValueInfo *value,
 			pj_ks (pj, "kind", "pp_slot");
 		}
 		dart_object_json_pool_slot (pj, slot);
+	} else if (graph) {
+		pj_ks (pj, "kind", "snapshot_ref");
 	} else if (decode_raw && value->selected >= 0) {
 		pj_ks (pj, "kind", "object");
 	} else if (value->is_smi) {
@@ -489,7 +504,8 @@ static char *dart_object_dump_json(const char *spec, const DartValueInfo *value,
 	} else {
 		pj_ks (pj, "kind", "unknown");
 	}
-	dart_object_json_value (pj, value, decode_raw);
+	dart_object_json_value (pj, value, decode_raw, graph && (!slot || !slot->present));
+	modern_value_graph_json (pj, graph);
 	pj_end (pj);
 	return pj_drain (pj);
 }
@@ -581,7 +597,7 @@ static void dart_object_text_pool_slot(RStrBuf *sb, const DartPpSlotInfo *slot) 
 	}
 }
 
-static char *dart_object_dump_text(const char *spec, const DartValueInfo *value, const DartPpSlotInfo *slot, bool decode_raw, bool quiet) {
+static char *dart_object_dump_text(const char *spec, const DartValueInfo *value, const DartPpSlotInfo *slot, ModernValueGraph *graph, bool decode_raw, bool quiet) {
 	RStrBuf *sb = r_strbuf_new ("");
 	if (quiet) {
 		if (slot && slot->present && slot->slot_ok && R_STR_ISNOTEMPTY (slot->slot.resolved_name)) {
@@ -595,6 +611,10 @@ static char *dart_object_dump_text(const char *spec, const DartValueInfo *value,
 				return r_strbuf_drain (sb);
 			}
 		}
+		if (graph) {
+			r_strbuf_append (sb, modern_value_graph_root_kind (graph));
+			return r_strbuf_drain (sb);
+		}
 		r_strbuf_appendf (sb, "raw=0x%" PFMT64x, value->raw);
 		return r_strbuf_drain (sb);
 	}
@@ -602,11 +622,14 @@ static char *dart_object_dump_text(const char *spec, const DartValueInfo *value,
 	if (slot && slot->present) {
 		dart_object_text_pool_slot (sb, slot);
 	}
-	dart_object_text_value (sb, value, decode_raw);
+	if (!graph || (slot && slot->present)) {
+		dart_object_text_value (sb, value, decode_raw);
+	}
+	modern_value_graph_text (sb, graph);
 	return r_strbuf_drain (sb);
 }
 
-static char *dart_object_dump_r2(const DartValueInfo *value, const DartPpSlotInfo *slot, bool decode_raw) {
+static char *dart_object_dump_r2(const DartValueInfo *value, const DartPpSlotInfo *slot, ModernValueGraph *graph, bool decode_raw) {
 	RStrBuf *sb = r_strbuf_new ("");
 	if (slot && slot->present && slot->read_ok) {
 		r_strbuf_appendf (sb, "'@0x%" PFMT64x "'CC Dart PP slot offset=0x%" PFMT64x " raw=0x%" PFMT64x, slot->addr, slot->offset, slot->raw);
@@ -637,6 +660,9 @@ static char *dart_object_dump_r2(const DartValueInfo *value, const DartPpSlotInf
 	} else if (decode_raw && value->is_smi) {
 		r_strbuf_appendf (sb, "'CC Dart Smi raw=0x%" PFMT64x " value=%" PFMT64d "\n", value->raw, value->smi);
 	}
+	if (graph) {
+		r_strbuf_appendf (sb, "'CC Dart snapshot value kind=%s\n", modern_value_graph_root_kind (graph));
+	}
 	return r_strbuf_drain (sb);
 }
 
@@ -657,8 +683,10 @@ char *dart_pool_dump_object(DartCtx *ctx, const char *spec, int fmt) {
 	DartVerLayout *layout_owned = ctx->layout? NULL: dart_ctx_init_layout (ctx, &layout_tmp);
 	ut64 raw = 0;
 	ut64 pp_offset = 0;
+	ut64 snapshot_ref = 0;
 	bool is_pp = dart_object_parse_pp_spec (spec, &pp_offset);
-	if (!is_pp) {
+	bool is_ref = dart_object_parse_ref_spec (spec, &snapshot_ref);
+	if (!is_pp && !is_ref) {
 		if (!dart_object_parse_u64 (spec, &raw)) {
 			if (layout_owned) {
 				dart_ctx_fini_layout (ctx, layout_owned);
@@ -694,15 +722,35 @@ char *dart_pool_dump_object(DartCtx *ctx, const char *spec, int fmt) {
 			decode_raw = ! (slot.slot_ok && slot.slot.behavior == 0 && slot.slot.type == 1);
 		}
 	}
-	dart_value_decode (ctx, raw, &value);
+	if (!is_ref) {
+		dart_value_decode (ctx, raw, &value);
+	} else {
+		decode_raw = false;
+	}
+	ModernValueGraph *graph = NULL;
+	if (is_ref || (slot.slot_ok && slot.slot.behavior == 0 && slot.slot.type == 1)) {
+		const ut64 snapshot_base = is_pp? slot.pp.snapshot_base: ctx->iso_data;
+		DartSnapshotHeader sh = { 0 };
+		if (snapshot_base && dart_snapshot_header_read (ctx, snapshot_base, &sh) && sh.ok) {
+			const ModernReq req = {
+				ctx,
+				sh.cluster_start,
+				snapshot_base + sh.total_len,
+				sh.nc,
+				sh.nb
+			};
+			graph = modern_value_graph_new (&req, is_ref? snapshot_ref: slot.slot.ref);
+		}
+	}
 	char *out = NULL;
 	if (fmt == 'j') {
-		out = dart_object_dump_json (spec, &value, is_pp? &slot: NULL, decode_raw);
+		out = dart_object_dump_json (spec, &value, is_pp? &slot: NULL, graph, decode_raw);
 	} else if (fmt == 'r') {
-		out = dart_object_dump_r2 (&value, is_pp? &slot: NULL, decode_raw);
+		out = dart_object_dump_r2 (&value, is_pp? &slot: NULL, graph, decode_raw);
 	} else {
-		out = dart_object_dump_text (spec, &value, is_pp? &slot: NULL, decode_raw, ctx->quiet);
+		out = dart_object_dump_text (spec, &value, is_pp? &slot: NULL, graph, decode_raw, ctx->quiet);
 	}
+	modern_value_graph_free (graph);
 	dart_value_info_fini (&value);
 	dart_pp_slot_info_fini (&slot);
 	if (layout_owned) {

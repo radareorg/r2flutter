@@ -1,0 +1,43 @@
+NAME=snapshot-value-graph-android
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -j -O ref:158145 bins/android/mafia 2>/dev/null | python3 -c 'import json,sys; s=json.load(sys.stdin)["snapshot"]; d=s["fields"][2]["value"]; a=d["elements"]; i=a[1]["value"]; f=i["fields"]; print("%s cid=%d complete=%s data=%s len=%d pair=%s:%s(%s) fields=%s,%s,%s"%(s["kind"],s["cid"],s["complete"],d["kind"],d["length"],a[0]["value"]["value"],i["kind"],i["name"],f[0]["value"],f[1]["value"],f[2]["value"]["value"]))'
+!!../bin/r2flutter -q -j -O ref:160785 bins/android/mafia 2>/dev/null | python3 -c 'import json,sys; s=json.load(sys.stdin)["snapshot"]; print("%s cid=%d complete=%s data=%s"%(s["kind"],s["cid"],s["complete"],s["fields"][2]["value"]["kind"]))'
+EOF
+EXPECT=<<EOF
+map cid=87 complete=True data=array len=48 pair=129:instance(SemanticsAction) fields=1,0,tap
+set cid=89 complete=True data=array
+EOF
+RUN
+
+NAME=snapshot-value-graph-ios-rodata
+FILE=-
+CMDS=<<EOF
+!!../bin/r2flutter -q -j -O ref:209553 bins/ios/AuthPass.app/Frameworks/App.framework/App 2>/dev/null | python3 -c 'import json,sys; s=json.load(sys.stdin)["snapshot"]; a=s["fields"][2]["value"]["elements"]; print("%s cid=%d complete=%s strings=%s/%s"%(s["kind"],s["cid"],s["complete"],a[0]["value"]["value"],a[1]["value"]["value"]))'
+!!../bin/r2flutter -q -j -O ref:211161 bins/ios/AuthPass.app/Frameworks/App.framework/App 2>/dev/null | python3 -c 'import json,sys; s=json.load(sys.stdin)["snapshot"]; print("%s cid=%d complete=%s data=%s"%(s["kind"],s["cid"],s["complete"],s["fields"][2]["value"]["kind"]))'
+EOF
+EXPECT=<<EOF
+map cid=86 complete=True strings=cancel/Cancel
+set cid=88 complete=True data=array
+EOF
+RUN
+
+NAME=snapshot-value-graph-bounds-and-truncation
+FILE=-
+CMDS=<<EOF
+!!python3 -c 'import sys; open(sys.argv[1],"wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-value-map.bin 50414421f5f5dcdc63000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082818180800060d5818080808080
+!!python3 -c 'import sys; open(sys.argv[1],"wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-value-map-truncated.bin 50414421f5f5dcdc62000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082818180800060d58180808080
+!!python3 -c 'import sys; open(sys.argv[1],"wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-value-cycle.bin 50414421f5f5dcdc62000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082818180800040d68181818083
+!!../bin/r2flutter -q -j -O ref:3 /tmp/r2flutter-value-map.bin 2>/dev/null | python3 -c 'import json,sys; s=json.load(sys.stdin)["snapshot"]; print("valid",s["kind"],s["complete"],[(x["name"],x["value"]["kind"]) for x in s["fields"]])'
+!!../bin/r2flutter -q -j -O ref:3 /tmp/r2flutter-value-cycle.bin 2>/dev/null | python3 -c 'import json,sys; s=json.load(sys.stdin)["snapshot"]; v=s["elements"][0]["value"]; print("cycle",s["kind"],s["complete"],s["length"],v["kind"],v["cycle"])'
+!!../bin/r2flutter -q -j -O ref:3 /tmp/r2flutter-value-map-truncated.bin 2>/dev/null | python3 -c 'import json,sys; s=json.load(sys.stdin)["snapshot"]; print("truncated",s["kind"],s["complete"],"fields" in s)'
+!!../bin/r2flutter -q -j -O ref:99 /tmp/r2flutter-value-map.bin 2>/dev/null | python3 -c 'import json,sys; s=json.load(sys.stdin)["snapshot"]; print("invalid",s["kind"],s["complete"])'
+!!rm -f /tmp/r2flutter-value-map.bin /tmp/r2flutter-value-map-truncated.bin /tmp/r2flutter-value-cycle.bin
+EOF
+EXPECT=<<EOF
+valid map True [('type_arguments', 'null'), ('hash_mask', 'null'), ('data', 'null'), ('used_data', 'null'), ('deleted_keys', 'null')]
+cycle array True 1 array True
+truncated map False False
+invalid out_of_range False
+EOF
+RUN

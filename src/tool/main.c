@@ -27,7 +27,7 @@ static const char usage_text[] =
 	"  -H[HH]                Print Dart AOT snapshot header info\n"
 	"  -i[jr*]               Print instruction table entries (-ii same as -i)\n"
 	"  -ie[jr*], -E[jr*]     Print Dart code entrypoint\n"
-	"  -O <addr|pp+off>      Decode Dart tagged/object pointer or ObjectPool PP slot\n"
+	"  -O <addr|pp+off|ref:N> Decode a tagged pointer, PP slot, or snapshot reference\n"
 	"  -p[jr*]               Print reconstructed ObjectPool PP value\n"
 	"  -R                    Print radare2 script for snapshot analysis\n"
 	"  -S[jr*]               Print best-effort recovered SBOM/components\n"

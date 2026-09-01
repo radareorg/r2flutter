@@ -1469,3 +1469,30 @@ the older `super_class_ref` slot: that slot denotes a resolved Class object,
 whereas the serialized value points to a Type object. JSON exposes both forms
 without conflating them. A failed Class fill is discarded atomically, so a
 truncated bitmap cannot leak partially initialized class metadata.
+
+## Snapshot Values Are Best Resolved On Demand
+
+DAE eagerly retains every serialized Instance, Array, Map, and Set. r2flutter
+already resolves ObjectPool entries and inspects runtime heap addresses, so an
+on-demand graph keyed by snapshot reference fits better: it avoids permanent
+memory proportional to the whole snapshot and lets both `pp+offset` and
+`ref:N` use the same inspector. Nodes cache their decoded fields during one
+inspection. Rendering stops at cycles, a fixed recursion depth, and 128
+children, while retaining the serialized collection length and truncation
+status.
+
+Array fills contain their length again, followed by a type-arguments reference
+and element references. Modern Map and Set fills use five references:
+type-arguments, hash mask, backing data Array, used-data count, and deleted-key
+marker. Instance fills start with one cluster bitmap. Reference fields consume
+one reference ID; bitmap-marked unboxed fields consume two tagged 32-bit
+halves. The number of header words is `8 / compressed_word_size`, so it must
+not be copied from DAE's fixed 64-bit profile assumptions.
+
+Uncompressed snapshots store strings in the read-only data image rather than
+the cluster fill. Recursive value inspection therefore has to enrich its
+reference resolver from the matching snapshot's data image; otherwise iOS
+graphs retain string references but incorrectly report their values as
+incomplete. A truncated fill still produces a node with `complete=false` and
+no partially trusted edges, and an invalid reference is reported as
+`out_of_range`.

@@ -30,7 +30,7 @@ cluster layouts next, then metadata/value restoration and profile detection.
   - Keep class ID, library/super references, next-field offset, and bitmap.
   - Test ordinary, top-level, and truncated Class fills.
   - Commit: `Retain Serialized Class Layout Metadata`
-- [ ] **R2F-DAE-007 — Retain snapshot object value graph**
+- [x] **R2F-DAE-007 — Retain snapshot object value graph**
   - Preserve Instance, Array, Map, and Set values by object reference.
   - Expose bounded recursive values through the object inspector.
   - Commit: `Retain Snapshot Object Value Graph`

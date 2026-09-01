@@ -362,7 +362,7 @@ name, then applies it to:
 | `-HH` | Dump the snapshot header plus VM/isolate cluster allocation/fill layout. |
 | `-HHH` | Add selected cluster payload diagnostics, currently ObjectPool entry decoding/status plus conservative ref resolution. |
 | `-i` | Dump instruction-table entries. |
-| `-O <addr\|pp+off>` | Decode a Dart Smi/tagged heap pointer/object address, or decode a reconstructed ObjectPool PP slot such as `pp+0x68`. Honors `-j`, `-q`, and `-r`. |
+| `-O <addr\|pp+off\|ref:N>` | Decode a Dart Smi/tagged heap pointer/object address, a reconstructed ObjectPool PP slot such as `pp+0x68`, or a serialized snapshot reference. Snapshot values are recursively bounded and preserve arrays, maps, sets, and instance fields. Honors `-j`, `-q`, and `-r`. |
 | `-p` | Print the reconstructed static ObjectPool PP address pair; with `-r`, map the synthetic pool image and set `anal.gp`/`x27` from the synthetic vaddr. |
 | `-R` | Dump a radare2 script for applying method flags/comments and PP helpers. |
 | `-S` | Dump best-effort recovered components/SBOM with source, confidence, evidence, and nullable versions. |
@@ -411,7 +411,7 @@ Plugin actions:
 | `r2flutter -HH` | Print snapshot header info plus VM/isolate cluster allocation/fill layout. |
 | `r2flutter -HHH` | Print cluster layout plus selected payload diagnostics, currently ObjectPool entries/status and ref resolution. |
 | `r2flutter -i` | Print instruction-table entries. |
-| `r2flutter -O addr` | Decode a Dart Smi/tagged heap pointer/object address, or decode a reconstructed ObjectPool PP slot such as `pp+0x68`. Honors `-j`, `-q`, and `-r`. |
+| `r2flutter -O spec` | Decode a Dart Smi/tagged heap pointer/object address, a reconstructed ObjectPool PP slot such as `pp+0x68`, or a serialized snapshot reference such as `ref:209553`. Honors `-j`, `-q`, and `-r`. |
 | `r2flutter -p` | Print the reconstructed static ObjectPool PP address pair. |
 | `r2flutter -R` | Print full radare2 script output. |
 | `r2flutter -S` | Dump best-effort recovered components/SBOM from the current binary context. |

@@ -11,10 +11,10 @@ RUN
 NAME=object-inspect-pp-mafia
 FILE=-
 CMDS=<<EOF
-!!../bin/r2flutter -q -j -O pp+0x68 bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); p = j["pp_slot"]; v = j["value"]; print ("%s index=%d type=%s kind=%s cid=%d name=%s decoded=%s" % (j["kind"], p["entry_index"], p["type"], p["resolved_kind"], p["resolved_cid"], p["resolved_name"], v["decoded"]))'
+!!../bin/r2flutter -q -j -O pp+0x68 bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); p = j["pp_slot"]; v = j["value"]; s = j["snapshot"]; print ("%s index=%d type=%s kind=%s cid=%d name=%s decoded=%s snapshot=%s:%s" % (j["kind"], p["entry_index"], p["type"], p["resolved_kind"], p["resolved_cid"], p["resolved_name"], v["decoded"], s["kind"], s["value"]))'
 EOF
 EXPECT=<<EOF
-object_pool_ref index=11 type=tagged_object kind=string cid=93 name=getCallbackHandle decoded=False
+object_pool_ref index=11 type=tagged_object kind=string cid=93 name=getCallbackHandle decoded=False snapshot=string:getCallbackHandle
 EOF
 RUN
 

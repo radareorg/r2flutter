@@ -113,6 +113,7 @@ typedef struct {
 	ut64 *string_addr_by_ref;
 	ut32 *string_flags_by_ref;
 	ut64 *class_name_ref;
+	ut32 *class_id_by_ref;
 	ut64 *library_name_ref;
 	ut64 *patch_wrapped_ref;
 	ut64 *function_name_ref;
@@ -1887,6 +1888,7 @@ static void modern_ref_resolver_fini(ModernRefResolver *resolver) {
 	free (resolver->string_addr_by_ref);
 	free (resolver->string_flags_by_ref);
 	free (resolver->class_name_ref);
+	free (resolver->class_id_by_ref);
 	free (resolver->library_name_ref);
 	free (resolver->patch_wrapped_ref);
 	free (resolver->function_name_ref);
@@ -1925,6 +1927,7 @@ static bool modern_resolver_read_class_fill(ModernWalk *w, ClusterStream *s, con
 		}
 		if (ref < resolver->refs_count) {
 			resolver->class_name_ref[ref] = name_ref;
+			resolver->class_id_by_ref[ref] = class_id;
 		}
 	}
 	return true;
@@ -2058,12 +2061,13 @@ static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, 
 	resolver->string_addr_by_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->string_flags_by_ref = (ut32 *)calloc ((size_t)resolver->refs_count, sizeof (ut32));
 	resolver->class_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	resolver->class_id_by_ref = (ut32 *)calloc ((size_t)resolver->refs_count, sizeof (ut32));
 	resolver->library_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->patch_wrapped_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->function_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->function_owner_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->function_code_index = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
-	if (!resolver->cluster_by_ref || !resolver->strings_by_ref || !resolver->string_addr_by_ref || !resolver->string_flags_by_ref || !resolver->class_name_ref || !resolver->library_name_ref || !resolver->patch_wrapped_ref || !resolver->function_name_ref || !resolver->function_owner_ref || !resolver->function_code_index) {
+	if (!resolver->cluster_by_ref || !resolver->strings_by_ref || !resolver->string_addr_by_ref || !resolver->string_flags_by_ref || !resolver->class_name_ref || !resolver->class_id_by_ref || !resolver->library_name_ref || !resolver->patch_wrapped_ref || !resolver->function_name_ref || !resolver->function_owner_ref || !resolver->function_code_index) {
 		modern_ref_resolver_fini (resolver);
 		return false;
 	}
@@ -2753,6 +2757,513 @@ static ModernClusterMeta *modern_parse_cluster_meta(DartCtx *ctx, ut64 cluster_s
 		return NULL;
 	}
 	return meta;
+}
+
+#define MODERN_VALUE_MAX_CHILDREN 128
+#define MODERN_VALUE_MAX_DEPTH 4
+
+typedef struct {
+	ut64 index;
+	ut64 ref;
+	ut64 unboxed;
+	bool is_unboxed;
+} ModernValueEdge;
+
+typedef struct {
+	bool loaded;
+	bool complete;
+	bool edges_truncated;
+	bool has_type_arguments;
+	bool has_scalar;
+	ut64 ref;
+	ut64 count;
+	ut64 type_arguments_ref;
+	ut64 scalar;
+	int cid;
+	const char *kind;
+	char *name;
+	ModernValueEdge *edges;
+	ut64 edge_count;
+} ModernValueNode;
+
+struct modern_value_graph_t {
+	DartCtx *ctx;
+	ModernClusterMeta *meta;
+	ModernRefResolver resolver;
+	ModernCidCache cids;
+	ModernValueNode **nodes;
+	ut64 num_clusters;
+	ut64 valid_refs_count;
+	ut64 root_ref;
+};
+
+static const char *modern_value_kind(const ModernValueGraph *graph, const ModernClusterMeta *meta) {
+	if (!meta) {
+		return "base_object";
+	}
+	const ModernCidCache *cids = &graph->cids;
+	if (modern_is_string_cid (cids, meta->cid)) {
+		return "string";
+	}
+	if (modern_is_array_cid (cids, meta->cid)) {
+		return "array";
+	}
+	if (modern_cid_eq (meta->cid, cids->map) || modern_cid_eq (meta->cid, cids->const_map)) {
+		return "map";
+	}
+	if (modern_cid_eq (meta->cid, cids->set) || modern_cid_eq (meta->cid, cids->const_set)) {
+		return "set";
+	}
+	if (modern_cid_eq (meta->cid, cids->mint)) {
+		return "mint";
+	}
+	if (meta->fill_kind == MODERN_FILL_INSTANCE) {
+		return "instance";
+	}
+	return modern_ref_kind_for_meta (cids, meta);
+}
+
+static char *modern_value_class_name(const ModernValueGraph *graph, int cid) {
+	const ModernRefResolver *resolver = &graph->resolver;
+	for (ut64 ref = 1; ref < resolver->refs_count; ref++) {
+		if ((int)resolver->class_id_by_ref[ref] != cid) {
+			continue;
+		}
+		ut64 name_ref = resolver->class_name_ref[ref];
+		if (name_ref < resolver->refs_count && resolver->strings_by_ref[name_ref]) {
+			return strdup (resolver->strings_by_ref[name_ref]);
+		}
+	}
+	return NULL;
+}
+
+static bool modern_value_edges_alloc(ModernValueNode *node, ut64 count) {
+	node->count = count;
+	node->edge_count = R_MIN (count, (ut64)MODERN_VALUE_MAX_CHILDREN);
+	node->edges_truncated = node->edge_count < count;
+	if (!node->edge_count) {
+		return true;
+	}
+	node->edges = (ModernValueEdge *)calloc ((size_t)node->edge_count, sizeof (ModernValueEdge));
+	return node->edges != NULL;
+}
+
+static bool modern_value_read_array(ModernValueGraph *graph, ModernValueNode *node, const ModernClusterMeta *meta) {
+	ClusterStream s = {
+		.ctx = graph->ctx,
+		.cursor = meta->fill_offset,
+		.end = meta->fill_end,
+};
+	const ut64 target = node->ref - meta->start_ref;
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		ut64 type_args = 0;
+		if (!cs_read_unsigned (&s, &length) || !cs_read_ref_id (&s, &type_args)) {
+			return false;
+		}
+		if (i == target) {
+			node->has_type_arguments = true;
+			node->type_arguments_ref = type_args;
+			if (!modern_value_edges_alloc (node, length)) {
+				return false;
+			}
+		}
+		for (ut64 j = 0; j < length; j++) {
+			ut64 ref = 0;
+			if (!cs_read_ref_id (&s, &ref)) {
+				return false;
+			}
+			if (i == target && j < node->edge_count) {
+				node->edges[j].index = j;
+				node->edges[j].ref = ref;
+			}
+		}
+		if (i == target) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool modern_value_read_refs(ModernValueGraph *graph, ModernValueNode *node, const ModernClusterMeta *meta) {
+	const ModernFillSpec spec = modern_get_fill_spec (&graph->cids, meta->cid);
+	ClusterStream s = {
+		.ctx = graph->ctx,
+		.cursor = meta->fill_offset,
+		.end = meta->fill_end,
+};
+	const ut64 target = node->ref - meta->start_ref;
+	for (ut64 i = 0; i < meta->count; i++) {
+		if (i == target && !modern_value_edges_alloc (node, (ut64)spec.num_refs)) {
+			return false;
+		}
+		for (int j = 0; j < spec.num_refs; j++) {
+			ut64 ref = 0;
+			if (!cs_read_ref_id (&s, &ref)) {
+				return false;
+			}
+			if (i == target && (ut64)j < node->edge_count) {
+				node->edges[j].index = (ut64)j;
+				node->edges[j].ref = ref;
+			}
+		}
+		for (int j = 0; j < spec.scalar_count; j++) {
+			if (!modern_skip_scalar (&s, spec.scalars[j])) {
+				return false;
+			}
+		}
+		if (i == target) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool modern_value_read_instance(ModernValueGraph *graph, ModernValueNode *node, const ModernClusterMeta *meta) {
+	ClusterStream s = {
+		.ctx = graph->ctx,
+		.cursor = meta->fill_offset,
+		.end = meta->fill_end,
+};
+	ut64 bitmap = 0;
+	if (!cs_read_unsigned (&s, &bitmap)) {
+		return false;
+	}
+	const int word_size = graph->ctx->compressed_word_size? graph->ctx->compressed_word_size: 4;
+	const int header_words = 8 / word_size;
+	const int num_fields = R_MAX (meta->next_field_offset_words - header_words, 0);
+	if (!modern_value_edges_alloc (node, (ut64)num_fields)) {
+		return false;
+	}
+	const ut64 target = node->ref - meta->start_ref;
+	for (ut64 i = 0; i < meta->count; i++) {
+		for (int j = 0; j < num_fields; j++) {
+			const int field_word = header_words + j;
+			const bool unboxed = ((bitmap >> field_word) & 1ULL) != 0;
+			if (unboxed) {
+				ut32 low = 0;
+				ut32 high = 0;
+				if (!cs_read_tagged32 (&s, &low) || !cs_read_tagged32 (&s, &high)) {
+					return false;
+				}
+				if (i == target && (ut64)j < node->edge_count) {
+					node->edges[j].index = (ut64)j;
+					node->edges[j].is_unboxed = true;
+					node->edges[j].unboxed = (ut64)low | ((ut64)high << 32);
+				}
+			} else {
+				ut64 ref = 0;
+				if (!cs_read_ref_id (&s, &ref)) {
+					return false;
+				}
+				if (i == target && (ut64)j < node->edge_count) {
+					node->edges[j].index = (ut64)j;
+					node->edges[j].ref = ref;
+				}
+			}
+		}
+		if (i == target) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool modern_value_read_mint(ModernValueGraph *graph, ModernValueNode *node, const ModernClusterMeta *meta) {
+	ClusterStream s = {
+		.ctx = graph->ctx,
+		.cursor = meta->alloc_offset,
+		.end = meta->alloc_end,
+};
+	ut64 count = 0;
+	if (!cs_read_unsigned (&s, &count)) {
+		return false;
+	}
+	const ut64 target = node->ref - meta->start_ref;
+	for (ut64 i = 0; i < count; i++) {
+		int64_t value = 0;
+		if (!cs_read_tagged64 (&s, &value)) {
+			return false;
+		}
+		if (i == target) {
+			node->has_scalar = true;
+			node->scalar = (ut64)value;
+			return true;
+		}
+	}
+	return false;
+}
+
+static ModernValueNode *modern_value_graph_node(ModernValueGraph *graph, ut64 ref) {
+	if (!graph || ref >= graph->valid_refs_count) {
+		return NULL;
+	}
+	ModernValueNode *node = graph->nodes[ref];
+	if (!node) {
+		node = R_NEW0 (ModernValueNode);
+		node->ref = ref;
+		node->cid = -1;
+		graph->nodes[ref] = node;
+	}
+	if (node->loaded) {
+		return node;
+	}
+	node->loaded = true;
+	if (!ref) {
+		node->kind = "null";
+		node->complete = true;
+		return node;
+	}
+	const ModernClusterMeta *meta = modern_resolver_cluster_for_ref (&graph->resolver, ref);
+	node->kind = modern_value_kind (graph, meta);
+	if (!meta) {
+		node->complete = ref <= graph->resolver.num_base_objects;
+		return node;
+	}
+	node->cid = meta->cid;
+	if (!strcmp (node->kind, "string")) {
+		if (graph->resolver.strings_by_ref[ref]) {
+			node->name = strdup (graph->resolver.strings_by_ref[ref]);
+			node->complete = true;
+		}
+		return node;
+	}
+	if (!strcmp (node->kind, "mint")) {
+		node->complete = modern_value_read_mint (graph, node, meta);
+		return node;
+	}
+	if (!strcmp (node->kind, "instance")) {
+		node->name = modern_value_class_name (graph, meta->cid);
+	}
+	if (meta->fill_kind == MODERN_FILL_NONE) {
+		node->complete = true;
+		return node;
+	}
+	if (!meta->fill_parsed || !meta->fill_ok) {
+		return node;
+	}
+	if (!strcmp (node->kind, "array")) {
+		node->complete = modern_value_read_array (graph, node, meta);
+	} else if (meta->fill_kind == MODERN_FILL_REFS) {
+		node->complete = modern_value_read_refs (graph, node, meta);
+	} else if (!strcmp (node->kind, "instance")) {
+		node->complete = modern_value_read_instance (graph, node, meta);
+	} else {
+		node->complete = true;
+	}
+	return node;
+}
+
+ModernValueGraph *modern_value_graph_new(const ModernReq *req, ut64 root_ref) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	if (!ctx || !modern_supported (ctx)) {
+		return NULL;
+	}
+	ModernValueGraph *graph = R_NEW0 (ModernValueGraph);
+	graph->ctx = ctx;
+	graph->num_clusters = req->num_clusters;
+	graph->root_ref = root_ref;
+	graph->cids = modern_cid_cache_init (ctx->layout);
+	graph->meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
+	if (!graph->meta || !modern_ref_resolver_init (&graph->resolver, ctx, graph->meta, req->num_clusters, req->num_base_objects)) {
+		modern_value_graph_free (graph);
+		return NULL;
+	}
+	graph->valid_refs_count = req->num_base_objects + 1;
+	for (ut64 i = 0; i < req->num_clusters; i++) {
+		graph->valid_refs_count = R_MAX (graph->valid_refs_count, graph->meta[i].start_ref + graph->meta[i].count);
+	}
+	const ut64 snapshot_bases[] = { ctx->iso_data, ctx->vm_data };
+	for (size_t i = 0; i < R_ARRAY_SIZE (snapshot_bases); i++) {
+		DartSnapshotHeader sh = { 0 };
+		const ut64 base = snapshot_bases[i];
+		if (base && dart_snapshot_header_read (ctx, base, &sh) && sh.ok && sh.cluster_start == req->cluster_start) {
+			modern_load_rodata_strings (ctx, graph->meta, req->num_clusters, base, sh.total_len, graph->resolver.strings_by_ref, graph->resolver.string_addr_by_ref, graph->resolver.refs_count);
+			break;
+		}
+	}
+	graph->nodes = (ModernValueNode **)calloc ((size_t)graph->resolver.refs_count, sizeof (ModernValueNode *));
+	if (!graph->nodes) {
+		modern_value_graph_free (graph);
+		return NULL;
+	}
+	return graph;
+}
+
+void modern_value_graph_free(ModernValueGraph *graph) {
+	if (!graph) {
+		return;
+	}
+	if (graph->nodes) {
+		for (ut64 ref = 0; ref < graph->resolver.refs_count; ref++) {
+			ModernValueNode *node = graph->nodes[ref];
+			if (node) {
+				free (node->name);
+				free (node->edges);
+				free (node);
+			}
+		}
+	}
+	free (graph->nodes);
+	modern_ref_resolver_fini (&graph->resolver);
+	modern_cluster_meta_free (graph->meta, graph->num_clusters);
+	free (graph);
+}
+
+static const char *modern_value_edge_name(const ModernValueNode *node, ut64 index, char *buf, size_t bufsz) {
+	if (!strcmp (node->kind, "map") || !strcmp (node->kind, "set")) {
+		static const char *names[] = { "type_arguments", "hash_mask", "data", "used_data", "deleted_keys" };
+		if (index < R_ARRAY_SIZE (names)) {
+			return names[index];
+		}
+	}
+	const char *prefix = !strcmp (node->kind, "array")? "element": "field";
+	snprintf (buf, bufsz, "%s_%" PRIu64, prefix, (uint64_t)index);
+	return buf;
+}
+
+static bool modern_value_path_contains(const ut64 *path, int path_count, ut64 ref) {
+	for (int i = 0; i < path_count; i++) {
+		if (path[i] == ref) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void modern_value_json_node(PJ *pj, ModernValueGraph *graph, ut64 ref, int depth, ut64 *path, int path_count) {
+	pj_o (pj);
+	pj_kn (pj, "ref", ref);
+	if (ref >= graph->valid_refs_count) {
+		pj_ks (pj, "kind", "out_of_range");
+		pj_kb (pj, "complete", false);
+		pj_end (pj);
+		return;
+	}
+	ModernValueNode *node = modern_value_graph_node (graph, ref);
+	pj_ks (pj, "kind", node->kind? node->kind: "unknown");
+	pj_kb (pj, "complete", node->complete);
+	if (node->cid >= 0) {
+		pj_ki (pj, "cid", node->cid);
+	}
+	if (node->name) {
+		pj_ks (pj, !strcmp (node->kind, "string")? "value": "name", node->name);
+	}
+	if (node->has_scalar) {
+		pj_kN (pj, "value", (st64)node->scalar);
+	}
+	if (node->has_type_arguments) {
+		pj_kn (pj, "type_arguments_ref", node->type_arguments_ref);
+	}
+	if (node->count || node->edges) {
+		pj_kn (pj, "length", node->count);
+		pj_kb (pj, "values_truncated", node->edges_truncated);
+	}
+	if (modern_value_path_contains (path, path_count, ref)) {
+		pj_kb (pj, "cycle", true);
+		pj_end (pj);
+		return;
+	}
+	if (depth >= MODERN_VALUE_MAX_DEPTH && node->edge_count) {
+		pj_kb (pj, "depth_truncated", true);
+		pj_end (pj);
+		return;
+	}
+	path[path_count++] = ref;
+	if (node->edge_count) {
+		pj_ka (pj, !strcmp (node->kind, "array")? "elements": "fields");
+		for (ut64 i = 0; i < node->edge_count; i++) {
+			const ModernValueEdge *edge = &node->edges[i];
+			char name[32];
+			pj_o (pj);
+			pj_kn (pj, "index", edge->index);
+			pj_ks (pj, "name", modern_value_edge_name (node, edge->index, name, sizeof (name)));
+			if (edge->is_unboxed) {
+				pj_ks (pj, "kind", "unboxed");
+				pj_kN (pj, "value", (st64)edge->unboxed);
+			} else {
+				pj_ks (pj, "kind", "ref");
+				pj_kn (pj, "ref", edge->ref);
+				pj_k (pj, "value");
+				modern_value_json_node (pj, graph, edge->ref, depth + 1, path, path_count);
+			}
+			pj_end (pj);
+		}
+		pj_end (pj);
+	}
+	pj_end (pj);
+}
+
+void modern_value_graph_json(PJ *pj, ModernValueGraph *graph) {
+	if (!pj || !graph) {
+		return;
+	}
+	pj_k (pj, "snapshot");
+	ut64 path[MODERN_VALUE_MAX_DEPTH + 2] = { 0 };
+	modern_value_json_node (pj, graph, graph->root_ref, 0, path, 0);
+}
+
+static void modern_value_text_node(RStrBuf *sb, ModernValueGraph *graph, ut64 ref, int level, int depth, ut64 *path, int path_count) {
+	for (int i = 0; i < level; i++) {
+		r_strbuf_append (sb, "  ");
+	}
+	if (ref >= graph->valid_refs_count) {
+		r_strbuf_appendf (sb, "ref=%" PRIu64 " out_of_range\n", (uint64_t)ref);
+		return;
+	}
+	ModernValueNode *node = modern_value_graph_node (graph, ref);
+	r_strbuf_appendf (sb, "ref=%" PRIu64 " kind=%s", (uint64_t)ref, node->kind? node->kind: "unknown");
+	if (node->cid >= 0) {
+		r_strbuf_appendf (sb, " cid=%d", node->cid);
+	}
+	if (node->name) {
+		r_strbuf_appendf (sb, " %s=\"%s\"", !strcmp (node->kind, "string")? "value": "name", node->name);
+	}
+	if (node->has_scalar) {
+		r_strbuf_appendf (sb, " value=%" PFMT64d, (st64)node->scalar);
+	}
+	r_strbuf_appendf (sb, " complete=%s\n", r_str_bool (node->complete));
+	if (modern_value_path_contains (path, path_count, ref) || depth >= MODERN_VALUE_MAX_DEPTH) {
+		return;
+	}
+	path[path_count++] = ref;
+	for (ut64 i = 0; i < node->edge_count; i++) {
+		const ModernValueEdge *edge = &node->edges[i];
+		for (int j = 0; j <= level; j++) {
+			r_strbuf_append (sb, "  ");
+		}
+		char name[32];
+		const char *edge_name = modern_value_edge_name (node, edge->index, name, sizeof (name));
+		if (edge->is_unboxed) {
+			r_strbuf_appendf (sb, "%s: unboxed=%" PFMT64d "\n", edge_name, (st64)edge->unboxed);
+		} else {
+			r_strbuf_appendf (sb, "%s:\n", edge_name);
+			modern_value_text_node (sb, graph, edge->ref, level + 2, depth + 1, path, path_count);
+		}
+	}
+	if (node->edges_truncated) {
+		for (int i = 0; i <= level; i++) {
+			r_strbuf_append (sb, "  ");
+		}
+		r_strbuf_append (sb, "... values truncated\n");
+	}
+}
+
+void modern_value_graph_text(RStrBuf *sb, ModernValueGraph *graph) {
+	if (!sb || !graph) {
+		return;
+	}
+	r_strbuf_append (sb, "snapshot.value:\n");
+	ut64 path[MODERN_VALUE_MAX_DEPTH + 2] = { 0 };
+	modern_value_text_node (sb, graph, graph->root_ref, 1, 0, path, 0);
+}
+
+const char *modern_value_graph_root_kind(ModernValueGraph *graph) {
+	if (!graph || graph->root_ref >= graph->valid_refs_count) {
+		return "out_of_range";
+	}
+	ModernValueNode *node = modern_value_graph_node (graph, graph->root_ref);
+	return node && node->kind? node->kind: "unknown";
 }
 
 void modern_slot_fini(ModernPoolSlot *info) {

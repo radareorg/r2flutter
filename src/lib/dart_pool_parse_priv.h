@@ -207,6 +207,8 @@ typedef struct {
 	ut64 num_base_objects;
 } ModernReq;
 
+typedef struct modern_value_graph_t ModernValueGraph;
+
 typedef struct {
 	DartCtx *ctx;
 	ut64 cluster_start;
@@ -264,6 +266,11 @@ bool modern_emit_summary(const ModernSummaryReq *req);
 bool modern_build_pp(const ModernReq *req, DartPpInfo *out);
 bool modern_resolve_pp_slot(const ModernReq *req, ut64 pp_off, ModernPoolSlot *out);
 void modern_slot_fini(ModernPoolSlot *slot);
+ModernValueGraph *modern_value_graph_new(const ModernReq *req, ut64 root_ref);
+void modern_value_graph_free(ModernValueGraph *graph);
+void modern_value_graph_json(PJ *pj, ModernValueGraph *graph);
+void modern_value_graph_text(RStrBuf *sb, ModernValueGraph *graph);
+const char *modern_value_graph_root_kind(ModernValueGraph *graph);
 bool modern_collect_direct_pool_strrefs(const ModernReq *req, HtUP *pp_offs, ModernPoolStrRefCb cb, void *user);
 bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offs, ModernPoolStrRefCb cb, void *user);
 bool modern_extract_pool_strings(const ModernReq *req, RList *strings, HtUP *seen, ut64 *next_ref);
