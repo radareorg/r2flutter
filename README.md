@@ -118,5 +118,6 @@ output modifier, run `bin/r2flutter -h` or `r2flutter -h` inside radare2.
 - [blutter](https://github.com/worawit/blutter)
 - [unflutter](https://github.com/zboralski/unflutter)
 - [reFlutter](https://github.com/Impact-I/reFlutter)
+- [dae](https://github.com/ejfkdev/dae)
 
 Released under the [MIT license](LICENSE.txt).
