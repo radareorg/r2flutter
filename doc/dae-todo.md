@@ -11,7 +11,7 @@ cluster layouts next, then metadata/value restoration and profile detection.
   - Read the profile-defined header field count and semantics.
   - Preserve canonical-cluster and field-table fields where present.
   - Commit: `Parse Version-Specific Snapshot Headers`
-- [ ] **R2F-DAE-002 — Add versioned snapshot reference decoding**
+- [x] **R2F-DAE-002 — Add versioned snapshot reference decoding**
   - Use unsigned LEB128 references through Dart 2.17.
   - Use the `ReadRefId` +128 encoding from Dart 2.18 onward.
   - Commit: `Add Versioned Snapshot Reference Decoding`

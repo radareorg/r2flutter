@@ -1381,3 +1381,16 @@ locating the first allocation cluster. Treating every header as the modern
 five-field form consumes a cluster byte on 2.10, starts before the final header
 field on 2.16-2.17, and mistakes the canonical-cluster count for the total on
 2.12-2.13.
+
+## Snapshot Reference IDs Changed in Dart 2.18
+
+Dart 2.10 through 2.17 serialize object references with the same little-endian
+seven-bit unsigned integer used for counts and lengths. The last byte has its
+high bit set. Dart 2.18 introduced `ReadRefId`: seven-bit groups are accumulated
+in big-endian order, the terminal byte is interpreted as signed, and 128 is
+added to the result.
+
+All cluster reference reads must use the snapshot profile's reference codec.
+For example, Dart 2.17 encodes reference 300 as `2c 82`; interpreting those
+bytes with the newer codec produces a different reference and can silently
+misalign subsequent object fields.

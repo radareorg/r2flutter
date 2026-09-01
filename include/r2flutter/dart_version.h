@@ -29,6 +29,14 @@ typedef enum {
 	DART_HEADER_STYLE_216 // nb, no, nc, field_table_len, itlen, itdata
 } DartHeaderStyle;
 
+// Object references use the ordinary unsigned stream integer through Dart
+// 2.17. Dart 2.18 introduced a distinct big-endian RefId encoding whose
+// signed terminal byte is biased by 128.
+typedef enum {
+	DART_REF_ENCODING_REF_ID128 = 0,
+	DART_REF_ENCODING_UNSIGNED
+} DartRefEncoding;
+
 // How the Dart version/layout for a snapshot was determined. Reported so users
 // can tell whether decoding rests on an exact match or a best-effort guess.
 typedef enum {
@@ -50,6 +58,7 @@ typedef struct {
 	DartTagStyle tag_style;
 	int header_fields;
 	DartHeaderStyle header_style;
+	DartRefEncoding ref_encoding;
 } DartVerLayout;
 
 // Lookup Dart version from a snapshot hash (MD5)

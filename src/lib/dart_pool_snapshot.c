@@ -353,6 +353,9 @@ bool cs_read_unsigned(ClusterStream *s, ut64 *out) {
 }
 
 bool cs_read_ref_id(ClusterStream *s, ut64 *out) {
+	if (s && s->ctx && s->ctx->layout && s->ctx->layout->ref_encoding == DART_REF_ENCODING_UNSIGNED) {
+		return cs_read_unsigned (s, out);
+	}
 	int64_t result = 0;
 	for (int i = 0; i < 5; i++) {
 		ut8 raw = 0;

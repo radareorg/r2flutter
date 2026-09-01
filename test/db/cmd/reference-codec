@@ -1,0 +1,11 @@
+NAME=versioned-snapshot-reference-codec
+FILE=-
+CMDS=<<EOF
+!!python3 -c 'import sys; open(sys.argv[1], "wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-ref-217.bin 50414421f5f5dcdc62000000000000000300000000000000313434316436623133623836323366613766626636313433336162656264333170726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e7465727300828381878589ea818181002c82
+!!../bin/r2flutter -q -HHH -l 1 /tmp/r2flutter-ref-217.bin 2>/dev/null | python3 -c 'import sys; print(next(line.strip() for line in sys.stdin if "bits=" in line))'
+!!rm -f /tmp/r2flutter-ref-217.bin
+EOF
+EXPECT=<<EOF
+[0] pool_off=0xf pp_off=0x10 bits=0x00 type=tagged_object patch=patchable behavior=snapshotable stream=0x67 value=0x68 ref=300 resolved_kind=out_of_range
+EOF
+RUN

@@ -60,6 +60,11 @@ HEADER_STYLE_NAMES = {
     "2.16": "DART_HEADER_STYLE_216",
 }
 
+REF_ENCODING_NAMES = {
+    "ref_id128": "DART_REF_ENCODING_REF_ID128",
+    "unsigned": "DART_REF_ENCODING_UNSIGNED",
+}
+
 TAG_STYLE_VALUES = {v: k for k, v in TAG_STYLE_NAMES.items()}
 
 CID_KIND_TO_CLASS_NAME = [
@@ -594,6 +599,12 @@ def header_style_for_version(version):
     return HEADER_STYLE_NAMES["modern"]
 
 
+def ref_encoding_for_version(version):
+    if parse_version(version) < (2, 18):
+        return REF_ENCODING_NAMES["unsigned"]
+    return REF_ENCODING_NAMES["ref_id128"]
+
+
 def profile_diff(existing, inferred):
     diffs = []
     for key in ("cws", "heap_object_tag", "max_alignment", "it_cap", "tag_style", "header_fields"):
@@ -708,10 +719,11 @@ def gen_profile_entries(offsets):
         v = profiles[ver]
         tag_name = TAG_STYLE_NAMES.get(v["tag_style"], "0")
         header_style = header_style_for_version(ver)
+        ref_encoding = ref_encoding_for_version(ver)
         lines.append(f'\t{{ "", "{ver}", {v["cws"]}, {v["heap_object_tag"]}, '
                      f'{v["max_alignment"]}, {v["it_cap"]}, {tag_name}, '
-                     f'{v["header_fields"]}, {header_style} }}, // Dart {ver}')
-    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0 }")
+                     f'{v["header_fields"]}, {header_style}, {ref_encoding} }}, // Dart {ver}')
+    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0, 0 }")
     lines.append("};")
     return "\n".join(lines)
 
