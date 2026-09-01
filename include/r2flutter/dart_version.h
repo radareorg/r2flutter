@@ -45,6 +45,11 @@ typedef enum {
 	DART_POOL_ENCODING_LOW7_SWAPPED // type[0..6], patch[7], immediate=0, tagged=1
 } DartPoolEncoding;
 
+typedef enum {
+	DART_CODE_ALLOC_STATE_DEFERRED = 0, // count, state words, deferred count/state words
+	DART_CODE_ALLOC_DEFERRED_ONLY // count, deferred count
+} DartCodeAlloc;
+
 // How the Dart version/layout for a snapshot was determined. Reported so users
 // can tell whether decoding rests on an exact match or a best-effort guess.
 typedef enum {
@@ -68,6 +73,10 @@ typedef struct {
 	DartHeaderStyle header_style;
 	DartRefEncoding ref_encoding;
 	DartPoolEncoding pool_encoding;
+	DartCodeAlloc code_alloc;
+	int code_refs;
+	int code_leading_refs;
+	bool code_has_text_offset;
 } DartVerLayout;
 
 // Lookup Dart version from a snapshot hash (MD5)

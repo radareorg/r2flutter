@@ -771,6 +771,15 @@ static bool modern_skip_alloc(ClusterStream *s, const ModernCidCache *cids, int 
 				return false;
 			}
 			meta->main_count = count;
+			DartCodeAlloc encoding = s->ctx && s->ctx->layout? s->ctx->layout->code_alloc: DART_CODE_ALLOC_STATE_DEFERRED;
+			if (encoding == DART_CODE_ALLOC_DEFERRED_ONLY) {
+				ut64 deferred = 0;
+				if (!cs_read_unsigned (s, &deferred)) {
+					return false;
+				}
+				meta->count = count + deferred;
+				return true;
+			}
 			meta->discarded_codes = (ut8 *)calloc ((size_t)count + 1, 1);
 			for (ut64 i = 0; i < count; i++) {
 				ut32 state_bits = 0;
@@ -1325,10 +1334,23 @@ static bool modern_skip_fill_instance(DartCtx *ctx, ClusterStream *s, const Mode
 }
 
 static bool modern_skip_fill_code(ClusterStream *s, const ModernClusterMeta *meta) {
-	const int num_refs = 6;
+	const DartVerLayout *layout = s && s->ctx? s->ctx->layout: NULL;
+	const int num_refs = layout && layout->code_refs > 0? layout->code_refs: 6;
+	const int leading_refs = layout? layout->code_leading_refs: 0;
+	ut64 ref = 0;
+	for (int i = 0; i < leading_refs; i++) {
+		if (!cs_read_ref_id (s, &ref)) {
+			return false;
+		}
+	}
 	for (ut64 i = 0; i < meta->count; i++) {
-		ut64 ref = 0;
 		if (i < meta->main_count) {
+			if (layout && layout->code_has_text_offset) {
+				ut64 text_offset_delta = 0;
+				if (!cs_read_unsigned (s, &text_offset_delta)) {
+					return false;
+				}
+			}
 			ut64 payload = 0;
 			if (!cs_read_unsigned (s, &payload)) {
 				return false;
@@ -4252,11 +4274,25 @@ static int modern_name_scan_owner_cid(const ModernWalk *w, ut64 owner_ref) {
 
 static bool modern_name_scan_read_code(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
+	const DartVerLayout *layout = w && w->ctx? w->ctx->layout: NULL;
+	const int num_refs = layout && layout->code_refs > 0? layout->code_refs: 6;
+	const int leading_refs = layout? layout->code_leading_refs: 0;
+	ut64 tmp_ref = 0;
+	for (int i = 0; i < leading_refs; i++) {
+		if (!cs_read_ref_id (s, &tmp_ref)) {
+			return false;
+		}
+	}
 	for (ut64 j = 0; j < m->count; j++) {
 		ut64 owner_ref = 0;
-		ut64 tmp_ref = 0;
 		ut64 slot = UT64_MAX;
 		if (j < m->main_count) {
+			if (layout && layout->code_has_text_offset) {
+				ut64 text_offset_delta = 0;
+				if (!cs_read_unsigned (s, &text_offset_delta)) {
+					return false;
+				}
+			}
 			ut64 payload = 0;
 			if (!cs_read_unsigned (s, &payload)) {
 				return false;
@@ -4269,7 +4305,7 @@ static bool modern_name_scan_read_code(ModernWalk *w, ClusterStream *s, const Mo
 				continue;
 			}
 		}
-		for (int k = 0; k < 6; k++) {
+		for (int k = 0; k < num_refs; k++) {
 			if (!cs_read_ref_id (s, &tmp_ref)) {
 				return false;
 			}

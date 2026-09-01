@@ -18,7 +18,7 @@ cluster layouts next, then metadata/value restoration and profile detection.
 - [x] **R2F-DAE-003 — Handle versioned ObjectPool entry bits**
   - Model low-seven-bit, swapped low-seven-bit, and modern bitfield eras.
   - Commit: `Handle Versioned ObjectPool Entry Bits`
-- [ ] **R2F-DAE-004 — Parse versioned Code cluster layouts**
+- [x] **R2F-DAE-004 — Parse versioned Code cluster layouts**
   - Profile Code reference counts, text-offset deltas, and leading refs.
   - Commit: `Parse Versioned Code Cluster Layouts`
 - [ ] **R2F-DAE-005 — Support Dart 3.13 single snapshots**

@@ -71,6 +71,11 @@ POOL_ENCODING_NAMES = {
     "low7_swapped": "DART_POOL_ENCODING_LOW7_SWAPPED",
 }
 
+CODE_ALLOC_NAMES = {
+    "state_deferred": "DART_CODE_ALLOC_STATE_DEFERRED",
+    "deferred_only": "DART_CODE_ALLOC_DEFERRED_ONLY",
+}
+
 TAG_STYLE_VALUES = {v: k for k, v in TAG_STYLE_NAMES.items()}
 
 CID_KIND_TO_CLASS_NAME = [
@@ -620,6 +625,16 @@ def pool_encoding_for_version(version):
     return POOL_ENCODING_NAMES["modern"]
 
 
+def code_layout_for_version(version):
+    ver_tuple = parse_version(version)
+    return {
+        "alloc": CODE_ALLOC_NAMES["deferred_only" if ver_tuple < (2, 14) else "state_deferred"],
+        "refs": 7 if ver_tuple < (2, 17) else 6,
+        "leading_refs": 2 if ver_tuple >= (3, 13) else 0,
+        "has_text_offset": "true" if ver_tuple < (2, 16) else "false",
+    }
+
+
 def profile_diff(existing, inferred):
     diffs = []
     for key in ("cws", "heap_object_tag", "max_alignment", "it_cap", "tag_style", "header_fields"):
@@ -736,10 +751,12 @@ def gen_profile_entries(offsets):
         header_style = header_style_for_version(ver)
         ref_encoding = ref_encoding_for_version(ver)
         pool_encoding = pool_encoding_for_version(ver)
+        code = code_layout_for_version(ver)
         lines.append(f'\t{{ "", "{ver}", {v["cws"]}, {v["heap_object_tag"]}, '
                      f'{v["max_alignment"]}, {v["it_cap"]}, {tag_name}, '
-                     f'{v["header_fields"]}, {header_style}, {ref_encoding}, {pool_encoding} }}, // Dart {ver}')
-    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0 }")
+                     f'{v["header_fields"]}, {header_style}, {ref_encoding}, {pool_encoding}, '
+                     f'{code["alloc"]}, {code["refs"]}, {code["leading_refs"]}, {code["has_text_offset"]} }}, // Dart {ver}')
+    lines.append("\t{ { 0 }, NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }")
     lines.append("};")
     return "\n".join(lines)
 

@@ -1407,3 +1407,21 @@ that bit width but swaps those two type values. Dart 3.3 and later use the
 modern layout: a four-bit type, bit 4 patchability, and bits 5-7 snapshot
 behavior. A broad Dart-2-versus-Dart-3 check therefore misdecodes 3.0-3.2 and
 may skip a serialized payload, shifting every following pool entry.
+
+## Code Cluster Framing Has Independent Transitions
+
+Code allocation and fill cannot be keyed only to a broad legacy flag. Dart
+2.10-2.13 allocation writes the main count followed directly by the deferred
+count. Dart 2.14 and later add a state word for every main and deferred Code.
+
+The fill has seven object references through Dart 2.16 and six from Dart 2.17
+onward. Dart 2.10-2.15 also put an instruction text-offset delta before each
+main Code's payload info. Dart 3.13 adds two cluster-level references before
+the per-Code records. These fields are profiled separately so a format change
+in one dimension does not imply a change in another.
+
+r2flutter keeps its existing normalized Code and instruction-table model. The
+profile is applied while framing the Code stream and while recovering Code
+owners; DAE's Dart 2.18 negative fill adjustment is intentionally not copied,
+because it compensates for drift in DAE's own generic fill walker rather than
+a serialized SDK field.
