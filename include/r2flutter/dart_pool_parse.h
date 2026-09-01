@@ -82,12 +82,17 @@ typedef struct DartClassInfo {
 	char *library_name;
 	ut64 library_ref;
 	ut64 super_class_ref;
+	ut64 super_type_ref;
 	ut64 interfaces_ref;
 	char *super_class_name;
+	ut32 class_id;
 	ut32 instance_size;
+	ut32 next_field_offset;
 	ut32 type_argument_offset;
 	ut32 num_type_parameters;
 	ut32 flags;
+	ut64 field_bitmap;
+	bool field_bitmap_present;
 	RList *enums;
 	RList *fields;
 	RList *interfaces;

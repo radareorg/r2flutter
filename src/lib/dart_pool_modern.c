@@ -3872,6 +3872,8 @@ static bool modern_read_class_fill(ModernWalk *w, ClusterStream *s, const Modern
 		ut32 num_type_args = 0;
 		ut32 num_native_fields = 0;
 		ut32 state_bits = 0;
+		ut64 bitmap = 0;
+		bool bitmap_present = false;
 		for (int k = 0; k < 13; k++) {
 			if (!cs_read_ref_id (s, &refs[k])) {
 				return false;
@@ -3889,20 +3891,25 @@ static bool modern_read_class_fill(ModernWalk *w, ClusterStream *s, const Modern
 		bool is_predefined = j < meta->main_count;
 		bool is_top_level = modern_class_is_top_level (ctx->layout, class_id);
 		if (is_predefined || !is_top_level) {
-			ut64 bitmap = 0;
 			if (!cs_read_unsigned (s, &bitmap)) {
 				return false;
 			}
+			bitmap_present = true;
 		}
-		(void)next_field_offset_words;
 		(void)num_native_fields;
 		(void)state_bits;
 		DartClassInfo *ci = R_NEW0 (DartClassInfo);
 		ci->ref_id = ref;
 		ci->name_ref = refs[0];
+		ci->library_ref = refs[7];
+		ci->super_type_ref = refs[9];
+		ci->class_id = class_id;
 		ci->instance_size = instance_size_words * word_size;
+		ci->next_field_offset = next_field_offset_words * word_size;
 		ci->type_argument_offset = type_args_offset_words? type_args_offset_words * word_size: 0;
 		ci->num_type_parameters = num_type_args;
+		ci->field_bitmap = bitmap;
+		ci->field_bitmap_present = bitmap_present;
 		if (is_top_level) {
 			ci->flags |= DART_CLASS_TOPLEVEL;
 		}

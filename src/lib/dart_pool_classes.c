@@ -1699,6 +1699,9 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 static void dump_class_json(PJ *pj, const DartClassInfo *ci) {
 	pj_o (pj);
 	pj_kn (pj, "ref", ci->ref_id);
+	if (ci->class_id) {
+		pj_ki (pj, "class_id", ci->class_id);
+	}
 	if (ci->name) {
 		pj_ks (pj, "name", ci->name);
 	}
@@ -1711,10 +1714,15 @@ static void dump_class_json(PJ *pj, const DartClassInfo *ci) {
 		}
 		pj_end (pj);
 	}
-	if (ci->super_class_name || ci->super_class_ref) {
+	if (ci->super_class_name || ci->super_class_ref || ci->super_type_ref) {
 		pj_k (pj, "super");
 		pj_o (pj);
-		pj_kn (pj, "ref", ci->super_class_ref);
+		if (ci->super_class_ref) {
+			pj_kn (pj, "ref", ci->super_class_ref);
+		}
+		if (ci->super_type_ref) {
+			pj_kn (pj, "type_ref", ci->super_type_ref);
+		}
 		if (ci->super_class_name) {
 			pj_ks (pj, "name", ci->super_class_name);
 		}
@@ -1745,8 +1753,14 @@ static void dump_class_json(PJ *pj, const DartClassInfo *ci) {
 	pj_k (pj, "layout");
 	pj_o (pj);
 	pj_ki (pj, "instance_size", ci->instance_size);
+	if (ci->next_field_offset) {
+		pj_ki (pj, "next_field_offset", ci->next_field_offset);
+	}
 	pj_ki (pj, "type_params", ci->num_type_parameters);
 	pj_ki (pj, "type_arg_offset", ci->type_argument_offset);
+	if (ci->field_bitmap_present) {
+		pj_kn (pj, "field_bitmap", ci->field_bitmap);
+	}
 	pj_end (pj);
 	pj_k (pj, "flags");
 	pj_o (pj);

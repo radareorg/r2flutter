@@ -1453,3 +1453,19 @@ Keep partial cluster summaries when a fill is truncated. Earlier clusters are
 still useful, while the failing cluster is marked `failed` and later clusters
 remain `not_parsed`. This is more informative than rejecting the whole snapshot
 and makes malformed-input behavior explicit to JSON consumers.
+
+## Class Records Carry More Than Display Names
+
+The modern Class fill's 13 references include the name at index 0, library at
+index 7, and super Type at index 9. The following tagged values include the
+class ID, instance size, next-field offset, type-argument offset, and type
+parameter count. A nullable-field bitmap follows for ordinary classes but is
+absent for synthetic top-level classes.
+
+r2flutter keeps byte-based sizes and offsets in `DartClassInfo`, matching its
+existing field and RBin APIs, while retaining the raw class ID, library and
+super-Type references, and bitmap. The super-Type reference is not stored in
+the older `super_class_ref` slot: that slot denotes a resolved Class object,
+whereas the serialized value points to a Type object. JSON exposes both forms
+without conflating them. A failed Class fill is discarded atomically, so a
+truncated bitmap cannot leak partially initialized class metadata.

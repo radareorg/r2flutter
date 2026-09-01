@@ -26,8 +26,9 @@ cluster layouts next, then metadata/value restoration and profile detection.
   - Add the alternate symbols and 3.13 Class, Code, and Closure layouts.
   - Test complete and truncated combined snapshots, including partial-fill failure reporting.
   - Commit: `Support Dart 3.13 Single Snapshots`
-- [ ] **R2F-DAE-006 — Retain serialized class layout metadata**
+- [x] **R2F-DAE-006 — Retain serialized class layout metadata**
   - Keep class ID, library/super references, next-field offset, and bitmap.
+  - Test ordinary, top-level, and truncated Class fills.
   - Commit: `Retain Serialized Class Layout Metadata`
 - [ ] **R2F-DAE-007 — Retain snapshot object value graph**
   - Preserve Instance, Array, Map, and Set values by object reference.
