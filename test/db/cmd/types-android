@@ -1,7 +1,9 @@
 NAME=text-types-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -T bins/android/first 2>/dev/null | sed -n '1,6p'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -T~:0..6
 EOF
 EXPECT=<<EOF
 class _Uint16List (size=0)

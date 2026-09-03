@@ -1,7 +1,9 @@
 NAME=text-funcs-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -f -l 3 bins/android/first 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -f -l 3
 EOF
 EXPECT=<<EOF
 0x66768 Object.noSuchMethod

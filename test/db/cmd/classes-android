@@ -1,7 +1,9 @@
 NAME=r2-classes-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -r -c bins/android/first 2>/dev/null | sed -n '1,7p'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -r -c~:0..7
 EOF
 EXPECT=<<EOF
 # Dart classes extracted from snapshot
@@ -15,9 +17,11 @@ EOF
 RUN
 
 NAME=text-classes-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -c bins/android/first 2>/dev/null | head -6
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -c~:0..6
 EOF
 EXPECT=<<EOF
 class _Uint16List (size=0)

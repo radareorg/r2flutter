@@ -1,7 +1,11 @@
 NAME=compstr
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -jzz\" bins/ios/Runner.app/Frameworks/App.framework/App 2>/dev/null" | head -c 200
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -jzz~{[0]}
 EOF
-EXPECT=[{"ref":568,"len":186,"value":"d20a1be77c3d3c41b2a5accaee1ce549product no-code_comments no-dwarf_stack_traces_mode no-lazy_dispatchers dedup_instructions no-tsan no-asserts arm64 ios no-compressed-poi
+EXPECT=<<EOF
+{"ref":568,"len":186,"value":"d20a1be77c3d3c41b2a5accaee1ce549product no-code_comments no-dwarf_stack_traces_mode no-lazy_dispatchers dedup_instructions no-tsan no-asserts arm64 ios no-compressed-pointers null-safety","category":"app","two_byte":false,"canonical":true,"addr":1771796}
+EOF
 RUN

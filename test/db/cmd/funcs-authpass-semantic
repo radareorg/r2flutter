@@ -1,12 +1,14 @@
 NAME=text-funcs-authpass-semantic
-FILE=-
+FILE=bins/ios/AuthPass.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -q -f bins/ios/AuthPass.app 2>/dev/null | awk '/method\._RawSecureSocket_.*\._secureHandshake_/ { print "handshake=" $1; next } /method\._SecureFilterImpl_.*\.registerBadCertificateCallback$/ { print "register=" $1; next } /method\._SecureFilterImpl_.*\._registerBadCertificateCallback_/ { print "register_impl=" $1; next } /method\._RawSecureSocket_.*\._onBadCertificateWrapper_/ { print "wrapper=" $1; next }'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -f~_secureHandshake_,registerBadCertificateCallback,_registerBadCertificateCallback_,_onBadCertificateWrapper_
 EOF
 EXPECT=<<EOF
-handshake=0x31749c
-register=0x3194ec
-register_impl=0x31954c
-wrapper=0x3199d4
+0x31749c method._RawSecureSocket_14069316._secureHandshake_14069316
+0x3194ec method._SecureFilterImpl_14069316.registerBadCertificateCallback
+0x31954c method._SecureFilterImpl_14069316._registerBadCertificateCallback_14069316
+0x3199d4 method._RawSecureSocket_14069316._onBadCertificateWrapper_14069316
 EOF
 RUN

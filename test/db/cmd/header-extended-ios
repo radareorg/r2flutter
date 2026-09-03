@@ -1,16 +1,18 @@
 NAME=header-extended-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -HH -l 1 bins/ios/Runner.app 2>/dev/null | grep -Eo '^(## (VM|Isolate) Clusters|  columns:.*|  0 cid=92 alloc=rodata fill=none count=[0-9]+|  \.\.\. [0-9]+ clusters omitted by -l)'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -HH -l 1~VM Clusters,Isolate Clusters,columns,0 cid=92,clusters omitted
 EOF
 EXPECT=<<EOF
 ## VM Clusters
   columns: idx cid alloc fill count refs flags alloc_range fill_range extras
-  0 cid=92 alloc=rodata fill=none count=884
+  0 cid=92 alloc=rodata fill=none count=884 refs=97..981 flags=canonical,immutable alloc=0x1b09d9..0x1b10c6 fill=0x1b118b..0x1b118b fill_status=ok items=count:884,first:91,min:1,max:91,total:2018
   ... 5 clusters omitted by -l
 ## Isolate Clusters
   columns: idx cid alloc fill count refs flags alloc_range fill_range extras
-  0 cid=92 alloc=rodata fill=none count=8589
+  0 cid=92 alloc=rodata fill=none count=8589 refs=1157..9746 flags=canonical,immutable alloc=0x1b96dc..0x1bd9fd fill=0x1c8d24..0x1c8d24 fill_status=ok items=count:8589,first:12413,min:2,max:12413,total:36811
   ... 334 clusters omitted by -l
 EOF
 RUN

@@ -1,17 +1,23 @@
 NAME=r2script-method-order
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<CMDS_END
-!!../bin/r2flutter -R bins/ios/Runner.app 2>/dev/null | perl -ne 'if (/^f method\..* = 0x([0-9a-fA-F]+)/) { $v = hex ($1); if (defined $p && $v < $p) { print "UNSORTED\n"; exit 1; } $p = $v; $count++; } END { if ($count > 0) { print "OK\n"; } else { print "NO_METHODS\n"; exit 1; } }'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -R~^f method.:0..3
 CMDS_END
 EXPECT=<<EXPECT_END
-OK
+f method.PointerEvent.get:radiusMinor = 0xe768
+f method.func.0000e770 = 0xe770
+f method.PointerEvent.get:distance = 0xe7a0
 EXPECT_END
 RUN
 
 NAME=r2script-pp-scan-skipped
-FILE=-
+FILE=bins/android/mafia/libapp.so
 CMDS=<<CMDS_END
-!!../bin/r2flutter -R bins/android/mafia 2>/dev/null | tail -4 | head -3
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -R~:-3..0
 CMDS_END
 EXPECT=<<EXPECT_END
 dr x27=`e anal.gp`

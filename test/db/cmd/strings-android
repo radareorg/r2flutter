@@ -1,7 +1,9 @@
 NAME=text-strings-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -zz bins/android/first 2>/dev/null | sed -n '1,6p'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -zz~:0..6
 EOF
 EXPECT=<<EOF
 0x00000214  165 :app "f91b8b03bf7f30a5e983fd19b23d978dproduct no-code_comments no-dwarf_stack_traces_mode no-lazy_dispatchers dedup_instructions no-tsan arm64 linux no-compressed-pointers"
@@ -14,9 +16,11 @@ EOF
 RUN
 
 NAME=verbose-text-strings-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -vzz bins/android/first 2>/dev/null | sed -n '1p'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -vzz~:0
 EOF
 EXPECT=<<EOF
 0x00000214  165 :app "f91b8b03bf7f30a5e983fd19b23d978dproduct no-code_comments no-dwarf_stack_traces_mode no-lazy_dispatchers dedup_instructions no-tsan arm64 linux no-compressed-pointers"
@@ -24,9 +28,11 @@ EOF
 RUN
 
 NAME=r2-strings-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -r -zz bins/android/first 2>/dev/null | head -7
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -r -zz~:0..7
 EOF
 EXPECT=<<EOF
 # Dart Strings
@@ -40,9 +46,11 @@ EOF
 RUN
 
 NAME=quiet-r2-strings-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -qrzz bins/android/first 2>/dev/null | head -6
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -qrzz~:0..6
 EOF
 EXPECT=<<EOF
 iz+ 0x00000214 165

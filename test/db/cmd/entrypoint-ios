@@ -1,7 +1,9 @@
 NAME=entrypoint-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -qE bins/ios/Runner.app 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -qE
 EOF
 EXPECT=<<EOF
 0xe768
@@ -9,9 +11,11 @@ EOF
 RUN
 
 NAME=json-entrypoint-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -jE bins/ios/Runner.app 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -jE
 EOF
 EXPECT=<<EOF
 {"entrypoint":59240,"index":0,"code_index":0,"kind":"code","name":"method.PointerEvent.get:radiusMinor","vm_instr":16384,"vm_instr_size":42736,"iso_instr":59136,"iso_instr_size":1712608}
@@ -19,9 +23,11 @@ EOF
 RUN
 
 NAME=r2-entrypoint-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -rE bins/ios/Runner.app 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -rE
 EOF
 EXPECT=<<EOF
 # Dart AOT entrypoint and instruction snapshot data

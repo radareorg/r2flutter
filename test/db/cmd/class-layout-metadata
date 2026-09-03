@@ -1,17 +1,36 @@
 NAME=serialized-class-layout-metadata
-FILE=-
+FILE=malloc://0x94
 CMDS=<<EOF
-!!python3 -c 'import sys; open(sys.argv[1], "wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-class-metadata.bin 50414421f5f5dcdc8c000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730086828180800020c182818080808080808280838080807022c4c4c3c2c1c0c08584808080808080858086808080070040c0c5c4c0c0c0c0
-!!../bin/r2flutter -q -j -c /tmp/r2flutter-class-metadata.bin 2>/dev/null | python3 -c 'import json,sys; a,b=json.load(sys.stdin); la=a["layout"]; lb=b["layout"]; print(a["ref"], a["class_id"], a["library"]["ref"], a["super"]["type_ref"], la["instance_size"], la["next_field_offset"], la["type_arg_offset"], la["field_bitmap"]); print(b["ref"], b["class_id"], b["library"]["ref"], b["super"]["type_ref"], lb["instance_size"], lb["next_field_offset"], "field_bitmap" in lb, b["flags"]["toplevel"])'
-!!python3 -c 'import sys; open(sys.argv[1], "wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-class-metadata-truncated.bin 50414421f5f5dcdc74000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730086818180800020c181818080808080808280838080807022c4c4c3c2c1c0c0
-!!../bin/r2flutter -q -j -c /tmp/r2flutter-class-metadata-truncated.bin 2>/dev/null | python3 -c 'import json,sys; print("truncated_classes", len(json.load(sys.stdin)))'
-!!../bin/r2flutter -q -j -HHH /tmp/r2flutter-class-metadata-truncated.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print("truncated_fill", d["snapshots"][0]["clusters"][0]["fill_status"])'
-!!rm -f /tmp/r2flutter-class-metadata.bin /tmp/r2flutter-class-metadata-truncated.bin
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+wx 50414421f5f5dcdc8c000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730086828180800020c182818080808080808280838080807022c4c4c3c2c1c0c08584808080808080858086808080070040c0c5c4c0c0c0c0
+r2flutter -q -j -c~{=}ref,class_id,layout.,flags.toplevel
+o malloc://0x7c
+wx 50414421f5f5dcdc74000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730086818180800020c181818080808080808280838080807022c4c4c3c2c1c0c0
+r2flutter -q -j -c
+r2flutter -q -j -HHH~{snapshots[0].clusters[0].fill_status}
 EOF
 EXPECT=<<EOF
-7 70000 2 3 32 24 16 5
-8 1048583 5 6 40 32 False True
-truncated_classes 0
-truncated_fill failed
+json[0].ref = 7;
+json[0].class_id = 70000;
+json[0].library.ref = 2;
+json[0].super.type_ref = 3;
+json[0].layout.instance_size = 32;
+json[0].layout.next_field_offset = 24;
+json[0].layout.type_params = 1;
+json[0].layout.type_arg_offset = 16;
+json[0].layout.field_bitmap = 5;
+json[0].flags.toplevel = false;
+json[1].ref = 8;
+json[1].class_id = 1048583;
+json[1].library.ref = 5;
+json[1].super.type_ref = 6;
+json[1].layout.instance_size = 40;
+json[1].layout.next_field_offset = 32;
+json[1].layout.type_params = 0;
+json[1].layout.type_arg_offset = 0;
+json[1].flags.toplevel = true;
+[]
+failed
 EOF
 RUN

@@ -1,7 +1,9 @@
 NAME=r2-types-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -r -T bins/ios/Runner.app 2>/dev/null | sed -n '1,7p'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -r -T~:0..7
 EOF
 EXPECT=<<EOF
 # Dart classes extracted from snapshot

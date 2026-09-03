@@ -1,18 +1,62 @@
 NAME=dart-313-single-snapshot-layout
-FILE=-
+FILE=malloc://0x9f
 CMDS=<<EOF
-!!python3 -c 'import sys; open(sys.argv[1], "wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-single-313.bin 50414421f5f5dcdc97000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082868485890020c1810040c481c0800020ce81820060c58181808080808080808080808080807022c4c4c3c0c0c0c080808087808080808080808080808080810181
-!!../bin/r2flutter -q -j -HHH -l 8 /tmp/r2flutter-single-313.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); s=d["snapshots"][0]; c={x["cid"]:x for x in s["clusters"]}; e=c[23]["object_pools"][0]["entries"][0]; print(d["dart_version"], d["single_snapshot"], d["vm_data"], d["iso_data"], len(d["snapshots"]), s["label"], s["clusters_parsed"]); print(c[5]["alloc"], c[5]["fill_status"], c[18]["fill_status"], c[57]["alloc"], c[57]["fill"], c[57]["items"]["total"], e["ref"])'
-!!python3 -c 'import sys; open(sys.argv[1], "wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-single-314.bin 50414421f5f5dcdc97000000000000000200000000000000376131656133663666356366313038396137663665353564376632306462666470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082868485890020c1810040c481c0800020ce81820060c58181808080808080808080808080807022c4c4c3c0c0c0c080808087808080808080808080808080810181
-!!../bin/r2flutter -q -j -H /tmp/r2flutter-single-314.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["dart_version"], d["single_snapshot"], d["vm_data"], d["iso_data"], d["cid_table"]["num_predefined"])'
-!!python3 -c 'import sys; open(sys.argv[1], "wb").write(bytes.fromhex(sys.argv[2]))' /tmp/r2flutter-single-313-truncated.bin 50414421f5f5dcdc92000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082868485890020c1810040c481c0800020ce81820060c58181808080808080808080808080807022c4c4c3c0c0c0c08080808780808080808080808080
-!!../bin/r2flutter -q -j -HHH -l 8 /tmp/r2flutter-single-313-truncated.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); s=d["snapshots"][0]; c={x["cid"]:x for x in s["clusters"]}; print("truncated", d["dart_version"], s["label"], s["clusters_parsed"], c[57]["fill_status"], c[23]["fill_status"], c[23]["object_pool_decode"])'
-!!rm -f /tmp/r2flutter-single-313.bin /tmp/r2flutter-single-314.bin /tmp/r2flutter-single-313-truncated.bin
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+wx 50414421f5f5dcdc97000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082868485890020c1810040c481c0800020ce81820060c58181808080808080808080808080807022c4c4c3c0c0c0c080808087808080808080808080808080810181
+r2flutter -q -j -HHH -l 8~{dart_version}
+r2flutter -q -j -HHH -l 8~{single_snapshot}
+r2flutter -q -j -HHH -l 8~{vm_data}
+r2flutter -q -j -HHH -l 8~{iso_data}
+r2flutter -q -j -HHH -l 8~{snapshots[0].label}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters_parsed}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[0].alloc}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[0].fill_status}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[1].fill_status}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[2].alloc}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[2].fill}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[2].items.total}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[3].object_pools[0].entries[0].ref}
+o malloc://0x9f
+wx 50414421f5f5dcdc97000000000000000200000000000000376131656133663666356366313038396137663665353564376632306462666470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082868485890020c1810040c481c0800020ce81820060c58181808080808080808080808080807022c4c4c3c0c0c0c080808087808080808080808080808080810181
+r2flutter -q -j -H~{dart_version}
+r2flutter -q -j -H~{single_snapshot}
+r2flutter -q -j -H~{vm_data}
+r2flutter -q -j -H~{iso_data}
+r2flutter -q -j -H~{cid_table.num_predefined}
+o malloc://0x9a
+wx 50414421f5f5dcdc92000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082868485890020c1810040c481c0800020ce81820060c58181808080808080808080808080807022c4c4c3c0c0c0c08080808780808080808080808080
+r2flutter -q -j -HHH -l 8~{dart_version}
+r2flutter -q -j -HHH -l 8~{snapshots[0].label}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters_parsed}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[2].fill_status}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[3].fill_status}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[3].object_pool_decode}
 EOF
 EXPECT=<<EOF
-3.13.0 True 0 4 1 Combined True
-class ok ok variable closure 2 1
-3.14.0 True 0 4 176
-truncated 3.13.0 Combined True failed not_parsed fill_not_parsed
+3.13.0
+true
+0
+4
+Combined
+true
+class
+ok
+ok
+variable
+closure
+2
+1
+3.14.0
+true
+0
+4
+176
+3.13.0
+Combined
+true
+failed
+not_parsed
+fill_not_parsed
 EOF
 RUN

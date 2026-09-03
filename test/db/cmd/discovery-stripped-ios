@@ -1,10 +1,21 @@
 NAME=discovery-stripped-ios-structural-instr
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!sh ../scripts/discovery_stripped_ios.sh
+s 0
+o: 0x321920
+wv4 0 @ 0x298
+wv4 0 @ 0x29c
+wv4 0 @ 0x2ac
+ooi
+is~?kDart
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -j -H~{=}vm_instr,iso_data,iso_instr
 EOF
 EXPECT=<<EOF
-kdart=0
-vm_instr=0x4000 iso_data=0x1b9600 iso_instr=0xe700
+0
+json.vm_instr = 16384;
+json.iso_data = 1807872;
+json.iso_instr = 59136;
 EOF
 RUN

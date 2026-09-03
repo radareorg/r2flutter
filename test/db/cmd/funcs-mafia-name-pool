@@ -1,7 +1,9 @@
 NAME=funcs-mafia-name-pool-window
-FILE=-
+FILE=bins/android/mafia/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -f -q -n -l 6 bins/android/mafia 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -f -q -n -l 6
 EOF
 EXPECT=<<EOF
 0x5b69c0 method.DateTime.compareTo
@@ -14,15 +16,19 @@ EOF
 RUN
 
 NAME=funcs-mafia-name-pool-stub-counts
-FILE=-
+FILE=bins/android/mafia/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -f -q -n bins/android/mafia 2>/dev/null | awk '$1=="0x5b6bf4" || $1=="0x5b6f6c" || $1=="0x5bb750" {print} / stub\.Allocate/ {alloc++} / stub\.typetest_/ {type++} END {print "alloc=" alloc; print "typetest=" type}'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -f -q -n~0x5b6bf4,0x5b6f6c,0x5bb750
+r2flutter -f -q -n~?stub.Allocate
+r2flutter -f -q -n~?stub.typetest_
 EOF
 EXPECT=<<EOF
 0x5b6bf4 stub.AllocateDurationStub
 0x5b6f6c stub.typetest_13
 0x5bb750 stub.AllocateStringBufferStub
-alloc=4096
-typetest=1277
+4096
+1277
 EOF
 RUN

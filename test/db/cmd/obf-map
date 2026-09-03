@@ -1,17 +1,21 @@
 NAME=obf-funcs-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -j -f -l 3 -m custom/obf-map.txt bins/ios/Runner.app 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -j -f -l 3 -m custom/obf-map.txt
 EOF
 EXPECT=<<EOF
-[{"addr":59240,"name":"method.PointerEvent.get:radiusMinor"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"method.PointerEvent.get:distance"}]
+[{"addr":59240,"name":"method.PointerEvent.get:radiusMinor","signature":"dynamic(PointerEvent)"},{"addr":59248,"name":"func.0000e770"},{"addr":59296,"name":"method.PointerEvent.get:distance","signature":"dynamic(PointerEvent)"}]
 EOF
 RUN
 
 NAME=obf-it-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -i -l 2 -m custom/obf-map.txt bins/android/first 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -i -l 2 -m custom/obf-map.txt
 EOF
 EXPECT=<<EOF
 # length=1311 first_entry_with_code=0 canonical_stack_map_entries_offset=25731

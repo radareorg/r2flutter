@@ -1,6 +1,10 @@
 NAME=text-classes-mafia
-FILE=-
-CMDS=!!../bin/r2flutter -c bins/android/mafia 2>/dev/null | head -6
+FILE=bins/android/mafia/libapp.so
+CMDS=<<EOF
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -c~:0..6
+EOF
 EXPECT=<<EOF
 class Pointer (size=32)
   methods:
@@ -12,17 +16,28 @@ EOF
 RUN
 
 NAME=text-classes-mafia-modern-members
-FILE=-
-CMDS=!!../bin/r2flutter -c bins/android/mafia 2>/dev/null | awk '/class _RawReceivePort@1026248/{raw=1} raw && /_portMap@1026248 static final/{field=1} /firstMatch/{method=1} END { print "field=" field + 0; print "method=" method + 0 }'
+FILE=bins/android/mafia/libapp.so
+CMDS=<<EOF
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -c~?&_RawReceivePort@1026248,size=32
+r2flutter -c~?_portMap@1026248
+r2flutter -c~?firstMatch
+EOF
 EXPECT=<<EOF
-field=1
-method=1
+1
+1
+1
 EOF
 RUN
 
 NAME=r2-classes-mafia
-FILE=-
-CMDS=!!../bin/r2flutter -r -c bins/android/mafia 2>/dev/null | head -7
+FILE=bins/android/mafia/libapp.so
+CMDS=<<EOF
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -r -c~:0..7
+EOF
 EXPECT=<<EOF
 # Dart classes extracted from snapshot
 # class Pointer (size=32)

@@ -903,7 +903,7 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 	}
 	if (modern_cid_eq (cid, cids->function)) {
 		// AOT Function::ReadFill: ReadFromTo (4 refs: name, owner, signature,
-		// data) + ReadUnsigned(code_index) + Read<uint32_t> kind_tag. On Dart 2.x
+		// data) + ReadUnsigned (code_index) + Read<uint32_t> kind_tag. On Dart 2.x
 		// kind_tag is a Dart tagged varint, so read it as such; the token-position
 		// word is only present with a non-product gen_snapshot (released Flutter
 		// apps omit it). Newer snapshots keep the previous decoding.
@@ -1048,9 +1048,9 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 	static const ModernFillSpecRule legacy_rules[] = {
 		// PatchClass::to_snapshot stops at script_ in AOT: 3 refs, no scalars.
 		{ DART_CID_PATCH_CLASS, MODERN_FILL_REFS, 3, -1, -1, 0, { 0 } },
-		// FfiTrampolineData: ReadFromTo (4) + ReadUnsigned(callback_id).
+		// FfiTrampolineData: ReadFromTo (4) + ReadUnsigned (callback_id).
 		{ DART_CID_FFI_TRAMPOLINE_DATA, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
-		// Type: ReadFromTo (3) + ReadUnsigned(type_class_id) + Read<uint8_t>.
+		// Type: ReadFromTo (3) + ReadUnsigned (type_class_id) + Read<uint8_t>.
 		{ DART_CID_TYPE, MODERN_FILL_REFS, 3, -1, -1, 2, { MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_UINT8 } },
 		// TypeParameter: ReadFromTo (3) + Read<int32_t> + 3x Read<uint8_t>.
 		{ DART_CID_TYPE_PARAMETER, MODERN_FILL_REFS, 3, -1, -1, 4, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8, MODERN_SCALAR_UINT8, MODERN_SCALAR_UINT8 } },
@@ -4707,10 +4707,10 @@ typedef struct {
 	ut64 *code_owner_ref_by_index;
 	int *code_owner_cid_by_index;
 	// Signature recovery: FunctionType graph captured during the fill walk.
-	ut64 *function_sig_ref;    // function ref -> its FunctionType ref (signature)
-	ut64 *ftype_result_ref;    // FunctionType ref -> result_type object ref
-	ut32 *ftype_packed;        // FunctionType ref -> packed_parameter_counts
-	ut64 *type_class_id;       // Type ref -> declared class id (cid), 0 if absent
+	ut64 *function_sig_ref; // function ref -> its FunctionType ref (signature)
+	ut64 *ftype_result_ref; // FunctionType ref -> result_type object ref
+	ut32 *ftype_packed; // FunctionType ref -> packed_parameter_counts
+	ut64 *type_class_id; // Type ref -> declared class id (cid), 0 if absent
 	HtUP *classname_ref_by_cid; // class cid -> class name string ref
 	ut64 refs_count;
 	ut64 itlen;
@@ -4767,7 +4767,7 @@ static bool modern_name_scan_read_class(ModernWalk *w, ClusterStream *s, const M
 			// Map real class ids (not synthetic top-level ids) to their name so
 			// a Type's declared class id can be resolved to a class name.
 			if (!is_top_level && class_id && name_ref && name_ref < u->refs_count && u->classname_ref_by_cid && !ht_up_find (u->classname_ref_by_cid, class_id, NULL)) {
-				ht_up_insert (u->classname_ref_by_cid, class_id, (void *)(uintptr_t)name_ref);
+				ht_up_insert (u->classname_ref_by_cid, class_id, (void *) (uintptr_t)name_ref);
 			}
 		}
 	}
@@ -4839,7 +4839,7 @@ static bool modern_name_scan_read_function_type(ModernWalk *w, ClusterStream *s,
 	return true;
 }
 
-// Type::ReadFill: 3 refs then (legacy) ReadUnsigned(type_class_id) + uint8, or
+// Type::ReadFill: 3 refs then (legacy) ReadUnsigned (type_class_id) + uint8, or
 // (3.x) a single packed flags word carrying the class id at bit 3. Capture the
 // declared class id so a return/param Type can be mapped to a class name.
 static bool modern_name_scan_read_type(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
@@ -5042,7 +5042,7 @@ static const char *modern_sig_type_name(const ModernNameScanWalk *u, const Moder
 		return "Set";
 	}
 	if (u->classname_ref_by_cid) {
-		ut64 name_ref = (ut64)(uintptr_t)ht_up_find (u->classname_ref_by_cid, cid, NULL);
+		ut64 name_ref = (ut64) (uintptr_t)ht_up_find (u->classname_ref_by_cid, cid, NULL);
 		if (name_ref && name_ref < u->refs_count && R_STR_ISNOTEMPTY (u->strings_by_ref[name_ref])) {
 			return u->strings_by_ref[name_ref];
 		}

@@ -1,28 +1,58 @@
 NAME=unknown-hash-structural-layout-probe
-FILE=-
+FILE=bins/android/mafia/libapp.so
+ARGS=-n
 CMDS=<<EOF
-!!python3 -c 'import sys; b=open(sys.argv[1], "rb").read().replace(b"97ff04a728735e6b6b098bdf983faaba", b"a"*32); open(sys.argv[2], "wb").write(b)' bins/android/mafia/libapp.so /tmp/r2flutter-probe-android.bin
-!!../bin/r2flutter -q -j -H /tmp/r2flutter-probe-android.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["dart_version"], d["version_source"], d["cid_table"]["num_predefined"], d["cluster"]["clusters"])'
-!!python3 -c 'import sys; b=open(sys.argv[1], "rb").read().replace(b"d20a1be77c3d3c41b2a5accaee1ce549", b"b"*32); open(sys.argv[2], "wb").write(b)' bins/ios/Runner.app/Frameworks/App.framework/App /tmp/r2flutter-probe-ios.bin
-!!../bin/r2flutter -q -j -H /tmp/r2flutter-probe-ios.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["dart_version"], d["version_source"], d["cid_table"]["num_predefined"], d["cluster"]["clusters"])'
-!!python3 -c 'import sys; b=bytes.fromhex(sys.argv[2]).replace(b"0451907c2eaa8467e848c0067bfe8ed4", b"c"*32); open(sys.argv[1], "wb").write(b)' /tmp/r2flutter-probe-single.bin 50414421f5f5dcdc97000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082868485890020c1810040c481c0800020ce81820060c58181808080808080808080808080807022c4c4c3c0c0c0c080808087808080808080808080808080810181
-!!../bin/r2flutter -q -j -H /tmp/r2flutter-probe-single.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["dart_version"], d["version_source"], d["single_snapshot"], d["vm_data"], d["iso_data"], d["cluster"]["clusters"])'
-!!python3 -c 'import sys; b=bytes.fromhex(sys.argv[2]).replace(b"1441d6b13b8623fa7fbf61433abebd31", b"d"*32); open(sys.argv[1], "wb").write(b)' /tmp/r2flutter-probe-legacy.bin 50414421f5f5dcdc6d000000000000000300000000000000313434316436623133623836323366613766626636313433336162656264333170726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e7465727300828482878589e281c080ea81818780808080808081002c82
-!!../bin/r2flutter -q -j -H /tmp/r2flutter-probe-legacy.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["dart_version"], d["version_source"], d["header_fields"], d["cid_table"]["cid_code"])'
-!!../bin/r2flutter -q -j -D 2.17.0 -H /tmp/r2flutter-probe-legacy.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["dart_version"], d["version_source"])'
-!!python3 -c 'import sys; b=bytes.fromhex(sys.argv[2]).replace(b"1441d6b13b8623fa7fbf61433abebd31", b"e"*32); open(sys.argv[1], "wb").write(b)' /tmp/r2flutter-probe-incomplete.bin 50414421f5f5dcdc5c000000000000000300000000000000313434316436623133623836323366613766626636313433336162656264333170726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082838187858980
-!!../bin/r2flutter -q -j -H /tmp/r2flutter-probe-incomplete.bin 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["version_source"], d["tag_style"])'
-!!python3 -c 'import sys; b=bytearray(open(sys.argv[1], "rb").read()); b[8:16]=(4096).to_bytes(8, "little"); open(sys.argv[2], "wb").write(b)' /tmp/r2flutter-probe-incomplete.bin /tmp/r2flutter-probe-bad-length.bin
-!!../bin/r2flutter -q -j -H /tmp/r2flutter-probe-bad-length.bin 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"])'
-!!rm -f /tmp/r2flutter-probe-android.bin /tmp/r2flutter-probe-ios.bin /tmp/r2flutter-probe-single.bin /tmp/r2flutter-probe-legacy.bin /tmp/r2flutter-probe-incomplete.bin /tmp/r2flutter-probe-bad-length.bin
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+o: $s
+wx 6161616161616161616161616161616161616161616161616161616161616161 @ 0x354
+wx 6161616161616161616161616161616161616161616161616161616161616161 @ 0x4a94
+r2flutter -q -j -H~{=}cluster.clusters,dart_version,version_source,num_predefined
+on bins/ios/Runner.app/Frameworks/App.framework/App
+s 0
+o: $s
+wx 6262626262626262626262626262626262626262626262626262626262626262 @ 0x1b4914
+wx 6262626262626262626262626262626262626262626262626262626262626262 @ 0x1bd614
+r2flutter -q -j -H~{=}cluster.clusters,dart_version,version_source,num_predefined
+o malloc://0x9f
+wx 50414421f5f5dcdc97000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082868485890020c1810040c481c0800020ce81820060c58181808080808080808080808080807022c4c4c3c0c0c0c080808087808080808080808080808080810181
+wx 6363636363636363636363636363636363636363636363636363636363636363 @ 0x18
+r2flutter -q -j -H~{=}cluster.clusters,dart_version,version_source,single_snapshot,vm_data,iso_data
+o malloc://0x75
+wx 50414421f5f5dcdc6d000000000000000300000000000000313434316436623133623836323366613766626636313433336162656264333170726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e7465727300828482878589e281c080ea81818780808080808081002c82
+wx 6464646464646464646464646464646464646464646464646464646464646464 @ 0x18
+r2flutter -q -j -H~{=}dart_version,version_source,header_fields,cid_code
+r2flutter -q -j -D 2.17.0 -H~{=}dart_version,version_source
+o malloc://0x64
+wx 50414421f5f5dcdc5c000000000000000300000000000000313434316436623133623836323366613766626636313433336162656264333170726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082838187858980
+wx 6565656565656565656565656565656565656565656565656565656565656565 @ 0x18
+r2flutter -q -j -H~{=}version_source,tag_style
+wv8 4096 @ 8
+r2flutter -q -j -H~{error}
 EOF
 EXPECT=<<EOF
-~3.9.0+ (structural-probe) structural-probe 175 1105
-~3.4.0+ (structural-probe) structural-probe 174 335
-~3.13.0+ (structural-probe) structural-probe True 0 4 4
-~2.17.0+ (structural-probe) structural-probe 6 17
-2.17.0 override
-fingerprint OBJECT_HEADER
+json.cluster.clusters = 1105;
+json.dart_version = "~3.9.0+ (structural-probe)";
+json.version_source = "structural-probe";
+json.cid_table.num_predefined = 175;
+json.cluster.clusters = 335;
+json.dart_version = "~3.4.0+ (structural-probe)";
+json.version_source = "structural-probe";
+json.cid_table.num_predefined = 174;
+json.vm_data = 0;
+json.iso_data = 4;
+json.single_snapshot = true;
+json.cluster.clusters = 4;
+json.dart_version = "~3.13.0+ (structural-probe)";
+json.version_source = "structural-probe";
+json.dart_version = "~2.17.0+ (structural-probe)";
+json.version_source = "structural-probe";
+json.header_fields = 6;
+json.cid_table.cid_code = 17;
+json.dart_version = "2.17.0";
+json.version_source = "override";
+json.version_source = "fingerprint";
+json.tag_style = "OBJECT_HEADER";
 Dart snapshots not found
 EOF
 RUN

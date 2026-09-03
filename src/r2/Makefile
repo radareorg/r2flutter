@@ -7,7 +7,7 @@ R2_LIBS    ?= $(shell r2 -H R2_LIBS 2>/dev/null)
 R2_PLUGDIR ?= $(shell r2 -H R2_USER_PLUGINS)
 CFLAGS += $(R2_CFLAGS)
 LDFLAGS += $(R2_LDFLAGS)
-LDLIBS += $(R2_LIBS)
+R2_PLUGIN_LIBS = $(R2_LIBS)
 DEPFLAGS = -MMD -MP
 
 # Detect platform for shared library extension
@@ -15,6 +15,9 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	EXT_SO = dylib
 	LDFLAGS += -dynamiclib -undefined dynamic_lookup
+	# Resolve radare2 symbols from the host. Linking a second installation's
+	# libr_* dylibs into a core plugin corrupts ABI-compatible host structures.
+	R2_PLUGIN_LIBS =
 else
 	EXT_SO = so
 	LDFLAGS += -shared
@@ -34,7 +37,7 @@ R2FLUTTER_LIB_TARGET = build/libr2flutter.a
 all: $(CORE_PLUGIN)
 
 $(CORE_PLUGIN): $(CORE_OBJ) $(R2FLUTTER_LIB)
-	$(CC) $(LDFLAGS) -o $@ $(CORE_OBJ) $(R2FLUTTER_LIB) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $(CORE_OBJ) $(R2FLUTTER_LIB) $(R2_PLUGIN_LIBS) $(LDLIBS)
 
 core_flutter.o: core_flutter.c
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@

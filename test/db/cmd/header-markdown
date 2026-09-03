@@ -1,7 +1,9 @@
 NAME=header-markdown
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -H bins/android/first 2>/dev/null | grep -E '^(#{1,2} |={3,}|-{3,})'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -H~Dart AOT Snapshot Header,Snapshot Addresses,VM Snapshot,Isolate Snapshot,Class IDs
 EOF
 EXPECT=<<EOF
 # Dart AOT Snapshot Header

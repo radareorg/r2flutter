@@ -1,7 +1,9 @@
 NAME=text-funcs-authpass
-FILE=-
+FILE=bins/ios/AuthPass.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -f -l 3 bins/ios/AuthPass.app
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -f -l 3
 EOF
 EXPECT=<<EOF
 0xfe28 method._HashMap_3220832.addAll
@@ -11,11 +13,13 @@ EOF
 RUN
 
 NAME=json-funcs-authpass
-FILE=-
+FILE=bins/ios/AuthPass.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -j -f -l 3 bins/ios/AuthPass.app
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -j -f -l 3
 EOF
 EXPECT=<<EOF
-[{"addr":65064,"name":"method._HashMap_3220832.addAll"},{"addr":65236,"name":"method._HashMap_3220832.dyn:forEach"},{"addr":65360,"name":"method.MapBase.dyn:map"}]
+[{"addr":65064,"name":"method._HashMap_3220832.addAll","signature":"dynamic(_HashMap@3220832)"},{"addr":65236,"name":"method._HashMap_3220832.dyn:forEach","signature":"dynamic(_HashMap@3220832,dynamic)"},{"addr":65360,"name":"method.MapBase.dyn:map","signature":"dynamic(MapBase,dynamic)"}]
 EOF
 RUN

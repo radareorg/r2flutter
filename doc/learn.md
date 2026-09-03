@@ -1531,3 +1531,38 @@ version/hash overrides and exact known hashes also bypass the probe, preserving
 deterministic user control and fast known-version behavior. Verbose mode reports
 candidate validity, scores, the selected range start, or the reason the parser
 kept the fingerprint fallback.
+
+## Keep Snapshot Fixtures Inside radare2
+
+Small serialized snapshots can live directly in r2r records as `malloc://`
+files populated with `wx`. For tests derived from real binaries, `o: $s` makes
+an in-memory copy of the current file; subsequent `wx` or `wv8` commands mutate
+that copy without touching the fixture on disk. Open real inputs with `-n` when
+the test depends on physical offsets, and patch every occurrence that the old
+whole-file replacement changed.
+
+`o:` copies from the current seek, so seek to `0` before cloning a complete
+mapped image. It creates and selects the malloc descriptor before filling its
+bytes; after changing executable metadata, use `ooi` to parse the completed
+in-memory image again. Plain `ob` only lists or selects an existing bin object
+and leaves a clone without section or symbol information. For fat Mach-O, a
+normal bin load maps the selected thin slice at virtual address zero, which
+lets the stripped-discovery test clone and patch the slice without a temporary
+file or a Python Mach-O rewriter.
+
+r2r starts radare2 with `-NN` and `R2_NOPLUGINS=1`, so core-plugin tests must
+load the local `core_flutter` library explicitly with `L`. Tests try the native
+`.dylib` and `.so` names to remain portable. JSON-path (`~{path}`) and gron
+(`~{=}`) filters replace most Python extraction pipelines and keep expected
+output focused. Empty command output followed by `~{=}` exposed a radare2
+console bug: the empty-buffer guard covered JSON formatting but not gron mode,
+allowing `r_json_parsedup` to receive NULL. The guard and its `cons_grep`
+regression test live in the sibling radare2 tree.
+
+On macOS, a core plugin built with `-undefined dynamic_lookup` must resolve
+radare2 APIs from the host process. Linking `R2_LIBS` as well can load a second
+installation's `libr_*` dylibs when their install names point at another
+prefix. The ABI number can still match while host structures cross library
+instances, producing hangs or crashes in parser-heavy commands. The Darwin
+plugin target therefore leaves radare2 symbols unresolved; Linux continues to
+link the libraries reported by `r2 -H R2_LIBS`.

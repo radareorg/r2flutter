@@ -1,7 +1,9 @@
 NAME=text-fields-synthetic
-FILE=-
+FILE=bins/synthetic/field_snapshot.bin
 CMDS=<<EOF
-!!../bin/r2flutter -c bins/synthetic/field_snapshot.bin 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -c
 EOF
 EXPECT=<<EOF
 class TestClass implements TestInterface (size=48)
@@ -20,9 +22,11 @@ EOF
 RUN
 
 NAME=json-fields-synthetic
-FILE=-
+FILE=bins/synthetic/field_snapshot.bin
 CMDS=<<EOF
-!!../bin/r2flutter -j -c bins/synthetic/field_snapshot.bin 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -j -c
 EOF
 EXPECT=<<EOF
 [{"ref":12,"name":"TestClass","library":{"ref":11,"name":"package:test"},"interfaces":[{"ref":23,"class_ref":13,"name":"TestInterface"}],"layout":{"instance_size":48,"type_params":1,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false},"fields":[{"name":"fieldA","type":"int","offset":16,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"items","type":"List<int>","offset":24,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"genericItems","type":"List<X0>","offset":32,"flags":{"static":false,"final":false,"const":false,"late":false}},{"name":"callback","type":"(int) => String","offset":40,"flags":{"static":false,"final":false,"const":false,"late":false}}],"methods":[{"name":"compute","entry":0,"owner":"TestClass","signature":"(int) => String","kind_tag":0,"kind":"RegularFunction"}]},{"ref":13,"name":"TestInterface","library":{"ref":11,"name":"package:test"},"layout":{"instance_size":0,"type_params":0,"type_arg_offset":0},"flags":{"abstract":false,"enum":false,"mixin":false,"toplevel":false}}]
@@ -30,9 +34,11 @@ EOF
 RUN
 
 NAME=strings-fields-synthetic
-FILE=-
+FILE=bins/synthetic/field_snapshot.bin
 CMDS=<<EOF
-!!../bin/r2flutter -zz bins/synthetic/field_snapshot.bin 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -zz
 EOF
 EXPECT=<<EOF
 0x00000018   74 :app "00000000000000000000000000000000product arm64 macos no-compressed-pointers"
@@ -49,9 +55,11 @@ EOF
 RUN
 
 NAME=json-strings-fields-synthetic
-FILE=-
+FILE=bins/synthetic/field_snapshot.bin
 CMDS=<<EOF
-!!../bin/r2flutter -j -xzz bins/synthetic/field_snapshot.bin 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -j -xzz
 EOF
 EXPECT=<<EOF
 [{"ref":0,"len":74,"value":"00000000000000000000000000000000product arm64 macos no-compressed-pointers","category":"app","two_byte":false,"canonical":true,"addr":24},{"ref":1,"len":9,"value":"TestClass","category":"lib","two_byte":false,"canonical":true,"addr":110,"refs":[{"obj":12,"type":"class","kind":"class.name","name":"TestClass"}]},{"ref":2,"len":12,"value":"package:test","category":"lib","two_byte":false,"canonical":true,"addr":120,"refs":[{"obj":11,"type":"library","kind":"library.name","name":"package:test"}]},{"ref":3,"len":6,"value":"fieldA","category":"lib","two_byte":false,"canonical":true,"addr":133,"refs":[{"obj":25,"type":"field","kind":"field.name","name":"TestClass.fieldA"}]},{"ref":4,"len":5,"value":"items","category":"lib","two_byte":false,"canonical":true,"addr":144,"refs":[{"obj":26,"type":"field","kind":"field.name","name":"TestClass.items"}]},{"ref":5,"len":12,"value":"genericItems","category":"lib","two_byte":false,"canonical":true,"addr":150,"refs":[{"obj":27,"type":"field","kind":"field.name","name":"TestClass.genericItems"}]},{"ref":6,"len":8,"value":"callback","category":"lib","two_byte":false,"canonical":true,"addr":163,"refs":[{"obj":28,"type":"field","kind":"field.name","name":"TestClass.callback"}]},{"ref":7,"len":7,"value":"compute","category":"lib","two_byte":false,"canonical":true,"addr":172,"refs":[{"obj":29,"type":"function","kind":"method.name","name":"TestClass.compute"}]},{"ref":8,"len":13,"value":"TestInterface","category":"lib","two_byte":false,"canonical":true,"addr":180,"refs":[{"obj":12,"type":"class","kind":"class.interface","name":"TestClass"},{"obj":13,"type":"class","kind":"class.name","name":"TestInterface"}]}]
@@ -59,9 +67,11 @@ EOF
 RUN
 
 NAME=xrefs-fields-synthetic
-FILE=-
+FILE=bins/synthetic/field_snapshot.bin
 CMDS=<<EOF
-!!../bin/r2flutter -x bins/synthetic/field_snapshot.bin 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -x
 EOF
 EXPECT=<<EOF
 metadata class.name class TestClass [ref=12] -> string TestClass [ref=2] @ 0x6e
@@ -95,43 +105,57 @@ L ../src/r2/core_flutter.dylib
 L ../src/r2/core_flutter.so
 r2flutter -C
 e bin.lang
-ic | sed 's, dart , ? ,g'
+ic
 t dart_TestClass
 EOF
 EXPECT=<<EOF
 dart
-0x00000000 [0x00000000 - 0x00000000]      0 ? class 0 dart_TestClass :: dart_TestInterface
-0x00000000 ?   method   0      compute
-0x00000010 ?    field   0      fieldA
-0x00000018 ?    field   1      items
-0x00000020 ?    field   2      genericItems
-0x00000028 ?    field   3      callback
-0x00000000 [0x00000000 - 0x00000000]      0 ? class 1 dart_TestInterface
+0x00000000 [0x00000000 - 0x00000000]      0 dart class 0 dart_TestClass :: dart_TestInterface
+0x00000000 dart   method   0      compute
+0x00000010 dart    field   0      fieldA
+0x00000018 dart    field   1      items
+0x00000020 dart    field   2      genericItems
+0x00000028 dart    field   3      callback
+0x00000000 [0x00000000 - 0x00000000]      0 dart class 1 dart_TestInterface
 pf [16].qppp fieldA items genericItems callback
 EOF
 RUN
 
 NAME=r2-fields-synthetic-safe-type-script
-FILE=-
+FILE=bins/synthetic/field_snapshot.bin
 CMDS=<<EOF
-!!../bin/r2flutter -r -c bins/synthetic/field_snapshot.bin 2>/dev/null | awk 'BEGIN { td = 0; bad = 0 } /^"td struct dart_TestClass \{ uint8_t _pad0\[0x10\]; int64_t fieldA; void \* items; void \* genericItems; void \* callback; \};"$/ { td = 1 } /^af @/ || /^afc / || /td struct\.dart/ || /\(int\) => String callback @/ { bad = 1 } END { print "td=" td; print "bad=" bad }'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -r -c~?td struct dart_TestClass
+r2flutter -r -c~?^af
+r2flutter -r -c~?struct.dart
+r2flutter -r -c~?callback
 EOF
 EXPECT=<<EOF
-td=1
-bad=0
+1
+0
+0
+3
 EOF
 RUN
 
 NAME=r2-plugin-C-fields-synthetic
-FILE=-
+FILE=bins/synthetic/field_snapshot.bin
 CMDS=<<EOF
-!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -C\" -qc ic -qc \"t dart_TestClass\" bins/synthetic/field_snapshot.bin 2>/dev/null" | awk '/class .* dart_TestClass( :: dart_TestInterface)?$/ { cls = 1 } /class .* dart_TestClass :: dart_TestInterface$/ { super = 1 } /method.* compute$/ { method = 1 } /field.* fieldA$/ { field = 1 } /^pf \[16\]\.qppp fieldA items genericItems callback$/ { type = 1 } END { print "class=" cls + 0; print "super=" super + 0; print "method=" method + 0; print "field=" field + 0; print "type=" type + 0 }'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -C
+ic~?&class,dart_TestClass
+ic~?&dart_TestClass,dart_TestInterface
+ic~?&method,compute
+ic~?&field,fieldA
+t dart_TestClass~?fieldA items genericItems callback
 EOF
 EXPECT=<<EOF
-class=1
-super=1
-method=1
-field=1
-type=1
+1
+1
+1
+1
+1
 EOF
 RUN

@@ -1,7 +1,9 @@
 NAME=r2-strings-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -r -zz bins/ios/Runner.app 2>/dev/null | sed -n '1,7p'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -r -zz~:0..7
 EOF
 EXPECT=<<EOF
 # Dart Strings

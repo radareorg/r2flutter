@@ -269,7 +269,7 @@ static char *dart_signature_to_afs_proto(const char *fname, const char *sig) {
 	if (!lp) {
 		return NULL;
 	}
-	char *ret = r_str_ndup (sig, (int)(lp - sig));
+	char *ret = r_str_ndup (sig, (int) (lp - sig));
 	if (R_STR_ISEMPTY (ret)) {
 		free (ret);
 		return NULL;

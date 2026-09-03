@@ -1,35 +1,41 @@
 NAME=text-xrefs-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -l 4 -x bins/ios/Runner.app 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -l 4 -x
 EOF
 EXPECT=<<EOF
 metadata class.name class Pointer [ref=36652] -> string Pointer [ref=151] @ 0x1b24d0
+metadata class.library class Pointer [ref=36652] -> library library#41733 [ref=41733]
 metadata method.owner method Pointer.get:hashCode [ref=31064] -> class Pointer [ref=36652]
 metadata method.name method Pointer.get:hashCode [ref=31064] -> string get:hashCode [ref=7217] @ 0x2b0230
-metadata method.signature method Pointer.get:hashCode [ref=31064] -> type type#1 [ref=1]
 EOF
 RUN
 
 NAME=json-xrefs-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -j -l 3 -x bins/ios/Runner.app 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -j -l 3 -x
 EOF
 EXPECT=<<EOF
-[{"kind":"class.name","origin":"metadata","src":{"type":"class","name":"Pointer","ref":36652},"dst":{"type":"string","name":"Pointer","ref":151,"addr":1778896}},{"kind":"method.owner","origin":"metadata","src":{"type":"method","name":"Pointer.get:hashCode","ref":31064},"dst":{"type":"class","name":"Pointer","ref":36652}},{"kind":"method.name","origin":"metadata","src":{"type":"method","name":"Pointer.get:hashCode","ref":31064},"dst":{"type":"string","name":"get:hashCode","ref":7217,"addr":2818608}}]
+[{"kind":"class.name","origin":"metadata","src":{"type":"class","name":"Pointer","ref":36652},"dst":{"type":"string","name":"Pointer","ref":151,"addr":1778896}},{"kind":"class.library","origin":"metadata","src":{"type":"class","name":"Pointer","ref":36652},"dst":{"type":"library","name":"library#41733","ref":41733}},{"kind":"method.owner","origin":"metadata","src":{"type":"method","name":"Pointer.get:hashCode","ref":31064},"dst":{"type":"class","name":"Pointer","ref":36652}}]
 EOF
 RUN
 
 NAME=r2-xrefs-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -r -l 2 -x bins/ios/Runner.app 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -r -l 2 -x
 EOF
 EXPECT=<<EOF
 # Dart xrefs
 # metadata class.name class Pointer [ref=36652] -> string Pointer [ref=151] @ 0x1b24d0
 '@0x1b24d0'CCu base64:UG9pbnRlcg==
-# metadata method.owner method Pointer.get:hashCode [ref=31064] -> class Pointer [ref=36652]
+# metadata class.library class Pointer [ref=36652] -> library library#41733 [ref=41733]
 EOF
 RUN

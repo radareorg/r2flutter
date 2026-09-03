@@ -1,12 +1,14 @@
 NAME=header-deep-macos
-FILE=-
+FILE=bins/macos/hello/hello.aot
 CMDS=<<EOF
-!!../bin/r2flutter -q -HHH -l 36 bins/macos/hello/hello.aot 2>/dev/null | grep -Eo '^(  detail: object_pool_entries|  34 cid=23 alloc=object_pool fill=object_pool count=1|    object_pool ref=9145 index=0 length=1380)'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -HHH -l 36~object_pool_entries,34 cid=23,object_pool ref=9145
 EOF
 EXPECT=<<EOF
   detail: object_pool_entries
   detail: object_pool_entries
-  34 cid=23 alloc=object_pool fill=object_pool count=1
-    object_pool ref=9145 index=0 length=1380
+  34 cid=23 alloc=object_pool fill=object_pool count=1 refs=9145..9146 flags=- alloc=0x5ee7b..0x5ee7e fill=0x6e81a..0x6f56e fill_status=ok items=count:1,first:1380,min:1380,max:1380,total:1380
+    object_pool ref=9145 index=0 length=1380 stream=0x6e81a
 EOF
 RUN

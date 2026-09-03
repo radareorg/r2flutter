@@ -1,9 +1,17 @@
 NAME=object-pool-resolve-android
-FILE=-
+FILE=bins/android/mafia/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -q -j -HHH -l 1100 bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); iso = next (s for s in j["snapshots"] if s["label"] == "Isolate"); pool = next (p for c in iso["clusters"] for p in c.get ("object_pools", [])); e11 = pool["entries"][11]; e12 = pool["entries"][12]; print ("pool=%d len=%d e11=%s:%d:%s e12=%s:%d:%d:%s" % (pool["ref"], pool["length"], e11["resolved_kind"], e11["resolved_cid"], e11["resolved_name"], e12["resolved_kind"], e12["resolved_cid"], e12["resolved_code_index"], e12["resolved_name"]))'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -j -HHH -l 1100~{snapshots[1].clusters[1088].object_pools[0].ref}
+r2flutter -q -j -HHH -l 1100~{snapshots[1].clusters[1088].object_pools[0].length}
+r2flutter -q -j -HHH -l 1100~{snapshots[1].clusters[1088].object_pools[0].entries[11]}
+r2flutter -q -j -HHH -l 1100~{snapshots[1].clusters[1088].object_pools[0].entries[12]}
 EOF
 EXPECT=<<EOF
-pool=195985 len=46569 e11=string:93:getCallbackHandle e12=function:7:37188:method._anonymous_closure_
+195985
+46569
+{"index":11,"pool_offset":103,"pp_offset":104,"stream_offset":3690871,"value_offset":3690872,"bits":17,"type":"tagged_object","patch":"not_patchable","behavior":"snapshotable","ref":17080,"resolved_kind":"string","resolved_name":"getCallbackHandle","resolved_cid":93}
+{"index":12,"pool_offset":111,"pp_offset":112,"stream_offset":3690875,"value_offset":3690876,"bits":17,"type":"tagged_object","patch":"not_patchable","behavior":"snapshotable","ref":152807,"resolved_kind":"function","resolved_name":"method._anonymous_closure_","resolved_cid":7,"resolved_code_index":37188}
 EOF
 RUN

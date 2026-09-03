@@ -1,27 +1,54 @@
 NAME=object-inspect-tagged-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -q -j -O 0x1651 bins/android/first 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); o = j["value"]["object"]; s = o["string"]; print ("%s addr=0x%x cid=%d len=%d value=%s" % (j["kind"], o["addr"], o["cid"], s["length"], s["value"]))'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -j -O 0x1651~{=}kind,value.object.addr,value.object.cid,value.object.string.length,value.object.string.value
 EOF
 EXPECT=<<EOF
-object addr=0x1650 cid=93 len=11 value=_Uint16List
+json.kind = "object";
+json.value.kind = "object";
+json.value.object.addr = 5712;
+json.value.object.cid = 93;
+json.value.object.cid_name = "String";
+json.value.object.string.length_raw = 22;
+json.value.object.string.length = 11;
+json.value.object.string.value_truncated = false;
+json.value.object.string.value = "_Uint16List";
+json.value.candidates[0].kind = "tagged_heap";
+json.value.candidates[1].kind = "raw_address";
 EOF
 RUN
 
 NAME=object-inspect-pp-mafia
-FILE=-
+FILE=bins/android/mafia/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -q -j -O pp+0x68 bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); p = j["pp_slot"]; v = j["value"]; s = j["snapshot"]; print ("%s index=%d type=%s kind=%s cid=%d name=%s decoded=%s snapshot=%s:%s" % (j["kind"], p["entry_index"], p["type"], p["resolved_kind"], p["resolved_cid"], p["resolved_name"], v["decoded"], s["kind"], s["value"]))'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -j -O pp+0x68~{=}kind,pp_slot.entry_index,pp_slot.type,pp_slot.resolved_kind,pp_slot.resolved_cid,pp_slot.resolved_name,value.decoded,snapshot.kind,snapshot.value
 EOF
 EXPECT=<<EOF
-object_pool_ref index=11 type=tagged_object kind=string cid=93 name=getCallbackHandle decoded=False snapshot=string:getCallbackHandle
+json.kind = "object_pool_ref";
+json.pp_slot.entry_index = 11;
+json.pp_slot.type = "tagged_object";
+json.pp_slot.resolved_kind = "string";
+json.pp_slot.resolved_name = "getCallbackHandle";
+json.pp_slot.resolved_cid = 93;
+json.value.decoded = false;
+json.value.kind = "object_pool_ref";
+json.value.candidates[0].kind = "raw_address";
+json.value.candidates[1].kind = "compressed_data_image";
+json.snapshot.kind = "string";
+json.snapshot.value = "getCallbackHandle";
 EOF
 RUN
 
 NAME=object-inspect-plugin-android
-FILE=-
+FILE=bins/android/first/libapp.so
 CMDS=<<EOF
-!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -q -O 0x1651\" bins/android/first/libapp.so 2>/dev/null"
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -O 0x1651
 EOF
 EXPECT=<<EOF
 _Uint16List

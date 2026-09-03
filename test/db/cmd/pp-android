@@ -1,7 +1,9 @@
 NAME=pp-android
-FILE=-
+FILE=bins/android/mafia/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -q -p bins/android/mafia 2>/dev/null
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -p
 EOF
 EXPECT=<<EOF
 vaddr=0x385154 paddr=0x385154
@@ -9,33 +11,57 @@ EOF
 RUN
 
 NAME=pp-json-android
-FILE=-
+FILE=bins/android/mafia/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -q -j -p bins/android/mafia 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); print ("base=%d vaddr=%d paddr=%d kind=%s cluster=%d pool=%d length=%d size=%d word=%d source_paddr=%d" % (j["base"], j["vaddr"], j["paddr"], j["kind"], j["cluster_index"], j["pool_ref"], j["length"], j["size"], j["word_size"], j["source_addr"]["paddr"]))'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -j -p~{=}base,vaddr,paddr,kind,cluster_index,pool_ref,length,size,word_size,source_addr.paddr
 EOF
 EXPECT=<<EOF
-base=3690836 vaddr=3690836 paddr=3690836 kind=synthetic cluster=1088 pool=195985 length=46569 size=419144 word=8 source_paddr=3690836
+json.base = 3690836;
+json.vaddr = 3690836;
+json.paddr = 3690836;
+json.kind = "synthetic";
+json.pp_addr.vaddr = 3690836;
+json.pp_addr.paddr = 3690836;
+json.source_addr.vaddr = 3690836;
+json.source_addr.paddr = 3690836;
+json.snapshot_base = 19072;
+json.data_image_base = 4890624;
+json.cluster_index = 1088;
+json.pool_ref = 195985;
+json.length = 46569;
+json.size = 419144;
+json.word_size = 8;
 EOF
 RUN
 
 NAME=pp-r2-android
-FILE=-
+FILE=bins/android/mafia/libapp.so
 CMDS=<<EOF
-!!../bin/r2flutter -q -r -p bins/android/mafia 2>/dev/null | grep -E '^(o malloc://|e anal[.]gp=|dr anal[.]roregs=|dr x27=|f PP =|f dart[.]pp )'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -r -p~malloc://,anal.gp,anal.roregs,x27=,PP =,dart.pp
 EOF
 EXPECT=<<EOF
 o malloc://0x66548 0x385154 rw
 e anal.gp=0x385154
+e anal.roregs=
 dr x27=0x385154
+e anal.roregs=x27,gp,zero
 f PP = 0x385154
 f dart.pp 0x66548 @ 0x385154
+f dart.pp.entries 0x5af48 @ 0x385164
+f dart.pp.entry_bits 0xb5e9 @ 0x3e00ac
 EOF
 RUN
 
 NAME=pp-plugin-android
-FILE=-
+FILE=bins/android/mafia/libapp.so
 CMDS=<<EOF
-!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -q -i \"\$p\" -qc \"r2flutter -q -p\" bins/android/mafia/libapp.so 2>/dev/null"
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -p
 EOF
 EXPECT=<<EOF
 vaddr=0x385154 paddr=0x385154
@@ -43,9 +69,12 @@ EOF
 RUN
 
 NAME=pp-plugin-rebased-android
-FILE=-
+FILE=bins/android/mafia/libapp.so
+ARGS=-B 0x70000000
 CMDS=<<EOF
-!!sh -c "p=../src/r2/core_flutter.dylib; [ -f \"\$p\" ] || p=../src/r2/core_flutter.so; r2 -NN -B 0x70000000 -q -i \"\$p\" -qc \"r2flutter -q -p\" bins/android/mafia/libapp.so 2>/dev/null"
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -p
 EOF
 EXPECT=<<EOF
 vaddr=0x70385154 paddr=0x385154
@@ -53,11 +82,27 @@ EOF
 RUN
 
 NAME=pp-json-ios
-FILE=-
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
 CMDS=<<EOF
-!!../bin/r2flutter -q -j -p bins/ios/Runner.app 2>/dev/null | python3 -c 'import json, sys; j = json.load (sys.stdin); print ("base=%d vaddr=%d paddr=%d kind=%s cluster=%d pool=%d length=%d size=%d word=%d source_paddr=%d" % (j["base"], j["vaddr"], j["paddr"], j["kind"], j["cluster_index"], j["pool_ref"], j["length"], j["size"], j["word_size"], j["source_addr"]["paddr"]))'
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+r2flutter -q -j -p~{=}base,vaddr,paddr,kind,cluster_index,pool_ref,length,size,word_size,source_addr.paddr
 EOF
 EXPECT=<<EOF
-base=2282193 vaddr=2282193 paddr=2282193 kind=synthetic cluster=320 pool=41741 length=8435 size=75936 word=8 source_paddr=2282193
+json.base = 2282193;
+json.vaddr = 2282193;
+json.paddr = 2282193;
+json.kind = "synthetic";
+json.pp_addr.vaddr = 2282193;
+json.pp_addr.paddr = 2282193;
+json.source_addr.vaddr = 2265809;
+json.source_addr.paddr = 2282193;
+json.snapshot_base = 1807872;
+json.data_image_base = 2344128;
+json.cluster_index = 320;
+json.pool_ref = 41741;
+json.length = 8435;
+json.size = 75936;
+json.word_size = 8;
 EOF
 RUN
