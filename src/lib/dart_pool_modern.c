@@ -388,6 +388,7 @@ typedef struct {
 	// handful of clusters. Their readers are gated on this flag; everything
 	// else is shared.
 	bool legacy_format;
+	bool shift1_format;
 	bool closure_variable;
 	// every CID this layout defines, indexed by kind; -1 when the kind is absent
 	int by_kind[DART_CID_KIND_COUNT];
@@ -462,6 +463,7 @@ static ModernCidCache modern_cid_cache_init(const DartVerLayout *layout) {
 		.typed_data_internal_limit = dart_cid_typed_data_limit (layout),
 		.typed_data_stride = dart_cid_typed_data_stride (layout),
 		.legacy_format = modern_layout_is_legacy (layout),
+		.shift1_format = layout && layout->tag_style == DART_TAG_STYLE_CID_SHIFT1,
 		.closure_variable = layout && layout->closure_variable,
 };
 	for (int kind = 0; kind < DART_CID_KIND_COUNT; kind++) {
@@ -980,8 +982,11 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 	if (cids->closure_variable && modern_cid_eq (cid, cids->closure)) {
 		return modern_fill_spec_kind (MODERN_FILL_CLOSURE);
 	}
+	if (modern_cid_eq (cid, cids->patch_class)) {
+		// FullAOT PatchClass layout differs across snapshot families.
+		return modern_fill_spec_refs ((cids->legacy_format || cids->shift1_format)? 3: 2);
+	}
 	static const ModernFillSpecRule rules[] = {
-		{ DART_CID_PATCH_CLASS, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
 		{ DART_CID_TYPE_PARAMETERS, MODERN_FILL_REFS, 4, -1, -1, 0, { 0 } },
 		{ DART_CID_CLOSURE_DATA, MODERN_FILL_REFS, 2, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
 		{ DART_CID_FFI_TRAMPOLINE_DATA, MODERN_FILL_REFS, 4, -1, -1, 2, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8 } },
@@ -1046,8 +1051,6 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 	// than the newer format the table above encodes. Verified against the Dart
 	// 2.18 AOT (kFullAOT, PRODUCT) serializer in runtime/vm/app_snapshot.cc.
 	static const ModernFillSpecRule legacy_rules[] = {
-		// PatchClass::to_snapshot stops at script_ in AOT: 3 refs, no scalars.
-		{ DART_CID_PATCH_CLASS, MODERN_FILL_REFS, 3, -1, -1, 0, { 0 } },
 		// FfiTrampolineData: ReadFromTo (4) + ReadUnsigned (callback_id).
 		{ DART_CID_FFI_TRAMPOLINE_DATA, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
 		// Type: ReadFromTo (3) + ReadUnsigned (type_class_id) + Read<uint8_t>.
@@ -1987,14 +1990,19 @@ static bool modern_resolver_read_library_fill(ModernWalk *w, ClusterStream *s, c
 
 static bool modern_resolver_read_patch_class_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
 	ModernRefResolver *resolver = (ModernRefResolver *)w->user;
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, meta->cid);
 	ut64 ref = meta->start_ref;
 	for (ut64 j = 0; j < meta->count; j++, ref++) {
 		ut64 wrapped_ref = 0;
-		ut64 script_ref = 0;
-		if (!cs_read_ref_id (s, &wrapped_ref) || !cs_read_ref_id (s, &script_ref)) {
-			return false;
+		for (int k = 0; k < spec.num_refs; k++) {
+			ut64 rv = 0;
+			if (!cs_read_ref_id (s, &rv)) {
+				return false;
+			}
+			if (!k) {
+				wrapped_ref = rv;
+			}
 		}
-		(void)script_ref;
 		if (ref < resolver->refs_count) {
 			resolver->patch_wrapped_ref[ref] = wrapped_ref;
 		}
@@ -4982,12 +4990,18 @@ static bool modern_name_scan_read_library(ModernWalk *w, ClusterStream *s, const
 
 static bool modern_name_scan_read_patch_class(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *m) {
 	ModernNameScanWalk *u = (ModernNameScanWalk *)w->user;
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, m->cid);
 	ut64 ref = m->start_ref;
 	for (ut64 j = 0; j < m->count; j++, ref++) {
 		ut64 wrapped_ref = 0;
-		ut64 script_ref = 0;
-		if (!cs_read_ref_id (s, &wrapped_ref) || !cs_read_ref_id (s, &script_ref)) {
-			return false;
+		for (int k = 0; k < spec.num_refs; k++) {
+			ut64 rv = 0;
+			if (!cs_read_ref_id (s, &rv)) {
+				return false;
+			}
+			if (!k) {
+				wrapped_ref = rv;
+			}
 		}
 		if (ref < u->refs_count) {
 			u->patch_wrapped_ref[ref] = wrapped_ref;
