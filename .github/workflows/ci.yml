@@ -28,6 +28,14 @@ jobs:
       run: r2r test/db/cmd
     - name: Radare Extras Testing
       run: r2r test/db/extras
+    - name: Package Linux build
+      run: make -C dist/linux
+    - name: Upload Linux package
+      uses: actions/upload-artifact@v7
+      with:
+        name: r2flutter-linux-x86_64
+        path: dist/linux/r2flutter-linux-x86_64.tar.gz
+        if-no-files-found: error
 
   meson-linux24:
     name: Meson build on Linux
@@ -65,6 +73,43 @@ jobs:
       run: r2r test/db/cmd
     - name: Radare Extras Testing
       run: r2r test/db/extras
+    - name: Package macOS build
+      run: make -C dist/macos
+    - name: Upload macOS package
+      uses: actions/upload-artifact@v7
+      with:
+        name: r2flutter-macos
+        path: dist/macos/r2flutter-macos.tar.gz
+        if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-python@v7
+      with:
+        python-version: 3.14.x
+    - name: Prepare MSVC toolchain
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+    - name: Install build tools
+      shell: pwsh
+      run: python -m pip install meson ninja
+    - name: Install radare2 ${{ env.R2V }}
+      uses: radareorg/github-actions@v3
+      with:
+        version: ${{ env.R2V }}
+        from-git: false
+    - name: Build and package r2flutter
+      shell: pwsh
+      run: ./dist/windows/build.ps1
+    - name: Upload Windows package
+      uses: actions/upload-artifact@v7
+      with:
+        name: r2flutter-windows-x86_64
+        path: dist/windows/r2flutter-windows-x86_64.zip
+        if-no-files-found: error
 
   r2-xps:
     name: Build radare2 with r2flutter XPS
@@ -96,6 +141,7 @@ jobs:
       - build-linux24
       - meson-linux24
       - build-macos
+      - build-windows
       - r2-xps
     runs-on: ubuntu-24.04
     outputs:
@@ -116,6 +162,32 @@ jobs:
     needs: check-release
     runs-on: ubuntu-24.04
     steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+    - name: Prepare release notes
+      shell: bash
+      run: |
+        tag="${GITHUB_REF_NAME}"
+        previous_tag="$(git tag --merged "${tag}^" --sort=-version:refname | awk '/^[0-9]/{print; exit}')"
+        {
+          echo "# ${tag}"
+          echo
+          if [ -n "${previous_tag}" ]; then
+            echo "## Changes since ${previous_tag}"
+            echo
+            git log --pretty=format:'- %s (%h)' "${previous_tag}..${tag}"
+          else
+            echo "## Changes"
+            echo
+            git log --pretty=format:'- %s (%h)' "${tag}"
+          fi
+          echo
+        } > RELEASE_NOTES.md
+    - name: Download release artifacts
+      uses: actions/download-artifact@v8
+      with:
+        path: release-artifacts
     - name: Create GitHub release
       uses: softprops/action-gh-release@v3
       env:
@@ -123,4 +195,9 @@ jobs:
       with:
         tag_name: ${{ github.ref_name }}
         name: ${{ github.ref_name }}
-        generate_release_notes: true
+        body_path: RELEASE_NOTES.md
+        generate_release_notes: false
+        files: |
+          release-artifacts/r2flutter-linux-x86_64/r2flutter-linux-x86_64.tar.gz
+          release-artifacts/r2flutter-macos/r2flutter-macos.tar.gz
+          release-artifacts/r2flutter-windows-x86_64/r2flutter-windows-x86_64.zip
