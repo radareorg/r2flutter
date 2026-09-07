@@ -1,7 +1,7 @@
 project(
   'r2flutter',
   'c',
-version : '0.3.0',
+version : '0.3.2',
   meson_version : '>=0.55.0',
   default_options : ['warning_level=2', 'werror=false']
 )
