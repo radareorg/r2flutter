@@ -127,12 +127,12 @@ done
 : ${INSTALL_PROGRAM_STRIP:=${INSTALL} -m 755 -s}
 : ${INSTALL_MAN:=${INSTALL} -m 444}
 : ${INSTALL_LIB:=${INSTALL} -m 755 -c}
- PKGNAME='r2flutter' ; VERSION='0.2.0' ; VERSION_MAJOR=0; VERSION_MINOR=2; VERSION_PATCH=0; VERSION_NUMBER=00200; CONTACT_MAIL="pancake@nopcode.org" ; CONTACT_NAME="pancake" ; CONTACT="pancake <pancake@nopcode.org>" ;
+ PKGNAME='r2flutter' ; VERSION='0.3.0' ; VERSION_MAJOR=0; VERSION_MINOR=3; VERSION_PATCH=0; VERSION_NUMBER=00300; CONTACT_MAIL="pancake@nopcode.org" ; CONTACT_NAME="pancake" ; CONTACT="pancake <pancake@nopcode.org>" ;
 }
 
 show_usage() {
 cat <<EOF2
-'configure' configures r2flutter-0.2.0 to adapt to many kinds of systems.
+'configure' configures r2flutter-0.3.0 to adapt to many kinds of systems.
 
 Usage: ./configure [OPTION]... [VAR=VALUE]...
 
@@ -214,10 +214,10 @@ ocho() {
 
 show_version() {
 if [ "$QUIET" = 1 ]; then
-	echo "0.2.0"
+	echo "0.3.0"
 	exit 0
 fi
-echo "r2flutter-0.2.0 configuration script done with acr v2.2.8.
+echo "r2flutter-0.3.0 configuration script done with acr v2.2.8.
 The 'Free Software Foundation' message is only for autodetection.
 Originally written by pancake <nopcode.org>."
 exit 0
@@ -246,13 +246,10 @@ case $flag in
 	show_version ; ;;
 -r|--r|--report)
 echo "PKGNAME:     r2flutter"
-echo "VERSION:     0.2.0"
+echo "VERSION:     0.3.0"
 echo "AUTHOR:      pancake"
 echo "EMAIL:       pancake@nopcode.org"
 echo "LANGS:       c"
-echo "R2_CFLAGS:   $(r2 -H R2_CFLAGS 2>/dev/null || echo '(r2 not found)')"
-echo "R2_LDFLAGS:  $(r2 -H R2_LDFLAGS 2>/dev/null || echo '(r2 not found)')"
-echo "R2_LIBS:     $(r2 -H R2_LIBS 2>/dev/null || echo '(r2 not found)')"
 echo "FLAGS:       --with-precompiled-agent"
 	exit 0
 	;;
@@ -323,7 +320,7 @@ parse_options "$1"
 shift
 done
 
-ENVWORDS="MANDIR DESCRIPTION INFODIR LIBDIR INCLUDEDIR LOCALSTATEDIR ETCDIR SYSCONFDIR DATADIR DOCDIR LIBEXECDIR SBINDIR BINDIR EPREFIX PREFIX SPREFIX TARGET HOST BUILD INSTALL INSTALL_LIB INSTALL_MAN INSTALL_PROGRAM INSTALL_PROGRAM_STRIP INSTALL_DIR INSTALL_SCRIPT INSTALL_DATA HOST_OS HOST_CPU BUILD_OS BUILD_CPU TARGET_OS TARGET_CPU VERSION VERSION_MAJOR VERSION_MINOR VERSION_PATCH VERSION_NUMBER PKGCFG_LIBDIR PKGCFG_INCDIR PKGNAME VPATH CONTACT CONTACT_NAME CONTACT_MAIL CC CFLAGS CPPFLAGS LDFLAGS HAVE_LANG_C R2_VERSION PRECOMPILED_AGENT R2_CFLAGS R2_LDFLAGS R2_LIBS HAVE_PKGCFG_R_CORE"
+ENVWORDS="MANDIR DESCRIPTION INFODIR LIBDIR INCLUDEDIR LOCALSTATEDIR ETCDIR SYSCONFDIR DATADIR DOCDIR LIBEXECDIR SBINDIR BINDIR EPREFIX PREFIX SPREFIX TARGET HOST BUILD INSTALL INSTALL_LIB INSTALL_MAN INSTALL_PROGRAM INSTALL_PROGRAM_STRIP INSTALL_DIR INSTALL_SCRIPT INSTALL_DATA HOST_OS HOST_CPU BUILD_OS BUILD_CPU TARGET_OS TARGET_CPU VERSION VERSION_MAJOR VERSION_MINOR VERSION_PATCH VERSION_NUMBER PKGCFG_LIBDIR PKGCFG_INCDIR PKGNAME VPATH CONTACT CONTACT_NAME CONTACT_MAIL CC CFLAGS CPPFLAGS LDFLAGS HAVE_LANG_C R2_VERSION R2_CFLAGS R2_LDFLAGS R2_LIBS PRECOMPILED_AGENT"
 
 create_environ
 
@@ -338,7 +335,6 @@ ocho "checking for working directories... ${WODIS}"
 ocho "using prefix '${PREFIX}'"
 ACR_RMFILES=" test.c a.out a.exe"
 
-ocho "pkg-config is not required (using r2 -H instead)"
 COMPILER=CC
 ochof "checking for c compiler... "
 HAVE_LANG_C=1
@@ -362,37 +358,32 @@ else
 	echo "not found"
 echo 'required'; exit 1
 fi
-printf 'checking exec r2 -H R2_CFLAGS... '
+printf "checking exec r2 -H R2_CFLAGS... "
 R2_CFLAGS="`r2 -H R2_CFLAGS 2>/dev/null`"
 if [ $? = 0 ]; then
 	echo "ok"
-	HAVE_PKGCFG_R_CORE=1
 else
 	R2_CFLAGS=""
 	echo "not found"
-	HAVE_PKGCFG_R_CORE=0
-	echo "ERROR: radare2 not found, r2 -H R2_CFLAGS failed"
-	exit 1
+echo 'required'; exit 1
 fi
-printf 'checking exec r2 -H R2_LDFLAGS... '
+printf "checking exec r2 -H R2_LDFLAGS... "
 R2_LDFLAGS="`r2 -H R2_LDFLAGS 2>/dev/null`"
 if [ $? = 0 ]; then
 	echo "ok"
 else
 	R2_LDFLAGS=""
 	echo "not found"
-	echo "ERROR: radare2 not found, r2 -H R2_LDFLAGS failed"
-	exit 1
+echo 'required'; exit 1
 fi
-printf 'checking exec r2 -H R2_LIBS... '
+printf "checking exec r2 -H R2_LIBS... "
 R2_LIBS="`r2 -H R2_LIBS 2>/dev/null`"
 if [ $? = 0 ]; then
 	echo "ok"
 else
 	R2_LIBS=""
 	echo "not found"
-	echo "ERROR: radare2 not found, r2 -H R2_LIBS failed"
-	exit 1
+echo 'required'; exit 1
 fi
 SEDFLAGS=" -e '"
 COUNT=0
