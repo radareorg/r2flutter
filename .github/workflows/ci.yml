@@ -7,6 +7,8 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write
 
 jobs:
   build-linux24:
@@ -87,3 +89,38 @@ jobs:
       run: |
         r2 -q -c 'Lc~r2flutter' -- | grep r2flutter
         r2 -q -c 'r2flutter -V' -- | grep 'r2flutter '
+
+  check-release:
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+    needs:
+      - build-linux24
+      - meson-linux24
+      - build-macos
+      - r2-xps
+    runs-on: ubuntu-24.04
+    outputs:
+      is_release: ${{ steps.tag.outputs.is_release }}
+    steps:
+    - name: Check release tag
+      id: tag
+      shell: bash
+      run: |
+        if [[ "${GITHUB_REF_NAME}" =~ ^[0-9] ]]; then
+          echo "is_release=yes" >> "$GITHUB_OUTPUT"
+        else
+          echo "is_release=no" >> "$GITHUB_OUTPUT"
+        fi
+
+  release:
+    if: ${{ needs.check-release.outputs.is_release == 'yes' }}
+    needs: check-release
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Create GitHub release
+      uses: softprops/action-gh-release@v3
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: ${{ github.ref_name }}
+        generate_release_notes: true
