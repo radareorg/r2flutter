@@ -30,6 +30,11 @@ jobs:
       run: r2r test/db/extras
     - name: Package Linux build
       run: make -C dist/linux
+    - name: Verify Linux package
+      run: |
+        tar tzvf dist/linux/r2flutter-linux-x86_64.tar.gz
+        tar tzf dist/linux/r2flutter-linux-x86_64.tar.gz | grep -q 'bin/r2flutter$'
+        tar tzf dist/linux/r2flutter-linux-x86_64.tar.gz | grep -q 'plugins/core_flutter.so$'
     - name: Upload Linux package
       uses: actions/upload-artifact@v7
       with:
@@ -75,6 +80,11 @@ jobs:
       run: r2r test/db/extras
     - name: Package macOS build
       run: make -C dist/macos
+    - name: Verify macOS package
+      run: |
+        tar tzvf dist/macos/r2flutter-macos.tar.gz
+        tar tzf dist/macos/r2flutter-macos.tar.gz | grep -q 'bin/r2flutter$'
+        tar tzf dist/macos/r2flutter-macos.tar.gz | grep -q 'plugins/core_flutter.dylib$'
     - name: Upload macOS package
       uses: actions/upload-artifact@v7
       with:
@@ -104,6 +114,14 @@ jobs:
     - name: Build and package r2flutter
       shell: pwsh
       run: ./dist/windows/build.ps1
+    - name: Verify Windows package
+      shell: pwsh
+      run: |
+        Expand-Archive -Path dist/windows/r2flutter-windows-x86_64.zip -DestinationPath check-zip -Force
+        Get-ChildItem -Recurse check-zip | Select-Object -ExpandProperty FullName
+        $root = 'check-zip/r2flutter-windows-x86_64'
+        if (-not (Test-Path "$root/bin/r2flutter.exe")) { throw 'missing r2flutter.exe' }
+        if (-not (Test-Path "$root/plugins/core_flutter.dll")) { throw 'missing core_flutter.dll' }
     - name: Upload Windows package
       uses: actions/upload-artifact@v7
       with:

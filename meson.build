@@ -12,9 +12,15 @@ r2 = find_program('r2', required: true)
 r2_cflags_res = run_command(r2, '-H', 'R2_CFLAGS', check: true)
 r2_ldflags_res = run_command(r2, '-H', 'R2_LDFLAGS', check: true)
 r2_libs_res = run_command(r2, '-H', 'R2_LIBS', check: true)
+r2_plugdir_res = run_command(r2, '-H', 'R2_LIBR_PLUGINS', check: false)
 
 r2_compile_args = r2_cflags_res.stdout().strip().split()
 r2_link_args = r2_ldflags_res.stdout().strip().split() + r2_libs_res.stdout().strip().split()
+
+r2_plugdir = r2_plugdir_res.stdout().strip()
+if r2_plugdir == ''
+  r2_plugdir = join_paths(get_option('prefix'), get_option('libdir'), 'radare2', 'last')
+endif
 
 # r2 -H always reports gcc style flags, msvc needs its own spelling for them
 if cc.get_argument_syntax() == 'msvc'
@@ -82,6 +88,19 @@ r2flutter_cli = executable(
   dependencies: r_core_dep,
   link_args: linux_link_args,
   install: true,
+)
+
+# The radare2 core plugin, loaded by r2 as core_flutter.{so,dylib,dll}
+core_flutter = shared_module(
+  'core_flutter',
+  'src/r2/core_flutter.c',
+  'src/r2/flutter_analysis.c',
+  name_prefix: '',
+  include_directories: r2flutter_inc,
+  link_with: r2flutter_static,
+  dependencies: r_core_dep,
+  install: true,
+  install_dir: r2_plugdir,
 )
 
 test('r2flutter-version', r2flutter_cli, args: ['-V'])
