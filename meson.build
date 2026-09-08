@@ -2,17 +2,40 @@ project(
   'r2flutter',
   'c',
 version : '0.3.2',
-  meson_version : '>=0.55.0',
+  meson_version : '>=0.56.0',
   default_options : ['warning_level=2', 'werror=false']
 )
+
+cc = meson.get_compiler('c')
 
 r2 = find_program('r2', required: true)
 r2_cflags_res = run_command(r2, '-H', 'R2_CFLAGS', check: true)
 r2_ldflags_res = run_command(r2, '-H', 'R2_LDFLAGS', check: true)
 r2_libs_res = run_command(r2, '-H', 'R2_LIBS', check: true)
+
+r2_compile_args = r2_cflags_res.stdout().strip().split()
+r2_link_args = r2_ldflags_res.stdout().strip().split() + r2_libs_res.stdout().strip().split()
+
+# r2 -H always reports gcc style flags, msvc needs its own spelling for them
+if cc.get_argument_syntax() == 'msvc'
+  msvc_link_args = []
+  foreach flag : r2_link_args
+    if flag.startswith('-L')
+      msvc_link_args += '/LIBPATH:' + flag.substring(2)
+    elif flag.startswith('-l')
+      msvc_link_args += flag.substring(2) + '.lib'
+    else
+      msvc_link_args += flag
+    endif
+  endforeach
+  r2_link_args = msvc_link_args
+  # posix names like strdup are available, just noisy without this
+  r2_compile_args += ['-D_CRT_SECURE_NO_WARNINGS', '-D_CRT_NONSTDC_NO_DEPRECATE']
+endif
+
 r_core_dep = declare_dependency(
-  compile_args: r2_cflags_res.stdout().strip().split(),
-  link_args: r2_ldflags_res.stdout().strip().split() + r2_libs_res.stdout().strip().split(),
+  compile_args: r2_compile_args,
+  link_args: r2_link_args,
 )
 r2flutter_inc = include_directories('include')
 
