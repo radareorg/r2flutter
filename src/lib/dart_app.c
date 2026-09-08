@@ -179,11 +179,22 @@ static FILE *open_payload_temp(char **out_path) {
 	FILE *out = try_open_temp_path (r_file_temp ("r2flutter-dart-app-snap"), out_path);
 	if (!out) {
 		char *name = r_str_newf ("r2flutter-dart-app-snap.%" PFMT64x, (ut64)r_time_now ());
-		char *path = name? r_file_new (P_tmpdir, name, NULL): NULL;
+		char *tmpdir = r_file_tmpdir ();
+		char *path = (name && tmpdir)? r_file_new (tmpdir, name, NULL): NULL;
+		free (tmpdir);
 		free (name);
 		out = try_open_temp_path (path, out_path);
 	}
 	return out;
+}
+
+// msvc has no fseeko, but it ships an equivalent 64bit seek
+static bool payload_seek(FILE *f, ut64 off) {
+#if defined(_MSC_VER)
+	return _fseeki64 (f, (__int64)off, SEEK_SET) == 0;
+#else
+	return fseeko (f, (off_t)off, SEEK_SET) == 0;
+#endif
 }
 
 char *dart_app_extract_payload(const char *path, const DartAppEmbeddedPayload *payload) {
@@ -202,7 +213,7 @@ char *dart_app_extract_payload(const char *path, const DartAppEmbeddedPayload *p
 		fclose (in);
 		return NULL;
 	}
-	bool ok = fseeko (in, (off_t)payload->payload_offset, SEEK_SET) == 0;
+	bool ok = payload_seek (in, payload->payload_offset);
 	ut64 remaining = payload->payload_size;
 	ut8 buf[65536];
 	while (ok && remaining > 0) {

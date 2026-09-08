@@ -377,7 +377,7 @@ void collect_data_names_with_r2(DartCtx *ctx, ut64 data_image_base, ut64 data_im
 			continue;
 		}
 		char *line, *saveptr = NULL;
-		for (line = strtok_r (out, "\n", &saveptr); line; line = strtok_r (NULL, "\n", &saveptr)) {
+		for (line = r_str_tok_r (out, "\n", &saveptr); line; line = r_str_tok_r (NULL, "\n", &saveptr)) {
 			if (!r_str_startswith (line, "0x")) {
 				continue;
 			}
