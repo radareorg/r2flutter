@@ -22,7 +22,7 @@ build:
 	echo "Depends: $(DEPENDS)" >> root/DEBIAN/control
 	echo "Maintainer: $(MAINTAINER)" >> root/DEBIAN/control
 	echo "Description: r2flutter plugin for radare2" >> root/DEBIAN/control
-	dpkg-deb --build root $(PACKAGE)_$(VERSION)_$(ARCH).deb
+	dpkg-deb --root-owner-group --build root $(PACKAGE)_$(VERSION)_$(ARCH).deb
 
 clean:
 	rm -rf root *.deb

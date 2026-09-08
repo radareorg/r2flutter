@@ -41,6 +41,35 @@ jobs:
         name: r2flutter-linux-x86_64
         path: dist/linux/r2flutter-linux-x86_64.tar.gz
         if-no-files-found: error
+    - name: Package Debian build
+      run: make -C dist/debian
+    - name: Verify Debian package
+      shell: bash
+      run: |
+        shopt -s nullglob
+        packages=(dist/debian/r2flutter_*_amd64.deb)
+        test "${#packages[@]}" -eq 1
+        package="${packages[0]}"
+        version="$(./configure -qV)"
+        test "$(dpkg-deb --field "${package}" Package)" = r2flutter
+        test "$(dpkg-deb --field "${package}" Version)" = "${version}"
+        test "$(dpkg-deb --field "${package}" Architecture)" = amd64
+        test "$(dpkg-deb --field "${package}" Depends)" = radare2
+        contents="$(dpkg-deb --contents "${package}")"
+        printf '%s\n' "${contents}"
+        grep -E '^-.+ root/root .+ \./usr/local/bin/r2flutter$' <<< "${contents}"
+        plugin=".$(r2 -H R2_LIBR_PLUGINS)/core_flutter.so"
+        grep -Fq "${plugin}" <<< "${contents}"
+        make user-uninstall
+        sudo dpkg --force-depends --install "${package}"
+        test "$(r2flutter -V)" = "r2flutter ${version}"
+        test "$(r2 -q -c 'r2flutter -V' --)" = "r2flutter ${version}"
+    - name: Upload Debian package
+      uses: actions/upload-artifact@v7
+      with:
+        name: r2flutter-debian-amd64
+        path: dist/debian/r2flutter_*_amd64.deb
+        if-no-files-found: error
 
   meson-linux24:
     name: Meson build on Linux
@@ -217,5 +246,6 @@ jobs:
         generate_release_notes: false
         files: |
           release-artifacts/r2flutter-linux-x86_64/r2flutter-linux-x86_64.tar.gz
+          release-artifacts/r2flutter-debian-amd64/r2flutter_*_amd64.deb
           release-artifacts/r2flutter-macos/r2flutter-macos.tar.gz
           release-artifacts/r2flutter-windows-x86_64/r2flutter-windows-x86_64.zip
