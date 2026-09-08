@@ -359,7 +359,7 @@ static void sbom_scan_pubspec_lock(RList *components, const char *path) {
 	bool in_packages = false;
 	char *current = NULL;
 	char *saveptr = NULL;
-	for (char *line = strtok_r (yaml, "\n", &saveptr); line; line = strtok_r (NULL, "\n", &saveptr)) {
+	for (char *line = r_str_tok_r (yaml, "\n", &saveptr); line; line = r_str_tok_r (NULL, "\n", &saveptr)) {
 		if (!strcmp (line, "packages:")) {
 			in_packages = true;
 			continue;
