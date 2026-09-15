@@ -1,0 +1,30 @@
+NAME=dart-313-early-base-object-clusters
+FILE=malloc://0x8d
+CMDS=<<EOF
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+wx 50414421f5f5dcdc85000000000000000200000000000000303435313930376332656161383436376538343863303036376266653865643470726f647563742061726d3634206e6f2d636f6d707265737365642d706f696e746572730082858585890060c581800060c681820020ca810000cb810060c5818180828181c1bfbfbfc0c2c5c6c7c3818101810181
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters_parsed}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[0].fill_status}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[1].alloc}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[1].fill}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[1].fill_status}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[2].fill_status}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[3].fill_status}
+r2flutter -q -j -HHH -l 8~{snapshots[0].clusters[4].fill_status}
+r2flutter -q -j -p~{cluster_index}
+r2flutter -q -j -O PP+0x10~{pp_slot.cluster_index}
+EOF
+EXPECT=<<EOF
+true
+ok
+variable
+local_var_descriptors
+ok
+ok
+ok
+ok
+4
+4
+EOF
+RUN

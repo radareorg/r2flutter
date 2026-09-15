@@ -1566,3 +1566,35 @@ prefix. The ABI number can still match while host structures cross library
 instances, producing hangs or crashes in parser-heavy commands. The Darwin
 plugin target therefore leaves radare2 symbols unresolved; Linux continues to
 link the libraries reported by `r2 -H R2_LIBS`.
+
+## Dart 3.13 Serializes Base Objects In Early Clusters
+
+With the VM snapshot gone, Dart 3.13 no longer registers the VM singletons
+(`empty_object_pool`, `empty_descriptors`, `empty_var_descriptors`, the
+preallocated errors, ...) as base objects. `Serializer::CreateEarlyClusters`
+writes them as ordinary clusters at the start of the combined snapshot, so a
+real 3.13 app reports only a handful of base objects and its first clusters are
+one-object Mint, ImmutableArray, ObjectPool, PcDescriptors, CompressedStackMaps
+and LocalVarDescriptors clusters. The tiny synthetic fixtures never exercised
+this; the first real 3.13 app (an iOS AuthPass build) desynced at cluster 5 and
+left the global ObjectPool (cluster 1121) `not_parsed`, so `-p` reported
+"PP not resolved".
+
+Three cluster types gained serializers in 3.13 and had no CID kind here:
+
+- `LocalVarDescriptors` (always `CompressedStackMaps + 1`): alloc is a count
+  plus one entry count per object (the same shape as the 3.13 Closure alloc);
+  fill is the entry count, one name ref per entry, then per entry four
+  `Read<int32_t>` values (index_kind and three token positions) and one
+  `Read<int64_t>` scope id. It is not an inline-bytes class, so widening the
+  PcDescriptors..CompressedStackMaps RO-data window would be wrong.
+- `ApiError` (`LanguageError - 1`): fixed-size alloc, fill is one ref.
+- `UnwindError` (`UnhandledException + 1`): fixed-size alloc, fill is one ref
+  plus a bool.
+
+Those offsets hold for every class_id.h from 2.10 to 3.13, so the kinds were
+added to all CID tables. Older serializers never emit these clusters.
+
+The early empty ObjectPool also means "the first ObjectPool cluster" is no
+longer the global pool. Pool walkers must skip zero-length pools instead of
+stopping at the first pool they see.

@@ -41,6 +41,7 @@ typedef enum {
 	MODERN_FILL_TYPED_DATA,
 	MODERN_FILL_RECORD,
 	MODERN_FILL_CLOSURE,
+	MODERN_FILL_LOCAL_VAR_DESCRIPTORS,
 	MODERN_FILL_INSTANCE,
 	MODERN_FILL_UNKNOWN,
 } ModernFillKind;
@@ -306,6 +307,8 @@ static const char *modern_fill_kind_name(ModernFillKind kind) {
 		return "record";
 	case MODERN_FILL_CLOSURE:
 		return "closure";
+	case MODERN_FILL_LOCAL_VAR_DESCRIPTORS:
+		return "local_var_descriptors";
 	case MODERN_FILL_INSTANCE:
 		return "instance";
 	case MODERN_FILL_UNKNOWN:
@@ -352,6 +355,7 @@ typedef struct {
 	int function_type;
 	int record_type;
 	int type_parameter;
+	int local_var_descriptors;
 	int exception_handlers;
 	int context;
 	int context_scope;
@@ -430,6 +434,7 @@ static ModernCidCache modern_cid_cache_init(const DartVerLayout *layout) {
 		.function_type = dart_cid_get (layout, DART_CID_FUNCTION_TYPE),
 		.record_type = dart_cid_get (layout, DART_CID_RECORD_TYPE),
 		.type_parameter = dart_cid_get (layout, DART_CID_TYPE_PARAMETER),
+		.local_var_descriptors = dart_cid_get (layout, DART_CID_LOCAL_VAR_DESCRIPTORS),
 		.exception_handlers = dart_cid_get (layout, DART_CID_EXCEPTION_HANDLERS),
 		.context = dart_cid_get (layout, DART_CID_CONTEXT),
 		.context_scope = dart_cid_get (layout, DART_CID_CONTEXT_SCOPE),
@@ -616,6 +621,12 @@ static ModernAllocKind modern_alloc_kind(const ModernCidCache *cids, int compres
 		return MODERN_ALLOC_SIMPLE;
 	}
 	if (cids->closure_variable && modern_cid_eq (cid, cids->closure)) {
+		return MODERN_ALLOC_VARIABLE;
+	}
+	// Dart 3.13 base objects such as empty_var_descriptors are serialized in
+	// early clusters; LocalVarDescriptors::ReadAlloc stores a count followed by
+	// the entry count of each object.
+	if (modern_cid_eq (cid, cids->local_var_descriptors)) {
 		return MODERN_ALLOC_VARIABLE;
 	}
 	if (modern_is_simple_alloc_cid (cids, cid)) {
@@ -982,6 +993,9 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 	if (cids->closure_variable && modern_cid_eq (cid, cids->closure)) {
 		return modern_fill_spec_kind (MODERN_FILL_CLOSURE);
 	}
+	if (modern_cid_eq (cid, cids->local_var_descriptors)) {
+		return modern_fill_spec_kind (MODERN_FILL_LOCAL_VAR_DESCRIPTORS);
+	}
 	if (modern_cid_eq (cid, cids->patch_class)) {
 		// FullAOT PatchClass layout differs across snapshot families. Before
 		// Dart 3.0 UntaggedPatchClass serialised patched_class, origin_class and
@@ -1019,8 +1033,10 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 		{ DART_CID_MEGAMORPHIC_CACHE, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_TAGGED32 } },
 		{ DART_CID_SUBTYPE_TEST_CACHE, MODERN_FILL_REFS, 1, -1, -1, 2, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_TAGGED32 } },
 		{ DART_CID_LOADING_UNIT, MODERN_FILL_REFS, 1, -1, -1, 1, { MODERN_SCALAR_TAGGED32 } },
+		{ DART_CID_API_ERROR, MODERN_FILL_REFS, 1, -1, -1, 0, { 0 } },
 		{ DART_CID_LANGUAGE_ERROR, MODERN_FILL_REFS, 4, -1, -1, 3, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL, MODERN_SCALAR_INT8 } },
 		{ DART_CID_UNHANDLED_EXCEPTION, MODERN_FILL_REFS, 2, -1, -1, 0, { 0 } },
+		{ DART_CID_UNWIND_ERROR, MODERN_FILL_REFS, 1, -1, -1, 1, { MODERN_SCALAR_BOOL } },
 		{ DART_CID_LIBRARY_PREFIX, MODERN_FILL_REFS, 2, 0, -1, 2, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_BOOL } },
 		{ DART_CID_TYPE_ARGUMENTS, MODERN_FILL_TYPE_ARGUMENTS, 0, -1, -1, 0, { 0 } },
 		{ DART_CID_TYPE, MODERN_FILL_REFS, 3, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
@@ -1308,6 +1324,40 @@ static bool modern_skip_fill_closure(ClusterStream *s, const ModernClusterMeta *
 	return true;
 }
 
+// LocalVarDescriptors::ReadFill: ReadUnsigned (num_entries), one name ref per
+// entry, then per entry Read<int32_t> index_kind, three ReadTokenPosition
+// (int32) and Read<int64_t> scope_id.
+static bool modern_skip_fill_local_var_descriptors(ClusterStream *s, const ModernClusterMeta *meta) {
+	if (!meta->alloc_items && meta->count) {
+		return false;
+	}
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 length = 0;
+		ut64 ref = 0;
+		ut32 tmp32 = 0;
+		int64_t tmp64 = 0;
+		if (!cs_read_unsigned (s, &length) || length != meta->alloc_items[i]) {
+			return false;
+		}
+		for (ut64 j = 0; j < length; j++) {
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+		}
+		for (ut64 j = 0; j < length; j++) {
+			for (int k = 0; k < 4; k++) {
+				if (!cs_read_tagged32 (s, &tmp32)) {
+					return false;
+				}
+			}
+			if (!cs_read_tagged64 (s, &tmp64)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 static bool modern_resync_fill_record(ClusterStream *s, const ModernClusterMeta *meta) {
 	if (meta->alloc_items_count != meta->count || !meta->count) {
 		return modern_skip_fill_record (s, meta);
@@ -1506,6 +1556,8 @@ static bool modern_skip_fill_by_kind(ClusterStream *s, const ModernCidCache *cid
 		return modern_resync_fill_record (s, meta);
 	case MODERN_FILL_CLOSURE:
 		return modern_skip_fill_closure (s, meta);
+	case MODERN_FILL_LOCAL_VAR_DESCRIPTORS:
+		return modern_skip_fill_local_var_descriptors (s, meta);
 	case MODERN_FILL_INSTANCE:
 		return modern_skip_fill_instance (s->ctx, s, meta);
 	case MODERN_FILL_NONE:
@@ -3377,6 +3429,11 @@ bool modern_resolve_pp_slot(const ModernReq *req, ut64 pp_offset, ModernPoolSlot
 			ut64 length = 0;
 			if (!cs_read_unsigned (&s, &length)) {
 				break;
+			}
+			if (!length) {
+				// Dart 3.13 serializes the empty base ObjectPool in an early
+				// cluster ahead of the global pool; keep looking past it.
+				continue;
 			}
 			done = true;
 			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
