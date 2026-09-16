@@ -677,6 +677,7 @@ static void flutter_ensure_functions(RCore *core, RVecFlutterEntry *entries) {
 	if (restore_log_level) {
 		r_log_set_level (R_LOG_LEVEL_INFO);
 	}
+	const bool prev_trycatch = dart_core_trycatch_suspend (core);
 	ut64 *addrp;
 	R_VEC_FOREACH (entries, addrp) {
 		if (!*addrp) {
@@ -686,6 +687,7 @@ static void flutter_ensure_functions(RCore *core, RVecFlutterEntry *entries) {
 			r_core_cmdf (core, "af @ 0x%" PFMT64x, *addrp);
 		}
 	}
+	dart_core_trycatch_restore (core, prev_trycatch);
 	if (restore_log_level) {
 		r_log_set_level (old_level);
 	}

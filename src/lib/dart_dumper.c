@@ -260,8 +260,9 @@ static void dart_type_to_c(RStrBuf *sb, const char *tok) {
 }
 
 // Turn a recovered Dart signature "RET(T,T,...)" into a radare2 `afs` prototype
-// and return it, or NULL if the signature is not in that canonical form.
-static char *dart_signature_to_afs_proto(const char *fname, const char *sig) {
+// for the already filtered function name `name` and return it, or NULL if the
+// signature is not in that canonical form.
+static char *dart_signature_to_afs_proto(const char *name, const char *sig) {
 	if (R_STR_ISEMPTY (sig) || strchr (sig, ' ') || strchr (sig, '=')) {
 		return NULL; // not our canonical "RET(T,...)" form
 	}
@@ -279,11 +280,9 @@ static char *dart_signature_to_afs_proto(const char *fname, const char *sig) {
 	if (rp) {
 		*rp = '\0';
 	}
-	char *safe_name = strdup (fname);
-	r_name_filter (safe_name, 0);
 	RStrBuf *sb = r_strbuf_new ("");
 	dart_type_to_c (sb, ret);
-	r_strbuf_appendf (sb, " %s(", R_STR_ISNOTEMPTY (safe_name)? safe_name: "fcn");
+	r_strbuf_appendf (sb, " %s(", name);
 	int argc = 0;
 	if (R_STR_ISNOTEMPTY (inside)) {
 		RList *args = r_str_split_list (inside, ",", 0);
@@ -307,8 +306,80 @@ static char *dart_signature_to_afs_proto(const char *fname, const char *sig) {
 	r_strbuf_append (sb, ")");
 	free (ret);
 	free (inside);
-	free (safe_name);
 	return r_strbuf_drain (sb);
+}
+
+// Same scan as is_type() in radare2's libr/anal/type.c.
+static char *dart_parsed_type_kind(char *s) {
+	char *p;
+	if ((p = strstr (s, "=type")) || (p = strstr (s, "=struct")) || (p = strstr (s, "=union")) ||
+		(p = strstr (s, "=enum")) || (p = strstr (s, "=typedef")) || (p = strstr (s, "=func"))) {
+		return p;
+	}
+	return NULL;
+}
+
+// `afs` stores a prototype with r_anal_save_parsed_type, which first calls
+// r_anal_remove_parsed_type for every type the parsed C declares. When that type
+// already exists, the removal r_type_del()s it and then sorts and scans the
+// whole type database for leftover subkeys. For these prototypes r_type_del has
+// already removed every key, so the scan finds nothing, but it cost
+// O(types log types) for every repeated name (anonymous closures, and names the
+// C parser shortens at ':' such as `dyn:call` -> `call`), making the signature
+// pass quadratic. Deleting those types here first, with the parser `afs` uses,
+// lets `afs` take its early return and leaves the same type database.
+static void dart_types_predelete(RAnal *anal, const char *proto) {
+	Sdb *tdb = anal->sdb_types;
+	if (!tdb) {
+		return;
+	}
+	char *code = r_str_newf ("%s;", proto);
+	char *err = NULL;
+	char *parsed = r_anal_cparse (anal, code, &err);
+	free (code);
+	free (err);
+	if (!parsed) {
+		return;
+	}
+	char *cur = parsed;
+	while ((cur = dart_parsed_type_kind (cur))) {
+		char *name = cur++;
+		*name = 0;
+		while (name > parsed && *(name - 1) != '\n') {
+			name--;
+		}
+		if (sdb_const_get (tdb, name, 0)) {
+			r_type_del (tdb, name);
+		}
+	}
+	free (parsed);
+}
+
+static bool dart_flag_found_cb(RFlagItem *fi, void *user) {
+	(void)fi;
+	*(bool *)user = true;
+	return false;
+}
+
+// With anal.trycatch enabled every `af` scans all flags twice looking for
+// try.<addr>.catch/filter handler flags. -AAA creates flags for every Dart
+// method, string and pool reference, so across tens of thousands of functions
+// those scans dominated the pass. When no try.* flag exists the scans cannot
+// find a handler, so disabling the option for the pass changes nothing else.
+bool dart_core_trycatch_suspend(RCore *core) {
+	const bool prev = r_config_get_b (core->config, "anal.trycatch");
+	if (prev) {
+		bool found = false;
+		r_flag_foreach_prefix (core->flags, "try.", 4, dart_flag_found_cb, &found);
+		if (!found) {
+			r_config_set_b (core->config, "anal.trycatch", false);
+		}
+	}
+	return prev;
+}
+
+void dart_core_trycatch_restore(RCore *core, bool prev) {
+	r_config_set_b (core->config, "anal.trycatch", prev);
 }
 
 static int dart_fn_addr_desc(const void *a, const void *b) {
@@ -355,22 +426,33 @@ void dart_dumper_apply_signatures(DartApp *app) {
 	int prev_emustr = r_config_get_i (core->config, "emu.str");
 	r_config_set_i (core->config, "anal.hasnext", 0);
 	r_config_set_i (core->config, "emu.str", 0);
+	const bool prev_trycatch = dart_core_trycatch_suspend (core);
 	for (size_t i = 0; i < n; i++) {
 		fn = order[i];
-		char *proto = dart_signature_to_afs_proto (fn->name? fn->name: "fcn", fn->signature);
+		char *name = strdup (fn->name? fn->name: "fcn");
+		r_name_filter (name, 0);
+		if (R_STR_ISEMPTY (name)) {
+			free (name);
+			name = strdup ("fcn");
+		}
+		char *proto = dart_signature_to_afs_proto (name, fn->signature);
 		if (!proto) {
+			free (name);
 			continue;
 		}
 		if (!r_anal_get_function_at (core->anal, fn->addr)) {
 			r_core_cmdf (core, "af @ 0x%" PFMT64x, fn->addr);
 		}
 		if (r_anal_get_function_at (core->anal, fn->addr)) {
+			dart_types_predelete (core->anal, proto);
 			r_core_cmdf (core, "\"afs %s\" @ 0x%" PFMT64x, proto, fn->addr);
 		}
 		free (proto);
+		free (name);
 	}
 	r_config_set_i (core->config, "anal.hasnext", prev_hasnext);
 	r_config_set_i (core->config, "emu.str", prev_emustr);
+	dart_core_trycatch_restore (core, prev_trycatch);
 	free (order);
 }
 

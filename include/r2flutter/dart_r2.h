@@ -87,10 +87,12 @@ typedef struct {
 	// Windowed read cache for read_mem, to avoid one r_io_read_at syscall per
 	// byte while decoding cluster streams (which read one byte at a time).
 	// Scoped to a single command invocation and released by dart_obf_fini.
-	ut8 *rmem_cache;
-	ut64 rmem_cache_addr;
-	int rmem_cache_len;
-	int rmem_cache_cap;
+	// Heap-allocated so that DartCtx copies share the windows together with
+	// their addresses.
+	struct dart_read_cache_t *rmem;
 } DartCtx;
+
+// Release a read_mem window cache (NULL is accepted).
+void dart_read_cache_free(struct dart_read_cache_t *cache);
 
 #endif
