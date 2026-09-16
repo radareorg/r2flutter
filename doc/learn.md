@@ -1598,3 +1598,38 @@ added to all CID tables. Older serializers never emit these clusters.
 The early empty ObjectPool also means "the first ObjectPool cluster" is no
 longer the global pool. Pool walkers must skip zero-length pools instead of
 stopping at the first pool they see.
+
+## -AAA Scaling On Large Snapshots
+
+A 37,863-function Dart 3.13 iOS app took 19 minutes in `r2flutter -AAA`; three
+independent costs grew with the snapshot size. The fixes below brought it to
+36 seconds with byte-identical flags, comments, xrefs, functions and
+signatures.
+
+- `read_mem` kept a single 1 MB window. `modern_load_rodata_strings`
+  alternates between a cluster alloc stream and the RO data image megabytes
+  away, so every string refilled the window twice (1 MB `read` plus the
+  `0xff` fill `r_io_bank_read_at` does first). The cache now keeps four
+  windows with LRU eviction. It also lives behind a pointer: `DartCtx` is
+  copied by value (`flutter_model_load`, `dart_recovery_model_load`), and the
+  old inline address fields went stale when a copy refilled the shared buffer.
+  A failed refill now drops the window, because the failed read has already
+  overwritten its buffer. `-f` went from 12.4s to 0.5s.
+- `afs` stores a prototype through `r_anal_save_parsed_type`, which calls
+  `r_anal_remove_parsed_type` for each type the parsed C declares. For an
+  existing name that sorts and scans the whole type database, although
+  `r_type_del` has already removed every key of a function type. Names repeat
+  a lot: anonymous closures, and names the C parser cuts at `:`
+  (`...dyn:call` is stored as the type `call`). The signature pass now parses
+  the prototype with `r_anal_cparse` and `r_type_del`s those names first, so
+  `afs` returns early.
+- With `anal.trycatch` enabled (the radare2 6.2.2 default) every `af` walks all
+  flags twice looking for `try.<addr>.catch|filter`. After -AAA creates its
+  flags that is O(flags) per function. r2flutter disables the option around
+  its `af` loops when no `try.` flag exists, which cannot change the result.
+
+Two existing behaviours surfaced while checking equivalence and are kept as
+they are: a second function with an already used name cannot be renamed by
+`afs`, so it keeps no signature while the type of the first one is replaced;
+and prototypes whose name contains `:` are parsed as a label, giving them a
+shortened type name and a garbled return type.

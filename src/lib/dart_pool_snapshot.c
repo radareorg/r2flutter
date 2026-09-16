@@ -7,40 +7,81 @@
 // time, so serving those reads from a prefetched window turns millions of
 // r_io_read_at calls into a handful.
 #define RMEM_WINDOW (1024 * 1024)
+// Several windows are kept because decoders interleave distant regions, e.g.
+// a cluster alloc stream and the RO data image it indexes. With a single
+// window every such step refilled it twice.
+#define RMEM_WINDOWS 4
+
+typedef struct {
+	ut8 *buf;
+	ut64 addr;
+	ut64 used; // last access tick, for least-recently-used eviction
+	int len;
+} DartReadWindow;
+
+typedef struct dart_read_cache_t {
+	DartReadWindow w[RMEM_WINDOWS];
+	ut64 tick;
+} DartReadCache;
+
+void dart_read_cache_free(DartReadCache *cache) {
+	if (!cache) {
+		return;
+	}
+	for (int i = 0; i < RMEM_WINDOWS; i++) {
+		free (cache->w[i].buf);
+	}
+	free (cache);
+}
 
 bool read_mem(DartCtx *ctx, ut64 addr, void *buf, int len) {
 	if (!ctx || !ctx->core || !buf || len <= 0) {
 		return false;
 	}
-	// Fast path: request fully contained in the cached window.
-	if (ctx->rmem_cache && addr >= ctx->rmem_cache_addr) {
-		ut64 off = addr - ctx->rmem_cache_addr;
-		if (off + (ut64)len <= (ut64)ctx->rmem_cache_len) {
-			memcpy (buf, ctx->rmem_cache + off, (size_t)len);
-			return true;
-		}
-	}
-	// Reads larger than the window bypass the cache.
+	// Reads larger than a window bypass the cache.
 	if (len > RMEM_WINDOW) {
 		return r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
 	}
-	if (!ctx->rmem_cache) {
-		ctx->rmem_cache = malloc (RMEM_WINDOW);
-		if (!ctx->rmem_cache) {
+	if (!ctx->rmem) {
+		ctx->rmem = R_NEW0 (DartReadCache);
+	}
+	DartReadCache *cache = ctx->rmem;
+	cache->tick++;
+	// Fast path: request fully contained in a cached window.
+	DartReadWindow *victim = &cache->w[0];
+	for (int i = 0; i < RMEM_WINDOWS; i++) {
+		DartReadWindow *w = &cache->w[i];
+		if (w->len && addr >= w->addr) {
+			ut64 off = addr - w->addr;
+			if (off + (ut64)len <= (ut64)w->len) {
+				w->used = cache->tick;
+				memcpy (buf, w->buf + off, (size_t)len);
+				return true;
+			}
+		}
+		if (w->used < victim->used) {
+			victim = w;
+		}
+	}
+	if (!victim->buf) {
+		victim->buf = malloc (RMEM_WINDOW);
+		if (!victim->buf) {
 			return r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
 		}
-		ctx->rmem_cache_cap = RMEM_WINDOW;
 	}
-	// Refill the window at addr. r_io_read_at only succeeds when the whole
-	// range is readable, so a successful window read means every byte in it is
-	// valid and safe to serve. On failure (e.g. near the end of a mapped
-	// region) fall back to an exact read and keep any previous window intact.
-	if (r_io_read_at (ctx->core->io, addr, ctx->rmem_cache, ctx->rmem_cache_cap)) {
-		ctx->rmem_cache_addr = addr;
-		ctx->rmem_cache_len = ctx->rmem_cache_cap;
-		memcpy (buf, ctx->rmem_cache, (size_t)len);
+	// Refill the least recently used window at addr. r_io_read_at only
+	// succeeds when the whole range is readable, so a successful window read
+	// means every byte in it is valid and safe to serve. On failure (e.g. near
+	// the end of a mapped region) fall back to an exact read and drop that
+	// window, whose buffer the failed read may have clobbered.
+	if (r_io_read_at (ctx->core->io, addr, victim->buf, RMEM_WINDOW)) {
+		victim->addr = addr;
+		victim->len = RMEM_WINDOW;
+		victim->used = cache->tick;
+		memcpy (buf, victim->buf, (size_t)len);
 		return true;
 	}
+	victim->len = 0;
 	return r_io_read_at (ctx->core->io, addr, (ut8 *)buf, len);
 }
 
