@@ -74,7 +74,9 @@ user-install user-uninstall:
 	$(MAKE) -C src/r2 $@
 
 # Binary package for r2pm -bi: bin/ and plugins/ for this r2 version and platform
-BINDIST_ZIP = r2flutter-$(shell r2 -qv)-$(shell r2pm -H R2PM_OS)-$(shell r2pm -H R2PM_ARCH)-$(shell r2pm -H R2PM_BITS).zip
+# r2 <= 6.2.2 lacks r2pm -H R2PM_TRIPLET, fallback to the host asm.* defaults
+PKG_TRIPLET := $(or $(shell r2pm -H R2PM_TRIPLET 2> /dev/null),$(shell r2 -N -qc '?e `e asm.os`-`e asm.arch`-`e asm.bits`' -- 2> /dev/null))
+BINDIST_ZIP = r2flutter-$(shell r2 -qv)-$(PKG_TRIPLET).zip
 BINDIST_DIR = $(BUILD_DIR)/bindist
 BINDIST_FILES = $(BINDIST_DIR)/bin/r2flutter $(BINDIST_DIR)/plugins/core_flutter.$(R2_LIBEXT)
 STRIP ?= strip
