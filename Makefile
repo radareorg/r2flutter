@@ -73,6 +73,28 @@ user-install user-uninstall:
 	$(MAKE) -C src/r2
 	$(MAKE) -C src/r2 $@
 
+# Binary package for r2pm -bi: bin/ and plugins/ for this r2 version and platform
+BINDIST_ZIP = r2flutter-$(shell r2 -qv)-$(shell r2pm -H R2PM_OS)-$(shell r2pm -H R2PM_ARCH)-$(shell r2pm -H R2PM_BITS).zip
+BINDIST_DIR = $(BUILD_DIR)/bindist
+BINDIST_FILES = $(BINDIST_DIR)/bin/r2flutter $(BINDIST_DIR)/plugins/core_flutter.$(R2_LIBEXT)
+STRIP ?= strip
+
+bindist: $(BIN_FILE)
+	$(MAKE) $(STATIC_LIB)
+	$(MAKE) -C src/r2
+	rm -rf $(BINDIST_DIR) $(BINDIST_ZIP)
+	mkdir -p $(BINDIST_DIR)/bin $(BINDIST_DIR)/plugins
+	cp -f $(BIN_FILE) $(BINDIST_DIR)/bin/
+	cp -f src/r2/core_flutter.$(R2_LIBEXT) $(BINDIST_DIR)/plugins/
+	cp -f dist/README.md $(BINDIST_DIR)/
+ifeq ($(R2_LIBEXT),dylib)
+	$(STRIP) -x $(BINDIST_FILES)
+	codesign -f -s - $(BINDIST_FILES)
+else
+	$(STRIP) --strip-unneeded $(BINDIST_FILES)
+endif
+	cd $(BINDIST_DIR) && zip -r $(CURDIR)/$(BINDIST_ZIP) README.md bin plugins
+
 install: uninstall
 	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
 	cp -f bin/r2flutter "$(DESTDIR)$(PREFIX)/bin/r2flutter"
@@ -105,6 +127,6 @@ test: $(BIN_FILE)
 	@echo "Running custom testsuite"
 	@python3 scripts/run_tests.py
 
-.PHONY: all clean test test-r2r r2 plugin user-install user-uninstall fmt indent format
+.PHONY: all clean test test-r2r r2 plugin user-install user-uninstall fmt indent format bindist
 
 -include $(DEP_FILES)

@@ -28,18 +28,18 @@ jobs:
       run: r2r test/db/cmd
     - name: Radare Extras Testing
       run: r2r test/db/extras
-    - name: Package Linux build
-      run: make -C dist/linux
-    - name: Verify Linux package
+    - name: Package r2pm binary
+      run: make bindist
+    - name: Verify r2pm binary
       run: |
-        tar tzvf dist/linux/r2flutter-linux-x86_64.tar.gz
-        tar tzf dist/linux/r2flutter-linux-x86_64.tar.gz | grep -q 'bin/r2flutter$'
-        tar tzf dist/linux/r2flutter-linux-x86_64.tar.gz | grep -q 'plugins/core_flutter.so$'
-    - name: Upload Linux package
+        unzip -l r2flutter-${{ env.R2V }}-linux-x86-64.zip
+        unzip -l r2flutter-${{ env.R2V }}-linux-x86-64.zip | grep -q 'bin/r2flutter$'
+        unzip -l r2flutter-${{ env.R2V }}-linux-x86-64.zip | grep -q 'plugins/core_flutter.so$'
+    - name: Upload r2pm binary
       uses: actions/upload-artifact@v7
       with:
-        name: r2flutter-linux-x86_64
-        path: dist/linux/r2flutter-linux-x86_64.tar.gz
+        name: bindist-linux-x86-64
+        path: r2flutter-*.zip
         if-no-files-found: error
     - name: Package Debian build
       run: make -C dist/debian
@@ -107,18 +107,40 @@ jobs:
       run: r2r test/db/cmd
     - name: Radare Extras Testing
       run: r2r test/db/extras
-    - name: Package macOS build
-      run: make -C dist/macos
-    - name: Verify macOS package
+    - name: Package r2pm binary
+      run: make bindist
+    - name: Verify r2pm binary
       run: |
-        tar tzvf dist/macos/r2flutter-macos.tar.gz
-        tar tzf dist/macos/r2flutter-macos.tar.gz | grep -q 'bin/r2flutter$'
-        tar tzf dist/macos/r2flutter-macos.tar.gz | grep -q 'plugins/core_flutter.dylib$'
-    - name: Upload macOS package
+        unzip -l r2flutter-${{ env.R2V }}-darwin-arm-64.zip
+        unzip -l r2flutter-${{ env.R2V }}-darwin-arm-64.zip | grep -q 'bin/r2flutter$'
+        unzip -l r2flutter-${{ env.R2V }}-darwin-arm-64.zip | grep -q 'plugins/core_flutter.dylib$'
+    - name: Upload r2pm binary
       uses: actions/upload-artifact@v7
       with:
-        name: r2flutter-macos
-        path: dist/macos/r2flutter-macos.tar.gz
+        name: bindist-darwin-arm-64
+        path: r2flutter-*.zip
+        if-no-files-found: error
+
+  build-linux-arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+    - uses: actions/checkout@v7
+    - name: Installing radare2 ${{ env.R2V }}
+      uses: radareorg/github-actions@v3
+      with:
+        version: ${{ env.R2V }}
+        from-git: false
+    - name: Building r2flutter
+      run: make && make user-install
+    - name: Basic Testing
+      run: make test
+    - name: Package r2pm binary
+      run: make bindist
+    - name: Upload r2pm binary
+      uses: actions/upload-artifact@v7
+      with:
+        name: bindist-linux-arm-64
+        path: r2flutter-*.zip
         if-no-files-found: error
 
   build-windows:
@@ -146,16 +168,16 @@ jobs:
     - name: Verify Windows package
       shell: pwsh
       run: |
-        Expand-Archive -Path dist/windows/r2flutter-windows-x86_64.zip -DestinationPath check-zip -Force
+        Expand-Archive -Path r2flutter-$env:R2V-windows-x86-64.zip -DestinationPath check-zip -Force
         Get-ChildItem -Recurse check-zip | Select-Object -ExpandProperty FullName
-        $root = 'check-zip/r2flutter-windows-x86_64'
+        $root = 'check-zip'
         if (-not (Test-Path "$root/bin/r2flutter.exe")) { throw 'missing r2flutter.exe' }
         if (-not (Test-Path "$root/plugins/core_flutter.dll")) { throw 'missing core_flutter.dll' }
     - name: Upload Windows package
       uses: actions/upload-artifact@v7
       with:
-        name: r2flutter-windows-x86_64
-        path: dist/windows/r2flutter-windows-x86_64.zip
+        name: bindist-windows-x86-64
+        path: r2flutter-*.zip
         if-no-files-found: error
 
   r2-xps:
@@ -188,6 +210,7 @@ jobs:
       - build-linux24
       - meson-linux24
       - build-macos
+      - build-linux-arm
       - build-windows
       - r2-xps
     runs-on: ubuntu-24.04
@@ -245,7 +268,5 @@ jobs:
         body_path: RELEASE_NOTES.md
         generate_release_notes: false
         files: |
-          release-artifacts/r2flutter-linux-x86_64/r2flutter-linux-x86_64.tar.gz
           release-artifacts/r2flutter-debian-amd64/r2flutter_*_amd64.deb
-          release-artifacts/r2flutter-macos/r2flutter-macos.tar.gz
-          release-artifacts/r2flutter-windows-x86_64/r2flutter-windows-x86_64.zip
+          release-artifacts/bindist-*/r2flutter-*.zip
