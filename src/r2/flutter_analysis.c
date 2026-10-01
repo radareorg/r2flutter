@@ -1317,6 +1317,34 @@ static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, Flutter
 	ht_up_free (seen_fcns);
 }
 
+// Expose the reconstructed ObjectPool as r2's global pointer so that plain-r2
+// analysis and ESIL resolve `[x27, off]` loads to pool addresses, matching how
+// `r2flutter -p -r` already wires it up. x27 (PP) is the only Dart reserved
+// register with a static address; x22 (NULL_REG) and x26 (THR) are runtime
+// pointers and cannot be seeded this way.
+void r2flutter_setup_pp_gp(RCore *core, DartCtx *dctx) {
+	if (!core || !dctx) {
+		return;
+	}
+	// Resolve on a shallow copy: dart_resolve_pp_info populates the read cache
+	// (ctx->rmem) and can leave a stale layout pointer in the context. The real
+	// dctx is copied by value into the analysis DartApp, so polluting it here
+	// would double-free that cache. The copy shares heap-owned pointers with
+	// dctx, so we only release what we allocated into it (its own rmem).
+	DartCtx probe = *dctx;
+	probe.rmem = NULL;
+	probe.layout = NULL;
+	DartPpInfo pp = { 0 };
+	if (dart_resolve_pp_info (&probe, &pp) && pp.base) {
+		r_config_set_i (core->config, "anal.gp", pp.base);
+		r_config_set (core->config, "anal.gpseed", "x27");
+		r_config_set (core->config, "anal.roregs", "x27,gp,zero");
+		r_flag_set (core->flags, "PP", pp.base, 1);
+	}
+	dart_pp_info_fini (&pp);
+	dart_read_cache_free (probe.rmem);
+}
+
 bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 	R_RETURN_VAL_IF_FAIL (core && dctx, false);
 	DartApp *app = dart_app_new_from_core (core, dctx);

@@ -394,6 +394,9 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		if (cmd->analysis_depth >= 2) {
 			dctx->dump_fields = 1;
 		}
+		// Seed anal.gp/gpseed/roregs with the ObjectPool base for every -A depth
+		// so plain-r2 analysis can resolve [x27, off] pool loads.
+		r2flutter_setup_pp_gp (core, dctx);
 		if (cmd->analysis_depth >= 3) {
 			r2flutter_analysis_run (core, dctx, dctx->quiet);
 		} else {

@@ -1685,3 +1685,23 @@ residual are all word-aligned `complete=false` strings `-O` cannot resolve
 either), bare indirect calls 1178 -> 1, ~150 misaligned `+0x..7` bogus comments
 -> 0, and 64439 slots now carry a kind/name plus xrefs. Verified on iOS (Dart
 3.13/3.2.5, cws=8) and Android (w0rdle, Dart 2.18, cws=4): 0 misaligned on both.
+
+## Expose the ObjectPool as r2's global pointer (anal.gp) in r2flutter-A
+
+x27 (PP) is the only Dart reserved register with a *static* address: the
+ObjectPool lives in the snapshot, so we know its base. `r2flutter -p -r`
+already emitted `e anal.gp=<base>` / `dr x27=<base>` / `e anal.roregs=...`, but
+the analysis command never set them, and the `-R` script had a dead
+`dr x27=\`e anal.gp\`` that depended on an unset value. `r2flutter -A` (every
+depth) now calls `r2flutter_setup_pp_gp`, which seeds `anal.gp` with the pool
+base, `anal.gpseed=x27`, `anal.roregs=x27,gp,zero` and an `f PP` flag, so plain
+r2 analysis/ESIL resolves `[x27, off]` pool loads consistently.
+
+Gotcha worth remembering: `dart_resolve_pp_info` populates the context read
+cache (`ctx->rmem`) and can leave a stale layout pointer. `dart_app_new_from_core`
+copies the `DartCtx` by value (`memcpy`), so resolving on the live session
+context and then running the analysis double-freed that cache (SIGABRT after
+"Loaded N functions"). The setup resolves on a shallow copy with its own
+`rmem`/`layout` and frees only what it allocated, leaving the session context
+pristine. x22 (NULL_REG) and x26 (THR) are runtime pointers with no static
+address, so they are documented/annotated, never seeded as anal.gp.
