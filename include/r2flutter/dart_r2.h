@@ -81,6 +81,11 @@ typedef struct {
 	int dump_fields;
 	int dump_strings;
 	bool dump_string_refs;
+	ut64 str_limit; // max strings to print (0 = unlimited)
+	ut64 str_scan_limit; // max strings to carve in the fuzzy scan (0 = unlimited)
+	int str_minlen; // skip printing strings shorter than this
+	int str_maxlen; // skip printing strings longer than this (0 = unlimited)
+	const char *str_filter; // only print strings matching this regex
 	const char *obf_map_path;
 	HtPP *obf_by_obfuscated;
 	bool obf_map_tried;

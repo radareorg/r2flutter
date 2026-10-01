@@ -26,7 +26,17 @@ void dart_string_list_free(RList *list) {
 	r_list_free (list);
 }
 
-#define DART_STRING_SCAN_LIMIT 50000
+typedef struct {
+	RList *list;
+	HtUP *seen_addrs;
+	ut64 ref_counter;
+	ut64 limit; // 0 means unlimited
+} StringScan;
+
+static bool string_scan_full(const StringScan *ss) {
+	return ss->limit && (ut64)r_list_length (ss->list) >= ss->limit;
+}
+
 DartStringCategory dart_string_classify_value(const char *s) {
 	if (R_STR_ISEMPTY (s)) {
 		return DART_STRING_CAT_UNKNOWN;
@@ -57,7 +67,7 @@ static const char *string_category_name(DartStringCategory cat) {
 	}
 }
 
-static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter);
+static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, StringScan *ss);
 static bool should_scan_section(const RBinSection *sec);
 
 static bool is_common_text_punct(ut8 ch) {
@@ -146,31 +156,28 @@ static void packed_string_record_fini(PackedStringRecord *rec) {
 	rec->value = NULL;
 }
 
-static void append_string_info(RList *list, HtUP *seen_addrs, const char *value, ut32 len, ut32 flags, ut64 addr, DartStringCategory cat, ut64 *ref_counter) {
-	if (!list || !value) {
+static void append_string_info(StringScan *ss, const char *value, ut32 len, ut32 flags, ut64 addr, DartStringCategory cat) {
+	if (!value || string_scan_full (ss)) {
 		return;
 	}
-	if (r_list_length (list) >= DART_STRING_SCAN_LIMIT) {
-		return;
-	}
-	if (seen_addrs && addr && ht_up_find (seen_addrs, addr, NULL)) {
+	if (addr && ht_up_find (ss->seen_addrs, addr, NULL)) {
 		return;
 	}
 	DartStringInfo *si = R_NEW0 (DartStringInfo);
-	si->ref_id = ref_counter? (*ref_counter)++: 0;
+	si->ref_id = ss->ref_counter++;
 	si->length = len;
 	si->flags = flags | DART_STRING_CANONICAL;
 	si->address = addr;
 	si->category = cat;
 	si->references = r_list_newf ((RListFree)dart_string_ref_free);
 	si->value = strdup (value);
-	r_list_append (list, si);
-	if (seen_addrs && addr) {
-		ht_up_insert (seen_addrs, addr, si);
+	r_list_append (ss->list, si);
+	if (addr) {
+		ht_up_insert (ss->seen_addrs, addr, si);
 	}
 }
 
-static void scan_ascii_strings(const ut8 *buf, ut64 base, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
+static void scan_ascii_strings(const ut8 *buf, ut64 base, ut64 size, StringScan *ss) {
 	if (!buf || !size) {
 		return;
 	}
@@ -190,7 +197,7 @@ static void scan_ascii_strings(const ut8 *buf, ut64 base, ut64 size, RList *list
 				memcpy (tmp, buf + start, length);
 				tmp[length] = '\0';
 				if (looks_like_text (tmp)) {
-					append_string_info (list, seen_addrs, tmp, (ut32)length, 0, base + start, dart_string_classify_value (tmp), ref_counter);
+					append_string_info (ss, tmp, (ut32)length, 0, base + start, dart_string_classify_value (tmp));
 				}
 				free (tmp);
 			}
@@ -334,12 +341,12 @@ static bool parse_packed_string_record_text(const ut8 *buf, ut64 size, ut64 pos,
 	return out->value != NULL;
 }
 
-static void scan_packed_string_runs(const ut8 *buf, ut64 base, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
-	if (!buf || !size || !list) {
+static void scan_packed_string_runs(const ut8 *buf, ut64 base, ut64 size, StringScan *ss) {
+	if (!buf || !size) {
 		return;
 	}
 	ut64 pos = 0;
-	while (pos < size && r_list_length (list) < DART_STRING_SCAN_LIMIT) {
+	while (pos < size && !string_scan_full (ss)) {
 		PackedStringRecord probe = { 0 };
 		if (!parse_packed_string_record_text (buf, size, pos, &probe)) {
 			pos++;
@@ -372,9 +379,9 @@ static void scan_packed_string_runs(const ut8 *buf, ut64 base, ut64 size, RList 
 			skips++;
 		}
 		if (n_records >= DART_PACKED_STRING_MIN_RUN) {
-			for (int i = 0; i < n_records && r_list_length (list) < DART_STRING_SCAN_LIMIT; i++) {
+			for (int i = 0; i < n_records && !string_scan_full (ss); i++) {
 				PackedStringRecord *rec = &records[i];
-				append_string_info (list, seen_addrs, rec->value, rec->length, rec->flags, base + rec->payload_off, dart_string_classify_value (rec->value), ref_counter);
+				append_string_info (ss, rec->value, rec->length, rec->flags, base + rec->payload_off, dart_string_classify_value (rec->value));
 			}
 			pos = run_end;
 		} else {
@@ -386,8 +393,8 @@ static void scan_packed_string_runs(const ut8 *buf, ut64 base, ut64 size, RList 
 	}
 }
 
-static void scan_packed_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
-	if (!ctx || !snapshot_base || !list) {
+static void scan_packed_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, StringScan *ss) {
+	if (!ctx || !snapshot_base) {
 		return;
 	}
 	ut8 hdrbuf[12];
@@ -417,23 +424,23 @@ static void scan_packed_strings_from_snapshot(DartCtx *ctx, ut64 snapshot_base, 
 	if (ctx->verbose > 1) {
 		fprintf (stderr, "[r2flutter] packed string scan snapshot=0x%" PFMT64x " cluster_start=0x%" PFMT64x " total=0x%" PFMT64x "\n", snapshot_base, snapshot_base + hdr.cluster_start, hdr.total_len);
 	}
-	scan_packed_string_runs (buf + hdr.cluster_start, snapshot_base + hdr.cluster_start, hdr.total_len - hdr.cluster_start, list, seen_addrs, ref_counter);
+	scan_packed_string_runs (buf + hdr.cluster_start, snapshot_base + hdr.cluster_start, hdr.total_len - hdr.cluster_start, ss);
 	free (buf);
 }
 
 #define DART_SNAPSHOT_SCAN_MAX (64ULL << 20)
 #define DART_DATA_IMAGE_SCAN_MAX (8ULL << 20)
 
-static void scan_string_buffer(const ut8 *buf, ut64 base, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
-	if (!buf || !size || !list) {
+static void scan_string_buffer(const ut8 *buf, ut64 base, ut64 size, StringScan *ss) {
+	if (!buf || !size) {
 		return;
 	}
-	scan_ascii_strings (buf, base, size, list, seen_addrs, ref_counter);
-	scan_utf16_strings (buf, base, size, list, seen_addrs, ref_counter);
+	scan_ascii_strings (buf, base, size, ss);
+	scan_utf16_strings (buf, base, size, ss);
 }
 
-static void scan_snapshot_region(DartCtx *ctx, ut64 start, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
-	if (!ctx || !ctx->core || !ctx->core->bin || !start || !size || !list || size > DART_SNAPSHOT_SCAN_MAX) {
+static void scan_snapshot_region(DartCtx *ctx, ut64 start, ut64 size, StringScan *ss) {
+	if (!ctx || !ctx->core || !ctx->core->bin || !start || !size || size > DART_SNAPSHOT_SCAN_MAX) {
 		return;
 	}
 	ut64 end = start + size;
@@ -468,16 +475,16 @@ static void scan_snapshot_region(DartCtx *ctx, ut64 start, ut64 size, RList *lis
 			free (buf);
 			continue;
 		}
-		scan_string_buffer (buf, chunk_start, chunk_size, list, seen_addrs, ref_counter);
+		scan_string_buffer (buf, chunk_start, chunk_size, ss);
 		free (buf);
 	}
 }
 
-static void scan_strings_from_snapshot_window(DartCtx *ctx, ut64 snapshot_base, ut64 upper_bound, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
-	if (!ctx || !snapshot_base || !list) {
+static void scan_strings_from_snapshot_window(DartCtx *ctx, ut64 snapshot_base, ut64 upper_bound, StringScan *ss) {
+	if (!ctx || !snapshot_base) {
 		return;
 	}
-	ut64 before_count = r_list_length (list);
+	ut64 before_count = r_list_length (ss->list);
 	DartSnapshotHeader sh;
 	if (!dart_snapshot_header_read (ctx, snapshot_base, &sh)) {
 		goto fallback;
@@ -486,10 +493,10 @@ static void scan_strings_from_snapshot_window(DartCtx *ctx, ut64 snapshot_base, 
 		goto fallback;
 	}
 	if (ctx->compressed_word_size == 4) {
-		scan_packed_strings_from_snapshot (ctx, snapshot_base, list, seen_addrs, ref_counter);
+		scan_packed_strings_from_snapshot (ctx, snapshot_base, ss);
 		return;
 	}
-	scan_snapshot_region (ctx, snapshot_base + sh.cluster_start, sh.total_len - sh.cluster_start, list, seen_addrs, ref_counter);
+	scan_snapshot_region (ctx, snapshot_base + sh.cluster_start, sh.total_len - sh.cluster_start, ss);
 	ut64 align = ctx->layout && ctx->layout->max_alignment? (ut64)ctx->layout->max_alignment: 16;
 	if (align == 0) {
 		align = 16;
@@ -497,18 +504,18 @@ static void scan_strings_from_snapshot_window(DartCtx *ctx, ut64 snapshot_base, 
 	ut64 data_start = snapshot_base + ((sh.total_len + (align - 1)) & ~ (align - 1));
 	ut64 data_end = upper_bound;
 	if (data_end > data_start && (data_end - data_start) <= DART_DATA_IMAGE_SCAN_MAX) {
-		scan_snapshot_region (ctx, data_start, data_end - data_start, list, seen_addrs, ref_counter);
+		scan_snapshot_region (ctx, data_start, data_end - data_start, ss);
 	}
-	if ((ut64)r_list_length (list) > before_count) {
+	if ((ut64)r_list_length (ss->list) > before_count) {
 		return;
 	}
 fallback:
 	if (upper_bound > snapshot_base + 0x100 && (upper_bound - (snapshot_base + 0x100)) <= DART_DATA_IMAGE_SCAN_MAX) {
-		scan_snapshot_region (ctx, snapshot_base + 0x100, upper_bound - (snapshot_base + 0x100), list, seen_addrs, ref_counter);
+		scan_snapshot_region (ctx, snapshot_base + 0x100, upper_bound - (snapshot_base + 0x100), ss);
 	}
 }
 
-static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, RList *list, HtUP *seen_addrs, ut64 *ref_counter) {
+static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, StringScan *ss) {
 	if (!buf || size < 8) {
 		return;
 	}
@@ -536,7 +543,7 @@ static void scan_utf16_strings(const ut8 *buf, ut64 base, ut64 size, RList *list
 		if (utf8 && units >= 4 && utf16le_has_ascii_profile (buf, start, start + (units * 2))) {
 			ut32 ulen = (ut32)strlen (utf8);
 			if (ulen >= 4 && ulen <= 512 && looks_like_text (utf8)) {
-				append_string_info (list, seen_addrs, utf8, ulen, DART_STRING_TWO_BYTE, base + start, dart_string_classify_value (utf8), ref_counter);
+				append_string_info (ss, utf8, ulen, DART_STRING_TWO_BYTE, base + start, dart_string_classify_value (utf8));
 			}
 		}
 		r_strbuf_fini (&sb);
@@ -583,16 +590,15 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 		return NULL;
 	}
 	RList *string_list = r_list_newf ((RListFree)dart_string_info_free);
-	HtUP *seen_addrs = ht_up_new0 ();
-	if (!seen_addrs) {
-		return string_list;
-	}
 	RVecRBinSection *sections = r_bin_get_sections_vec (ctx->core->bin);
 	if (!sections) {
-		ht_up_free (seen_addrs);
 		return string_list;
 	}
-	ut64 ref_counter = 0;
+	StringScan ss = {
+		.list = string_list,
+		.seen_addrs = ht_up_new0 (),
+		.limit = ctx->str_scan_limit
+	};
 	if (find_snapshots (ctx) == 0 && ctx->vm_data) {
 		DartVerLayout layout_tmp;
 		DartVerLayout *layout_owned = dart_ctx_init_layout (ctx, &layout_tmp);
@@ -608,14 +614,14 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 		} else if (ctx->iso_instr > ctx->iso_data) {
 			iso_upper = ctx->iso_instr;
 		}
-		scan_strings_from_snapshot_window (ctx, ctx->vm_data, vm_upper, string_list, seen_addrs, &ref_counter);
-		scan_strings_from_snapshot_window (ctx, ctx->iso_data, iso_upper, string_list, seen_addrs, &ref_counter);
+		scan_strings_from_snapshot_window (ctx, ctx->vm_data, vm_upper, &ss);
+		scan_strings_from_snapshot_window (ctx, ctx->iso_data, iso_upper, &ss);
 		if (r_list_length (string_list) == 0) {
 			if (vm_upper > ctx->vm_data + 0x100) {
-				scan_snapshot_region (ctx, ctx->vm_data + 0x100, vm_upper - (ctx->vm_data + 0x100), string_list, seen_addrs, &ref_counter);
+				scan_snapshot_region (ctx, ctx->vm_data + 0x100, vm_upper - (ctx->vm_data + 0x100), &ss);
 			}
 			if (iso_upper > ctx->iso_data + 0x100) {
-				scan_snapshot_region (ctx, ctx->iso_data + 0x100, iso_upper - (ctx->iso_data + 0x100), string_list, seen_addrs, &ref_counter);
+				scan_snapshot_region (ctx, ctx->iso_data + 0x100, iso_upper - (ctx->iso_data + 0x100), &ss);
 			}
 		}
 		dart_ctx_fini_layout (ctx, layout_owned);
@@ -637,9 +643,9 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 			free (buf);
 			continue;
 		}
-		scan_string_buffer (buf, sec->vaddr, size, string_list, seen_addrs, &ref_counter);
+		scan_string_buffer (buf, sec->vaddr, size, &ss);
 		free (buf);
-		if (r_list_length (string_list) >= DART_STRING_SCAN_LIMIT) {
+		if (string_scan_full (&ss)) {
 			break;
 		}
 	}
@@ -648,12 +654,12 @@ RList *dart_pool_extract_strings(DartCtx *ctx) {
 		if (size > 0 && size <= DART_SNAPSHOT_SCAN_MAX) {
 			ut8 *buf = (ut8 *)malloc ((size_t)size);
 			if (buf && read_mem (ctx, 0, buf, (int)size)) {
-				scan_string_buffer (buf, 0, size, string_list, seen_addrs, &ref_counter);
+				scan_string_buffer (buf, 0, size, &ss);
 			}
 			free (buf);
 		}
 	}
-	ht_up_free (seen_addrs);
+	ht_up_free (ss.seen_addrs);
 	r_list_sort (string_list, (RListComparator)string_info_addr_cmp);
 	return string_list;
 }
@@ -832,36 +838,62 @@ static void dump_string_text(RStrBuf *sb, const DartStringInfo *si, int fmt, boo
 	}
 }
 
+static bool string_matches(const DartCtx *ctx, const RRegex *rx, const DartStringInfo *si) {
+	if (!si || !si->value) {
+		return false;
+	}
+	if (ctx->str_minlen > 0 && si->length < (ut32)ctx->str_minlen) {
+		return false;
+	}
+	if (ctx->str_maxlen > 0 && si->length > (ut32)ctx->str_maxlen) {
+		return false;
+	}
+	return !rx || r_regex_exec (rx, si->value, 0, NULL, 0) == 0;
+}
+
 static char *dump_strings_list(DartCtx *ctx, RList *strings, int fmt) {
-	const bool refs = ctx && ctx->dump_string_refs;
+	RRegex *rx = NULL;
+	if (R_STR_ISNOTEMPTY (ctx->str_filter)) {
+		rx = r_regex_new (ctx->str_filter, "e");
+		if (!rx) {
+			R_LOG_ERROR ("Invalid string filter regex: %s", ctx->str_filter);
+			return NULL;
+		}
+	}
+	const bool refs = ctx->dump_string_refs;
+	const bool quiet = ctx->quiet;
+	PJ *pj = NULL;
+	RStrBuf *sb = NULL;
 	if (fmt == 'j') {
-		if (!strings || r_list_length (strings) == 0) {
-			return strdup ("[]");
-		}
-		PJ *pj = pj_new ();
+		pj = pj_new ();
 		pj_a (pj);
-		RListIter *it;
-		DartStringInfo *si;
-		r_list_foreach (strings, it, si) {
-			if (si) {
-				dump_string_json (pj, si, refs);
-			}
-		}
-		pj_end (pj);
-		return pj_drain (pj);
+	} else {
+		sb = r_strbuf_new (fmt == 'r' && !quiet? "# Dart Strings\n": "");
 	}
-	if (!strings) {
-		return strdup ("# No strings found\n");
-	}
-	const bool quiet = ctx && ctx->quiet;
-	RStrBuf *sb = r_strbuf_new (fmt == 'r' && !quiet? "# Dart Strings\n": "");
+	ut64 count = 0;
 	RListIter *it;
 	DartStringInfo *si;
 	r_list_foreach (strings, it, si) {
-		dump_string_text (sb, si, fmt, quiet, refs);
+		if (ctx->str_limit && count >= ctx->str_limit) {
+			break;
+		}
+		if (!string_matches (ctx, rx, si)) {
+			continue;
+		}
+		if (pj) {
+			dump_string_json (pj, si, refs);
+		} else {
+			dump_string_text (sb, si, fmt, quiet, refs);
+		}
+		count++;
+	}
+	r_regex_free (rx);
+	if (pj) {
+		pj_end (pj);
+		return pj_drain (pj);
 	}
 	if (fmt == 'r' && !quiet) {
-		r_strbuf_appendf (sb, "# Total: %d strings\n", r_list_length (strings));
+		r_strbuf_appendf (sb, "# Total: %" PFMT64u " strings\n", count);
 	}
 	return r_strbuf_drain (sb);
 }
@@ -874,8 +906,12 @@ char *dart_pool_dump_strings(DartCtx *ctx, int fmt) {
 }
 
 char *dart_pool_dump_strings_fuzzy(DartCtx *ctx, int fmt) {
+	// stop carving early only when every scanned string is going to be printed
+	const bool filtered = ctx->str_minlen > 0 || ctx->str_maxlen > 0 || R_STR_ISNOTEMPTY (ctx->str_filter);
+	ctx->str_scan_limit = filtered? 0: ctx->str_limit;
 	DartRecoveryModel model = { 0 };
 	dart_recovery_model_load (ctx, &model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_STRING_REFS);
+	ctx->str_scan_limit = 0;
 	char *out = dump_strings_list (ctx, model.strings, fmt);
 	dart_recovery_model_fini (&model);
 	return out;

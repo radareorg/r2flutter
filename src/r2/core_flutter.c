@@ -12,6 +12,10 @@
 #define R2FLUTTER_CFG_MAPFILE "r2flutter.mapfile"
 #define R2FLUTTER_CFG_NAMEPOOL "r2flutter.namepool"
 #define R2FLUTTER_CFG_PROFILE "r2flutter.profile"
+#define R2FLUTTER_CFG_STR_LIMIT "r2flutter.str.limit"
+#define R2FLUTTER_CFG_STR_MINLEN "r2flutter.str.minlen"
+#define R2FLUTTER_CFG_STR_MAXLEN "r2flutter.str.maxlen"
+#define R2FLUTTER_CFG_STR_FILTER "r2flutter.str.filter"
 
 typedef struct {
 	char action;
@@ -36,6 +40,14 @@ static bool r2flutter_core_init(RCorePluginSession *cps) {
 	r_config_node_desc (node, "Enable heuristic name-pool fallback resolution");
 	node = r_config_set (cfg, R2FLUTTER_CFG_PROFILE, "");
 	r_config_node_desc (node, "Override Dart snapshot profile by 32-byte hash or Dart version");
+	node = r_config_set_i (cfg, R2FLUTTER_CFG_STR_LIMIT, 0);
+	r_config_node_desc (node, "Maximum number of strings to print (0 = unlimited)");
+	node = r_config_set_i (cfg, R2FLUTTER_CFG_STR_MINLEN, 0);
+	r_config_node_desc (node, "Skip printing strings shorter than this length");
+	node = r_config_set_i (cfg, R2FLUTTER_CFG_STR_MAXLEN, 0);
+	r_config_node_desc (node, "Skip printing strings longer than this length (0 = unlimited)");
+	node = r_config_set (cfg, R2FLUTTER_CFG_STR_FILTER, "");
+	r_config_node_desc (node, "Only print strings matching this extended regex");
 	r_config_lock (cfg, true);
 	return true;
 }
@@ -49,6 +61,10 @@ static bool r2flutter_core_fini(RCorePluginSession *cps) {
 	r_config_rm (cfg, R2FLUTTER_CFG_MAPFILE);
 	r_config_rm (cfg, R2FLUTTER_CFG_NAMEPOOL);
 	r_config_rm (cfg, R2FLUTTER_CFG_PROFILE);
+	r_config_rm (cfg, R2FLUTTER_CFG_STR_LIMIT);
+	r_config_rm (cfg, R2FLUTTER_CFG_STR_MINLEN);
+	r_config_rm (cfg, R2FLUTTER_CFG_STR_MAXLEN);
+	r_config_rm (cfg, R2FLUTTER_CFG_STR_FILTER);
 	r_config_lock (cfg, true);
 #endif
 	return true;
@@ -57,6 +73,10 @@ static bool r2flutter_core_fini(RCorePluginSession *cps) {
 static void r2flutter_apply_config(RCore *core, DartCtx *dctx) {
 	dctx->obf_map_path = r_config_get (core->config, R2FLUTTER_CFG_MAPFILE);
 	dctx->use_name_pool = r_config_get_b (core->config, R2FLUTTER_CFG_NAMEPOOL);
+	dctx->str_limit = r_config_get_i (core->config, R2FLUTTER_CFG_STR_LIMIT);
+	dctx->str_minlen = (int)r_config_get_i (core->config, R2FLUTTER_CFG_STR_MINLEN);
+	dctx->str_maxlen = (int)r_config_get_i (core->config, R2FLUTTER_CFG_STR_MAXLEN);
+	dctx->str_filter = r_config_get (core->config, R2FLUTTER_CFG_STR_FILTER);
 	const char *profile = r_config_get (core->config, R2FLUTTER_CFG_PROFILE);
 	if (R_STR_ISNOTEMPTY (profile) && !dart_ctx_set_profile_override (dctx, profile)) {
 		R_LOG_WARN ("Ignoring unsupported Dart snapshot profile override: %s", profile);

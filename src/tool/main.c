@@ -169,6 +169,7 @@ int main(int argc, char **argv) {
 			break;
 		case 'l':
 			dctx.dump_fns_limit = atoi (opt.arg);
+			dctx.str_limit = r_num_get (NULL, opt.arg);
 			break;
 		case 'n':
 			dctx.use_name_pool = true;

@@ -1749,3 +1749,16 @@ lines come from `dart_pool_strings.c` (string references), not
 address). The apply runs on a shallow DartCtx copy with its own read cache for
 the same reason as `r2flutter_setup_pp_gp`: the scan has already mutated
 app->dctx, and extraction needs the pristine state the standalone command sees.
+
+## String dump config (`r2flutter.str.*`)
+
+`r2flutter.str.limit`, `.minlen`, `.maxlen` and `.filter` replace the old
+hardcoded `DART_STRING_SCAN_LIMIT` (50000). The defaults are unlimited/empty:
+no test sample reaches 50k carved strings (mafia ~41k in 0.7s), and the carved
+regions are already capped by `DART_SNAPSHOT_SCAN_MAX`/`DART_DATA_IMAGE_SCAN_MAX`.
+minlen/maxlen/filter only filter what `-z`/`-zz` print, because the carved list
+also feeds enum recovery and string-ref population. `str.limit` caps printed
+matches and only stops the `-zz` carving early (`ctx->str_scan_limit`) when no
+filter is set; otherwise the scan would stop before reaching the matches.
+Careful: `r_regex_check` returns `r_regex_exec` as-is, i.e. **false on match**;
+compare `r_regex_exec (rx, s, 0, NULL, 0) == 0` explicitly.

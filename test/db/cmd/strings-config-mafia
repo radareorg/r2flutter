@@ -1,0 +1,41 @@
+NAME=r2-strings-config-mafia
+FILE=bins/android/mafia/libapp.so
+CMDS=<<EOF
+L ../src/r2/core_flutter.dylib
+L ../src/r2/core_flutter.so
+e r2flutter.str.limit=3
+r2flutter -q -zz
+?e --
+e r2flutter.str.filter=^https?://
+r2flutter -q -zz
+?e --
+e r2flutter.str.filter=
+e r2flutter.str.minlen=41
+e r2flutter.str.maxlen=42
+r2flutter -zz
+?e --
+e r2flutter.str.minlen=0
+e r2flutter.str.maxlen=0
+e r2flutter.str.limit=2
+e r2flutter.str.filter=^ab
+r2flutter -j -zz
+EOF
+EXPECT=<<EOF
+<optimized out>
+Handle
+MonomorphicSmiableCall
+
+--
+http://www.w3.org/XML/1998/namespace
+http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd
+https://www.youtube.com/watch?v=
+
+--
+0x0004a5e8   42 :lib "_createBuiltInForegroundPainters@401245603"
+0x0004b7d4   41 :lib "package:qr_flutter/src/qr_image_view.dart"
+0x0004bab3   42 :lib "expected-closing-tag-but-got-right-bracket"
+
+--
+[{"ref":12,"len":8,"value":"abstract","category":"lib","two_byte":false,"canonical":true,"addr":2307},{"ref":209,"len":8,"value":"absolute","category":"lib","two_byte":false,"canonical":true,"addr":5339}]
+EOF
+RUN

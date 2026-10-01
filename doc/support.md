@@ -390,6 +390,11 @@ Config keys:
 
 - `r2flutter.mapfile`: Flutter obfuscation map JSON path
 - `r2flutter.namepool`: enable heuristic name-pool fallback
+- `r2flutter.profile`: override Dart snapshot profile by 32-byte hash or Dart version
+- `r2flutter.str.limit`: max number of strings printed by `-z`/`-zz` (default `0`, unlimited); without filters it also stops the `-zz` carving early
+- `r2flutter.str.minlen`: skip printing strings shorter than N (default `0`)
+- `r2flutter.str.maxlen`: skip printing strings longer than N (default `0`, unlimited)
+- `r2flutter.str.filter`: only print strings matching this extended regex (default empty)
 
 Plugin modifiers:
 
