@@ -1662,3 +1662,26 @@ table, then:
 
 Tested in `test/db/cmd/pp-slot-resolve-ios` against the committed Runner and
 AuthPass App binaries.
+
+## PP-slot comments: fix the mis-identification of loaded pool values
+
+With slots now resolved, the "maybe PP is not properly identified" note turned
+out to be a real register-tracking bug. The tracker set `has_pp_off` on the
+*destination* of a pool load, so a later `[dst, field]` deref was read as
+another pool slot. The classic case: `ldr x30,[x27,0x18]` (loads a Code object)
+then `ldur x30,[x30,7]` (extracts the entry point) produced a bogus
+`PP slot +0x1f` (0x18+7), and the following `blr x30` reported
+`indirect call via PP+0x1f`. Fixes:
+- a loaded value is an object, not a PP pointer: `pp_load` tags the dest with
+  `has_pp_slot`/`pp_slot` (the slot it came from), never `has_pp_off`;
+- `flutter_process_pp_slot_deref` propagates that taint across the Code
+  entry-point deref so the `blr` names the real slot (0x18) and can xref it;
+- a hard invariant guard: valid slots live at `(index+2)*word_size` with
+  `modern_target_word_size()==8`, so any computed `pp_off & 7` is a
+  tagged-object field/unbox deref, not a pool access, and is rejected outright.
+
+Result (task AuthPass binary, Dart 3.13): bare PP slots 72900 -> 1144 (the
+residual are all word-aligned `complete=false` strings `-O` cannot resolve
+either), bare indirect calls 1178 -> 1, ~150 misaligned `+0x..7` bogus comments
+-> 0, and 64439 slots now carry a kind/name plus xrefs. Verified on iOS (Dart
+3.13/3.2.5, cws=8) and Android (w0rdle, Dart 2.18, cws=4): 0 misaligned on both.

@@ -39,3 +39,17 @@ EXPECT=<<EOF2
 dart: PP slot +0xecb0 function method.MapBase._anon_closure
 EOF2
 RUN
+
+NAME=r2-pp-indirect-call-aligned-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF2
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -AAA
+CC.@0xf6d0
+EOF2
+EXPECT=<<EOF2
+dart: indirect call via PP+0x1600 canonical_set
+EOF2
+RUN

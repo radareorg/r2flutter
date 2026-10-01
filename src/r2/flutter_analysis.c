@@ -19,8 +19,10 @@ typedef struct {
 	const DartFieldInfo *field;
 	const DartStringInfo *string;
 	const char *type_name;
-	ut64 pp_off;
+	ut64 pp_off; // this register is a pool POINTER: PP base + pp_off (from x27 / add)
 	bool has_pp_off;
+	ut64 pp_slot; // this register holds the VALUE loaded from PP slot pp_slot (object)
+	bool has_pp_slot;
 } FlutterTrackedValue;
 
 typedef struct {
@@ -618,7 +620,6 @@ static ut64 flutter_pp_ref_code_addr(FlutterPpRefMap *map, ut64 code_index) {
 	return found? addr: 0;
 }
 
-
 static void flutter_apply_model_to_core(FlutterAnalModel *model, RCore *core, FlutterAnalStats *stats) {
 	if (!model || !core) {
 		return;
@@ -1044,7 +1045,6 @@ static bool flutter_annotate_pp_ref(RCore *core, FlutterPpRefMap *pp_refs, ut64 
 	return true;
 }
 
-
 static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, FlutterPpStringMap *pp_strings, FlutterPpRefMap *pp_refs, ut64 at, const FlutterOpInfo *info, FlutterAnalStats *stats) {
 	if (!state || !info || info->n_regs < 1 || !info->has_mem) {
 		return false;
@@ -1063,9 +1063,20 @@ static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, Flutte
 		}
 		pp_off = state->regs[base].pp_off + (ut64)info->mem_disp;
 	}
+	// Real ObjectPool slots live at (index + 2) * word_size, so a valid pp_off
+	// is always a multiple of the 8-byte target word. A misaligned result means
+	// the base register holds a tagged object (not a PP pointer) and this is a
+	// field/unbox deref, e.g. `ldur x0, [x16, 7]` - reject it rather than emit a
+	// bogus slot comment.
+	if ((pp_off & 7) != 0) {
+		return false;
+	}
+	// The destination now holds the pool OBJECT at pp_off, not a PP pointer.
+	// Marking it has_pp_off would make a later [dst, field] load look like a
+	// bogus pool slot (e.g. a Code entry-point deref read as PP+off+7).
 	memset (&state->regs[dst], 0, sizeof (state->regs[dst]));
-	state->regs[dst].has_pp_off = true;
-	state->regs[dst].pp_off = pp_off;
+	state->regs[dst].has_pp_slot = true;
+	state->regs[dst].pp_slot = pp_off;
 	const FlutterPpStringRef *string_ref = flutter_pp_string_map_get (pp_strings, pp_off);
 	if (string_ref) {
 		flutter_set_flag (core, "dart.str", string_ref->string_value, string_ref->string_addr, (ut32)strlen (string_ref->string_value), true);
@@ -1138,6 +1149,28 @@ static bool flutter_process_field_store(RCore *core, FlutterAnalModel *model, Fl
 	return true;
 }
 
+// Keep the pool-slot taint across a dereference of a pool object, such as the
+// `ldr xN, [xN, #entry_point]` that extracts a Code object's entry point right
+// before an indirect call. Without this the slot association is lost.
+static bool flutter_process_pp_slot_deref(FlutterAnalState *state, const FlutterOpInfo *info) {
+	if (!state || !info || info->n_regs < 1 || !info->has_mem) {
+		return false;
+	}
+	int base = flutter_reg_index (info->mem_base);
+	if (base < 0 || !state->regs[base].has_pp_slot) {
+		return false;
+	}
+	int dst = flutter_reg_index (info->regs[0]);
+	if (dst < 0) {
+		return false;
+	}
+	ut64 slot = state->regs[base].pp_slot;
+	memset (&state->regs[dst], 0, sizeof (state->regs[dst]));
+	state->regs[dst].has_pp_slot = true;
+	state->regs[dst].pp_slot = slot;
+	return true;
+}
+
 static void flutter_process_indirect_call(RCore *core, FlutterAnalState *state, FlutterPpRefMap *pp_refs, ut64 at, const FlutterOpInfo *info, FlutterAnalStats *stats) {
 	if (!core || !state || !info || info->n_regs < 1) {
 		return;
@@ -1146,11 +1179,15 @@ static void flutter_process_indirect_call(RCore *core, FlutterAnalState *state, 
 	if (reg < 0) {
 		return;
 	}
-	if (state->regs[reg].has_pp_off) {
+	// The call target is the object held in the register (a Code/Function
+	// loaded from a PP slot), possibly after an entry-point deref. Use the slot
+	// that value came from, not a PP-pointer offset.
+	if (state->regs[reg].has_pp_slot) {
+		ut64 slot = state->regs[reg].pp_slot;
 		// A call through a resolved code slot gets a real CALL xref and the
 		// target name; otherwise keep the plain via-PP note.
-		if (!flutter_annotate_pp_ref (core, pp_refs, at, state->regs[reg].pp_off, true, stats)) {
-			char *msg = r_str_newf ("dart: indirect call via PP+0x%" PFMT64x, state->regs[reg].pp_off);
+		if (!flutter_annotate_pp_ref (core, pp_refs, at, slot, true, stats)) {
+			char *msg = r_str_newf ("dart: indirect call via PP+0x%" PFMT64x, slot);
 			flutter_append_comment (core, at, msg, stats);
 			free (msg);
 		}
@@ -1222,6 +1259,7 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterP
 				if (!flutter_process_pp_load (core, &state, pp_strings, pp_refs, at, &info, stats) &&
 					!flutter_process_stack_load (&state, &info) &&
 					!flutter_process_field_load (core, model, &state, at, &info, stats) &&
+					!flutter_process_pp_slot_deref (&state, &info) &&
 					has_info && info.n_regs > 0) {
 					int dst = flutter_reg_index (info.regs[0]);
 					if (dst >= 0) {
