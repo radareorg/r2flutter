@@ -845,6 +845,17 @@ static void flutter_ensure_functions(RCore *core, RVecFlutterEntry *entries) {
 		r_log_set_level (R_LOG_LEVEL_INFO);
 	}
 	const bool prev_trycatch = dart_core_trycatch_suspend (core);
+	// `af` only needs to recover each function's basic blocks here; the Dart
+	// scan tracks its own args/fields and resolves calls from the snapshot, so
+	// r2's variable analysis, call-following and jump-table recovery are pure
+	// overhead - disabling them roughly halves this af storm, the dominant cost
+	// of -AAA, without changing the recovered blocks.
+	bool prev_calls = r_config_get_b (core->config, "anal.calls");
+	bool prev_vars = r_config_get_b (core->config, "anal.vars");
+	bool prev_jmptbl = r_config_get_b (core->config, "anal.jmp.tbl");
+	r_config_set_b (core->config, "anal.calls", false);
+	r_config_set_b (core->config, "anal.vars", false);
+	r_config_set_b (core->config, "anal.jmp.tbl", false);
 	ut64 *addrp;
 	R_VEC_FOREACH (entries, addrp) {
 		if (!*addrp) {
@@ -854,6 +865,9 @@ static void flutter_ensure_functions(RCore *core, RVecFlutterEntry *entries) {
 			r_core_cmdf (core, "af @ 0x%" PFMT64x, *addrp);
 		}
 	}
+	r_config_set_b (core->config, "anal.calls", prev_calls);
+	r_config_set_b (core->config, "anal.vars", prev_vars);
+	r_config_set_b (core->config, "anal.jmp.tbl", prev_jmptbl);
 	dart_core_trycatch_restore (core, prev_trycatch);
 	if (restore_log_level) {
 		r_log_set_level (old_level);
@@ -1392,6 +1406,27 @@ void r2flutter_setup_pp_gp(RCore *core, DartCtx *dctx) {
 	dart_read_cache_free (probe.rmem);
 }
 
+// Apply the recovered ObjectPool xref graph (including data-image references
+// such as a const object pointing at a string) so `axt` resolves pool strings
+// that no instruction loads directly. Runs on a clean copy of the context:
+// extraction needs the pristine state the standalone `-x` command sees, and the
+// copy shares heap-owned pointers so only its own read cache is freed. Cheap
+// relative to the function scan, which is why -AA can afford it. Returns the
+// number of xrefs applied.
+int r2flutter_apply_pool_xrefs(RCore *core, DartCtx *dctx) {
+	if (!core || !dctx) {
+		return 0;
+	}
+	DartCtx xrctx = *dctx;
+	xrctx.core = core;
+	xrctx.rmem = NULL;
+	xrctx.layout = NULL;
+	xrctx.dump_string_refs = true;
+	int applied = dart_pool_apply_xrefs (&xrctx);
+	dart_read_cache_free (xrctx.rmem);
+	return applied;
+}
+
 bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 	R_RETURN_VAL_IF_FAIL (core && dctx, false);
 	DartApp *app = dart_app_new_from_core (core, dctx);
@@ -1425,20 +1460,7 @@ bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 	flutter_ensure_functions (core, entries);
 	flutter_scan_functions (core, &model, &pp_strings, &pp_refs, entries, &stats);
 
-	// Apply the recovered xref graph (including data-image references such as a
-	// const object pointing at a string) so `axt` resolves pool-referenced
-	// strings that no instruction loads directly. Run it on a clean copy of the
-	// original context - the scan above mutates app->dctx (read cache, layout),
-	// and dart_pool_extract_xrefs needs the same pristine state the standalone
-	// `-x` command sees. The copy shares heap-owned pointers, so we free only
-	// the read cache it allocates.
-	DartCtx xrctx = *dctx;
-	xrctx.core = core;
-	xrctx.rmem = NULL;
-	xrctx.layout = NULL;
-	xrctx.dump_string_refs = true;
-	int graph_xrefs = dart_pool_apply_xrefs (&xrctx);
-	dart_read_cache_free (xrctx.rmem);
+	int graph_xrefs = r2flutter_apply_pool_xrefs (core, dctx);
 
 	if (!quiet) {
 		R_LOG_INFO ("Flutter analysis: %d functions, %d calls, %d fields, %d classes, %d types, %d strings, %d PP refs, %d graph xrefs",

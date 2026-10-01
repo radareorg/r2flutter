@@ -91,7 +91,9 @@ static void r2flutter_subcmd_help(RCore *core, char action) {
 static void r2flutter_help(RCore *core) {
 	r_cons_printf (core->cons,
 		"Usage: r2flutter [qjr*] <action>\n"
-		"| r2flutter -A[AA]   analyze dart snapshot and apply flags/comments\n"
+		"| r2flutter -A       apply flags, function names and signatures\n"
+		"| r2flutter -AA      also seed anal.gp and apply ObjectPool xrefs\n"
+		"| r2flutter -AAA     also run the full register-tracking scan (slow)\n"
 		"| r2flutter -c[jr*]  dump classes\n"
 		"| r2flutter -C       apply Dart classes, fields, methods and types\n"
 		"| r2flutter -D prof  override Dart snapshot profile by hash or version\n"
@@ -391,6 +393,12 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 		r2flutter_help (core);
 		return true;
 	case 'A':
+		// Tiered analysis:
+		//   -A   flags, function names and signatures (fast)
+		//   -AA  + anal.gp seeding and the ObjectPool xref graph (data-image
+		//        string references), without the expensive per-function scan
+		//   -AAA + full register-tracking scan (PP-slot comments, field/arg
+		//        tracking, null/bool annotations, indirect-call resolution)
 		if (cmd->analysis_depth >= 2) {
 			dctx->dump_fields = 1;
 		}
@@ -401,6 +409,12 @@ static bool r2flutter_run_cmd(RCore *core, DartCtx *dctx, const R2FlutterCmd *cm
 			r2flutter_analysis_run (core, dctx, dctx->quiet);
 		} else {
 			r2flutter_analyze (core, dctx, dctx->quiet);
+			if (cmd->analysis_depth >= 2) {
+				int graph_xrefs = r2flutter_apply_pool_xrefs (core, dctx);
+				if (!dctx->quiet) {
+					R_LOG_INFO ("r2flutter: applied %d ObjectPool xrefs", graph_xrefs);
+				}
+			}
 		}
 		return true;
 	case 'C':

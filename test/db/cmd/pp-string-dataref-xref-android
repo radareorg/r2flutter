@@ -4,7 +4,7 @@ ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
 CMDS=<<EOF2
 L ../src/r2/core_flutter.so
 L ../src/r2/core_flutter.dylib
-r2flutter -AAA
+r2flutter -AA
 axt 0x177f3~0xdc8f7[1]
 EOF2
 EXPECT=<<EOF2
