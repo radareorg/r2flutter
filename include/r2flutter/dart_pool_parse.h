@@ -203,6 +203,7 @@ char *dart_pool_dump_strings(DartCtx *ctx, int fmt);
 char *dart_pool_dump_strings_fuzzy(DartCtx *ctx, int fmt);
 void dart_string_list_free(RList *list);
 char *dart_pool_dump_xrefs(DartCtx *ctx, int fmt);
+int dart_pool_apply_xrefs(DartCtx *ctx);
 char *dart_pool_dump_sbom(DartCtx *ctx, const char *input_path, int fmt);
 
 // ============================================================================

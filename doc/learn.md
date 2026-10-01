@@ -1724,3 +1724,28 @@ This is exactly the primitive the FatalSec talk's Frida bypass keys on
 Verified count on AuthPass: ~6k true, ~7k false, ~31k null, ~23k null-compares.
 x26 (THR, the thread register with a large fixed-offset table of runtime stubs)
 is the natural next target but is version-specific and left as a follow-up.
+
+## Apply data-image string references so axt resolves pool strings
+
+A string loaded only through a const data structure (e.g. a `Uri` or a list of
+endpoints) is never loaded by a `ldr [x27, off]` in code, so the -AAA scan,
+which only walks disassembled functions, created no xref for it. `axt
+0x<string>` came back empty even though the string is clearly used. Example
+(an Android app): `https://pss.aakredit.in/` at 0x76a97 is referenced from a
+const object at 0x13a945 in `.rodata`; the scan never visits `.rodata`.
+
+The reference was already recoverable - `r2flutter -z`/`-xz -r` lists each
+reliable ObjectPool string with its reference sites (`DartStringRef.source_addr`,
+including data-image addresses) and emits `ax <string> <source>` - but only as a
+script that nothing applied, and -AAA never ran it. -AAA now calls
+`dart_pool_apply_xrefs`, which walks `dart_pool_extract_pool_strings` and sets a
+real STRN xref from every `source_addr` to the string, so `axt` resolves
+pool-referenced strings that no instruction loads directly (4195 such xrefs on
+that app).
+
+Gotcha: `-xz` resolves to the strings action (`z`), not xrefs (`x`) - the `ax`
+lines come from `dart_pool_strings.c` (string references), not
+`dart_pool_extract_xrefs` (which only yields metadata refs with no source
+address). The apply runs on a shallow DartCtx copy with its own read cache for
+the same reason as `r2flutter_setup_pp_gp`: the scan has already mutated
+app->dctx, and extraction needs the pristine state the standalone command sees.

@@ -1425,15 +1425,31 @@ bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 	flutter_ensure_functions (core, entries);
 	flutter_scan_functions (core, &model, &pp_strings, &pp_refs, entries, &stats);
 
+	// Apply the recovered xref graph (including data-image references such as a
+	// const object pointing at a string) so `axt` resolves pool-referenced
+	// strings that no instruction loads directly. Run it on a clean copy of the
+	// original context - the scan above mutates app->dctx (read cache, layout),
+	// and dart_pool_extract_xrefs needs the same pristine state the standalone
+	// `-x` command sees. The copy shares heap-owned pointers, so we free only
+	// the read cache it allocates.
+	DartCtx xrctx = *dctx;
+	xrctx.core = core;
+	xrctx.rmem = NULL;
+	xrctx.layout = NULL;
+	xrctx.dump_string_refs = true;
+	int graph_xrefs = dart_pool_apply_xrefs (&xrctx);
+	dart_read_cache_free (xrctx.rmem);
+
 	if (!quiet) {
-		R_LOG_INFO ("Flutter analysis: %d functions, %d calls, %d fields, %d classes, %d types, %d strings, %d PP refs",
+		R_LOG_INFO ("Flutter analysis: %d functions, %d calls, %d fields, %d classes, %d types, %d strings, %d PP refs, %d graph xrefs",
 			(int)stats.functions,
 			(int)stats.call_xrefs,
 			(int)stats.field_refs,
 			(int)stats.class_refs,
 			(int)stats.type_refs,
 			(int)stats.string_refs,
-			(int)stats.pp_refs);
+			(int)stats.pp_refs,
+			graph_xrefs);
 	}
 
 	RVecFlutterEntry_free (entries);

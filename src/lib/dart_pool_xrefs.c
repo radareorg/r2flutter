@@ -1015,3 +1015,42 @@ char *dart_pool_dump_xrefs(DartCtx *ctx, int fmt) {
 	}
 	return out;
 }
+
+// Apply the recovered xref graph to the RCore as real r2 xrefs. Unlike the
+// analysis disassembly scan, which only sees loads inside functions, this also
+// surfaces references that live in the data image (e.g. a const object in
+// .rodata pointing at a string), so `axt` resolves pool-referenced strings that
+// no instruction loads directly. Returns the number of xrefs applied.
+int dart_pool_apply_xrefs(DartCtx *ctx) {
+	if (!ctx || !ctx->core || !ctx->core->anal) {
+		return 0;
+	}
+	// The reliable ObjectPool strings carry their reference sites (source_addr),
+	// including references that live in the data image (e.g. a const object in
+	// .rodata pointing at the string). The analysis disassembly scan only sees
+	// loads inside functions, so without this `axt <string>` is empty for
+	// strings no instruction loads directly.
+	RList *strings = dart_pool_extract_pool_strings (ctx);
+	if (!strings) {
+		return 0;
+	}
+	int applied = 0;
+	RListIter *it;
+	DartStringInfo *si;
+	r_list_foreach (strings, it, si) {
+		if (!si || !si->address || !si->references) {
+			continue;
+		}
+		RListIter *rit;
+		DartStringRef *sr;
+		r_list_foreach (si->references, rit, sr) {
+			if (!sr || sr->source_addr == 0) {
+				continue;
+			}
+			r_anal_xrefs_set (ctx->core->anal, sr->source_addr, si->address, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
+			applied++;
+		}
+	}
+	dart_string_list_free (strings);
+	return applied;
+}

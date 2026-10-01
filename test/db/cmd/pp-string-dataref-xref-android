@@ -1,0 +1,13 @@
+NAME=r2-pp-string-dataref-xref-android
+FILE=bins/android/w0rdle/libapp.so
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF2
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -AAA
+axt 0x177f3~0xdc8f7[1]
+EOF2
+EXPECT=<<EOF2
+0xdc8f7
+EOF2
+RUN
