@@ -182,6 +182,21 @@ typedef struct {
 
 typedef void(*ModernPoolStrRefCb)(const ModernPoolStrRef *info, void *user);
 
+typedef struct {
+	ut64 pp_offset;
+	ut64 pool_ref;
+	ut64 pool_index;
+	ut64 entry_index;
+	ut64 ref;
+	const char *kind; // resolved kind: "string", "function", "class", "code", ...
+	const char *name; // resolved name/value, or NULL (valid only during the callback)
+	int cid;
+	ut64 code_index; // UT64_MAX when the entry does not resolve to code
+	ut64 value_addr; // snapshot address of the resolved object, or 0
+} ModernPoolRefInfo;
+
+typedef void(*ModernPoolRefCb)(const ModernPoolRefInfo *info, void *user);
+
 typedef void(*DartInstructionTableEntryCallback)(const DartInstructionTableEntry *entry, void *user);
 
 typedef struct {
@@ -274,6 +289,7 @@ void modern_value_graph_json(PJ *pj, ModernValueGraph *graph);
 void modern_value_graph_text(RStrBuf *sb, ModernValueGraph *graph);
 const char *modern_value_graph_root_kind(ModernValueGraph *graph);
 bool modern_collect_direct_pool_strrefs(const ModernReq *req, HtUP *pp_offs, ModernPoolStrRefCb cb, void *user);
+bool modern_collect_direct_pool_refs(const ModernReq *req, ModernPoolRefCb cb, void *user);
 bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offs, ModernPoolStrRefCb cb, void *user);
 bool modern_extract_pool_strings(const ModernReq *req, RList *strings, HtUP *seen, ut64 *next_ref);
 bool modern_scan_names(DartCtx *ctx, ut64 start, ut64 end, ut64 nclusters, ut64 itlen);

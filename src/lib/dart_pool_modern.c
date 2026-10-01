@@ -999,7 +999,7 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 	if (modern_cid_eq (cid, cids->patch_class)) {
 		// FullAOT PatchClass layout differs across snapshot families. Before
 		// Dart 3.0 UntaggedPatchClass serialised patched_class, origin_class and
-		// script -- three refs up to to_snapshot(). Dart 3.0 dropped origin_class
+		// script -- three refs up to to_snapshot (). Dart 3.0 dropped origin_class
 		// (and renamed patched_class to wrapped_class), leaving wrapped_class and
 		// script: two refs. The CID_SHIFT1 tag style spans that change (Dart
 		// 2.14-3.3), so the count has to key off the Dart version rather than the
@@ -3988,6 +3988,84 @@ bool modern_extract_pool_strings(const ModernReq *req, RList *strings, HtUP *see
 		}
 		if (!ok) {
 			break;
+		}
+	}
+	modern_ref_resolver_fini (&resolver);
+	modern_cluster_meta_free (meta, req->num_clusters);
+	return ok;
+}
+
+// Walk every direct (tagged, snapshotable) ObjectPool entry once and hand the
+// caller its resolved kind/name/code_index. This is the single-pass batch
+// counterpart of the per-slot `-O` decode, used by the analysis so PP-slot
+// comments can show what a slot actually holds instead of a bare offset.
+bool modern_collect_direct_pool_refs(const ModernReq *req, ModernPoolRefCb cb, void *user) {
+	DartCtx *ctx = req? req->ctx: NULL;
+	if (!ctx || !cb || !modern_supported (ctx)) {
+		return false;
+	}
+	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
+	if (!meta) {
+		return false;
+	}
+	ModernRefResolver resolver = { 0 };
+	bool ok = modern_ref_resolver_init (&resolver, ctx, meta, req->num_clusters, req->num_base_objects);
+	if (!ok) {
+		modern_cluster_meta_free (meta, req->num_clusters);
+		return false;
+	}
+	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
+	for (ut64 i = 0; i < req->num_clusters && ok; i++) {
+		ModernClusterMeta *m = &meta[i];
+		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
+			continue;
+		}
+		ClusterStream s = {
+			.ctx = ctx,
+			.cursor = m->fill_offset,
+			.end = m->fill_end,
+};
+		for (ut64 pool_index = 0; pool_index < m->count && ok; pool_index++) {
+			ut64 length = 0;
+			if (!cs_read_unsigned (&s, &length)) {
+				ok = false;
+				break;
+			}
+			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
+				ModernPoolEntry entry;
+				if (!modern_read_pool_entry (&s, ctx, entry_index, &entry)) {
+					ok = false;
+					break;
+				}
+				// Skip only plain immediates (raw Smi constants already shown in
+				// the disassembly). Everything else - tagged objects, native
+				// function stubs and reset/bootstrap behaviors - gets labeled by
+				// its kind so no slot is left as a bare offset.
+				if (entry.behavior == 0 && entry.type == 0) {
+					continue;
+				}
+				ModernResolvedRef resolved;
+				modern_resolve_pool_entry (&resolver, &cids, entry.type, entry.behavior, entry.ref, &resolved);
+				if (R_STR_ISEMPTY (resolved.kind)) {
+					modern_resolved_ref_fini (&resolved);
+					continue;
+				}
+				ut64 value_addr = entry.ref < resolver.refs_count? resolver.string_addr_by_ref[entry.ref]: 0;
+				ModernPoolRefInfo info = {
+					.pp_offset = modern_pool_entry_pp_offset (ctx, entry_index),
+					.pool_ref = m->start_ref + pool_index,
+					.pool_index = pool_index,
+					.entry_index = entry_index,
+					.ref = entry.ref,
+					.kind = resolved.kind,
+					.name = resolved.name,
+					.cid = resolved.cid,
+					.code_index = resolved.code_index,
+					.value_addr = value_addr,
+};
+				cb (&info, user);
+				modern_resolved_ref_fini (&resolved);
+			}
 		}
 	}
 	modern_ref_resolver_fini (&resolver);
