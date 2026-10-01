@@ -1705,3 +1705,22 @@ context and then running the analysis double-freed that cache (SIGABRT after
 `rmem`/`layout` and frees only what it allocated, leaving the session context
 pristine. x22 (NULL_REG) and x26 (THR) are runtime pointers with no static
 address, so they are documented/annotated, never seeded as anal.gp.
+
+## Annotate the NULL_REG (x22) null/true/false idioms
+
+x22 is Dart AOT's `NULL_REG`, caching `Object::null()` program-wide (a sibling
+of PP, not part of it). The VM lays null/true/false out as adjacent heap
+objects (`runtime/vm/pointer_tagging.h`): `true = null + 4*word_size`, `false =
+null + 6*word_size`. On arm64 AOT the object-alignment word is the 8-byte
+target word regardless of pointer compression, so the offsets are a constant
+0x20 / 0x30 on every Dart version - verified on cws=8 (AuthPass, Dart 3.13/3.2.5)
+and cws=4 (w0rdle, Dart 2.18). The `-AAA` scan now annotates:
+- `add d, x22, #0x20` -> `dart: true`, `#0x30` -> `dart: false`,
+- `mov d, x22` -> `dart: null`,
+- `cmp r, x22` -> `dart: compare with null`.
+
+This is exactly the primitive the FatalSec talk's Frida bypass keys on
+(`add x0, x22, #0x20` = "return true" from the certificate-pinning wrapper).
+Verified count on AuthPass: ~6k true, ~7k false, ~31k null, ~23k null-compares.
+x26 (THR, the thread register with a large fixed-offset table of runtime stubs)
+is the natural next target but is version-specific and left as a follow-up.

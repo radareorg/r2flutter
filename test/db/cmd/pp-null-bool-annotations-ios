@@ -1,0 +1,19 @@
+NAME=r2-pp-null-bool-annotations-ios
+FILE=bins/ios/AuthPass.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF2
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -AAA
+CC.@0x3175ac
+CC.@0x31752c
+CC.@0xfe68
+CC.@0x1012c
+EOF2
+EXPECT=<<EOF2
+dart: true
+dart: false
+dart: null
+dart: compare with null
+EOF2
+RUN

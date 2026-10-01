@@ -154,6 +154,19 @@ static bool flutter_reg_is_pp(const char *name) {
 	return !strcmp (name, "x27");
 }
 
+// x22 is Dart AOT's NULL_REG: it caches Object::null() for the whole program.
+static bool flutter_reg_is_null(const char *name) {
+	return !strcmp (name, "x22");
+}
+
+// The VM lays null, true and false out as adjacent heap objects
+// (runtime/vm/pointer_tagging.h): true = null + 4*word_size, false = null +
+// 6*word_size. On arm64 AOT the object-alignment word is the 8-byte target word
+// regardless of pointer compression, so these are 0x20 / 0x30 on every Dart
+// version (verified on cws=8 and cws=4 snapshots).
+#define DART_NULL_TRUE_OFFSET 0x20
+#define DART_NULL_FALSE_OFFSET 0x30
+
 static int flutter_reg_index(const char *name) {
 	if (R_STR_ISEMPTY (name)) {
 		return -1;
@@ -445,6 +458,37 @@ static void flutter_add_ref(RCore *core, ut64 from, ut64 to, RAnalRefType type) 
 		return;
 	}
 	r_anal_xrefs_set (core->anal, from, to, type);
+}
+
+// Annotate the Dart NULL_REG (x22) idioms so booleans and null checks read
+// clearly: `add d, x22, #0x20/#0x30` materialises true/false, `mov d, x22`
+// loads null, and a compare against x22 is a null check.
+static void flutter_annotate_null_reg(RCore *core, ut64 at, int optype, const FlutterOpInfo *info, FlutterAnalStats *stats) {
+	if (!core || !info) {
+		return;
+	}
+	if (optype == R_ANAL_OP_TYPE_ADD && info->n_regs >= 2 && info->has_imm && flutter_reg_is_null (info->regs[1])) {
+		const char *b = info->imm == DART_NULL_TRUE_OFFSET? "true": info->imm == DART_NULL_FALSE_OFFSET? "false": NULL;
+		if (b) {
+			char *msg = r_str_newf ("dart: %s", b);
+			flutter_append_comment (core, at, msg, stats);
+			free (msg);
+		}
+		return;
+	}
+	if (optype == R_ANAL_OP_TYPE_MOV && info->n_regs >= 2 && flutter_reg_is_null (info->regs[1])) {
+		flutter_append_comment (core, at, "dart: null", stats);
+		return;
+	}
+	if (optype == R_ANAL_OP_TYPE_CMP) {
+		int i;
+		for (i = 0; i < info->n_regs; i++) {
+			if (flutter_reg_is_null (info->regs[i])) {
+				flutter_append_comment (core, at, "dart: compare with null", stats);
+				return;
+			}
+		}
+	}
 }
 
 static bool flutter_model_load(FlutterAnalModel *model, RCore *core, DartCtx *dctx) {
@@ -1241,6 +1285,9 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterP
 			}
 			if (has_info && info.has_imm) {
 				flutter_process_direct_ref (core, model, at, info.imm, stats);
+			}
+			if (has_info) {
+				flutter_annotate_null_reg (core, at, op->type & R_ANAL_OP_TYPE_MASK, &info, stats);
 			}
 
 			switch (op->type & R_ANAL_OP_TYPE_MASK) {
