@@ -63,6 +63,21 @@ typedef struct {
 	HtUP *by_pp_off;
 } FlutterPpStringMap;
 
+// Non-string resolution of PP slots (functions, classes, code, ...), so that
+// analysis comments can name what a slot holds instead of a bare offset, and
+// code/function slots can gain a real xref to their target.
+typedef struct {
+	char *kind;
+	char *name;
+	ut64 code_index;
+	ut64 value_addr;
+} FlutterPpRef;
+
+typedef struct {
+	HtUP *by_pp_off; // pp_off -> FlutterPpRef
+	HtUP *addr_by_code_index; // code_index -> normalized code address
+} FlutterPpRefMap;
+
 typedef struct {
 	HtUP *seen;
 	RVecFlutterEntry *entries;
@@ -501,6 +516,109 @@ static const FlutterPpStringRef *flutter_pp_string_map_get(FlutterPpStringMap *m
 	return map && map->by_pp_off? ht_up_find (map->by_pp_off, pp_off, NULL): NULL;
 }
 
+static void flutter_pp_ref_free(HtUPKv *kv) {
+	FlutterPpRef *ref = kv->value;
+	free (ref->kind);
+	free (ref->name);
+	free (ref);
+}
+
+static void flutter_pp_ref_map_init(FlutterPpRefMap *map) {
+	memset (map, 0, sizeof (*map));
+	map->by_pp_off = ht_up_new (NULL, flutter_pp_ref_free, NULL);
+	map->addr_by_code_index = ht_up_new0 ();
+}
+
+static void flutter_pp_ref_map_fini(FlutterPpRefMap *map) {
+	if (!map) {
+		return;
+	}
+	ht_up_free (map->by_pp_off);
+	ht_up_free (map->addr_by_code_index);
+	memset (map, 0, sizeof (*map));
+}
+
+static void flutter_pp_ref_cb(const ModernPoolRefInfo *info, void *user) {
+	FlutterPpRefMap *map = user;
+	if (!map || !map->by_pp_off || !info || R_STR_ISEMPTY (info->kind)) {
+		return;
+	}
+	// Strings are handled by the dedicated string map; skip them here so the
+	// two maps stay cheap and the string path keeps priority.
+	if (!strcmp (info->kind, "string") || ht_up_find (map->by_pp_off, info->pp_offset, NULL)) {
+		return;
+	}
+	FlutterPpRef *ref = R_NEW0 (FlutterPpRef);
+	ref->kind = strdup (info->kind);
+	ref->name = R_STR_ISNOTEMPTY (info->name)? strdup (info->name): NULL;
+	ref->code_index = info->code_index;
+	ref->value_addr = info->value_addr;
+	ht_up_insert (map->by_pp_off, info->pp_offset, ref);
+}
+
+static void flutter_pp_ref_map_load(DartCtx *ctx, FlutterPpRefMap *map) {
+	if (!ctx || !map || find_snapshots (ctx) != 0) {
+		return;
+	}
+	// See flutter_pp_string_map_load: clear ctx->layout on exit when we init it,
+	// since it may point at the stack buffer layout_tmp.
+	DartVerLayout layout_tmp;
+	bool layout_ours = !ctx->layout;
+	DartVerLayout *layout_owned = layout_ours? dart_ctx_init_layout (ctx, &layout_tmp): NULL;
+	// The ObjectPool lives in the isolate snapshot; fall back to the VM snapshot
+	// like flutter_pp_string_map_load does.
+	const ut64 bases[2] = { ctx->iso_data, ctx->vm_data };
+	for (int i = 0; i < 2; i++) {
+		ut64 snapshot_base = bases[i];
+		DartSnapshotHeader sh = { 0 };
+		if (!snapshot_base || !dart_snapshot_header_read (ctx, snapshot_base, &sh) || !sh.ok) {
+			continue;
+		}
+		const ModernReq req = {
+			.ctx = ctx,
+			.cluster_start = sh.cluster_start,
+			.cluster_end = snapshot_base + sh.total_len,
+			.num_clusters = sh.nc,
+			.num_base_objects = sh.nb,
+};
+		if (modern_collect_direct_pool_refs (&req, flutter_pp_ref_cb, map)) {
+			break;
+		}
+	}
+	// Map code_index -> entrypoint address via the instruction table, so a
+	// code/function slot can be xref'd to its real target.
+	RVecDartInstructionTableEntry *entries = dart_pool_extract_instruction_table (ctx);
+	if (entries) {
+		DartInstructionTableEntry *entry;
+		R_VEC_FOREACH (entries, entry) {
+			if (!entry->has_code || !entry->address) {
+				continue;
+			}
+			// Strip the low Thumb/tag bit, matching dart_app's code-addr normalization.
+			ut64 addr = (entry->address & 1ULL)? entry->address - 1: entry->address;
+			ht_up_update (map->addr_by_code_index, entry->code_index, (void *)addr);
+		}
+		dart_instruction_table_list_free (entries);
+	}
+	if (layout_ours) {
+		dart_ctx_fini_layout (ctx, layout_owned);
+	}
+}
+
+static const FlutterPpRef *flutter_pp_ref_map_get(FlutterPpRefMap *map, ut64 pp_off) {
+	return map && map->by_pp_off? ht_up_find (map->by_pp_off, pp_off, NULL): NULL;
+}
+
+static ut64 flutter_pp_ref_code_addr(FlutterPpRefMap *map, ut64 code_index) {
+	if (!map || !map->addr_by_code_index || code_index == UT64_MAX) {
+		return 0;
+	}
+	bool found = false;
+	ut64 addr = (ut64)ht_up_find (map->addr_by_code_index, code_index, &found);
+	return found? addr: 0;
+}
+
+
 static void flutter_apply_model_to_core(FlutterAnalModel *model, RCore *core, FlutterAnalStats *stats) {
 	if (!model || !core) {
 		return;
@@ -892,7 +1010,42 @@ static bool flutter_process_stack_store(FlutterAnalState *state, const FlutterOp
 	return true;
 }
 
-static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, FlutterPpStringMap *pp_strings, ut64 at, const FlutterOpInfo *info, FlutterAnalStats *stats) {
+// Annotate a non-string PP slot: name what the slot holds and, when it points
+// at a code/data object we can locate, add a navigable xref to the target.
+// Returns true when the slot resolved to a known entry.
+static bool flutter_annotate_pp_ref(RCore *core, FlutterPpRefMap *pp_refs, ut64 at, ut64 pp_off, bool is_call, FlutterAnalStats *stats) {
+	const FlutterPpRef *ref = flutter_pp_ref_map_get (pp_refs, pp_off);
+	if (!ref) {
+		return false;
+	}
+	ut64 target = flutter_pp_ref_code_addr (pp_refs, ref->code_index);
+	const char *label = NULL;
+	if (target) {
+		RFlagItem *fi = r_flag_get_at (core->flags, target, false);
+		label = (fi && R_STR_ISNOTEMPTY (fi->name))? fi->name: ref->name;
+		flutter_add_ref (core, at, target, is_call? R_ANAL_REF_TYPE_CALL: (R_ANAL_REF_TYPE_DATA | R_ANAL_REF_TYPE_READ));
+	} else if (ref->value_addr) {
+		label = ref->name;
+		flutter_add_ref (core, at, ref->value_addr, R_ANAL_REF_TYPE_DATA | R_ANAL_REF_TYPE_READ);
+	} else {
+		label = ref->name;
+	}
+	const char *what = is_call? "indirect call via PP+0x": "PP slot +0x";
+	char *msg;
+	if (R_STR_ISNOTEMPTY (label)) {
+		char *escaped = r_str_escape_utf8 (label, false, true);
+		msg = r_str_newf ("dart: %s%" PFMT64x " %s %s", what, pp_off, ref->kind, escaped);
+		free (escaped);
+	} else {
+		msg = r_str_newf ("dart: %s%" PFMT64x " %s", what, pp_off, ref->kind);
+	}
+	flutter_append_comment (core, at, msg, stats);
+	free (msg);
+	return true;
+}
+
+
+static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, FlutterPpStringMap *pp_strings, FlutterPpRefMap *pp_refs, ut64 at, const FlutterOpInfo *info, FlutterAnalStats *stats) {
 	if (!state || !info || info->n_regs < 1 || !info->has_mem) {
 		return false;
 	}
@@ -923,7 +1076,7 @@ static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, Flutte
 		flutter_append_comment (core, at, msg, stats);
 		free (msg);
 		free (escaped);
-	} else {
+	} else if (!flutter_annotate_pp_ref (core, pp_refs, at, pp_off, false, stats)) {
 		char *msg = r_str_newf ("dart: "
 			"PP slot +0x%" PFMT64x,
 			pp_off);
@@ -985,7 +1138,7 @@ static bool flutter_process_field_store(RCore *core, FlutterAnalModel *model, Fl
 	return true;
 }
 
-static void flutter_process_indirect_call(RCore *core, FlutterAnalState *state, ut64 at, const FlutterOpInfo *info, FlutterAnalStats *stats) {
+static void flutter_process_indirect_call(RCore *core, FlutterAnalState *state, FlutterPpRefMap *pp_refs, ut64 at, const FlutterOpInfo *info, FlutterAnalStats *stats) {
 	if (!core || !state || !info || info->n_regs < 1) {
 		return;
 	}
@@ -994,14 +1147,18 @@ static void flutter_process_indirect_call(RCore *core, FlutterAnalState *state, 
 		return;
 	}
 	if (state->regs[reg].has_pp_off) {
-		char *msg = r_str_newf ("dart: indirect call via PP+0x%" PFMT64x, state->regs[reg].pp_off);
-		flutter_append_comment (core, at, msg, stats);
-		free (msg);
+		// A call through a resolved code slot gets a real CALL xref and the
+		// target name; otherwise keep the plain via-PP note.
+		if (!flutter_annotate_pp_ref (core, pp_refs, at, state->regs[reg].pp_off, true, stats)) {
+			char *msg = r_str_newf ("dart: indirect call via PP+0x%" PFMT64x, state->regs[reg].pp_off);
+			flutter_append_comment (core, at, msg, stats);
+			free (msg);
+		}
 		stats->pp_refs++;
 	}
 }
 
-static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterPpStringMap *pp_strings, RAnalFunction *fcn, FlutterAnalStats *stats) {
+static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterPpStringMap *pp_strings, FlutterPpRefMap *pp_refs, RAnalFunction *fcn, FlutterAnalStats *stats) {
 	if (!core || !model || !fcn || !stats) {
 		return;
 	}
@@ -1062,7 +1219,7 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterP
 				(void)flutter_process_add (&state, &info);
 				break;
 			case R_ANAL_OP_TYPE_LOAD:
-				if (!flutter_process_pp_load (core, &state, pp_strings, at, &info, stats) &&
+				if (!flutter_process_pp_load (core, &state, pp_strings, pp_refs, at, &info, stats) &&
 					!flutter_process_stack_load (&state, &info) &&
 					!flutter_process_field_load (core, model, &state, at, &info, stats) &&
 					has_info && info.n_regs > 0) {
@@ -1087,7 +1244,7 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterP
 			case R_ANAL_OP_TYPE_ICALL:
 			case R_ANAL_OP_TYPE_IRCALL:
 				if (has_info) {
-					flutter_process_indirect_call (core, &state, at, &info, stats);
+					flutter_process_indirect_call (core, &state, pp_refs, at, &info, stats);
 				}
 				flutter_state_clobber_callers (&state);
 				break;
@@ -1102,7 +1259,7 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterP
 	flutter_state_fini (&state);
 }
 
-static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, FlutterPpStringMap *pp_strings, RVecFlutterEntry *entries, FlutterAnalStats *stats) {
+static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, FlutterPpStringMap *pp_strings, FlutterPpRefMap *pp_refs, RVecFlutterEntry *entries, FlutterAnalStats *stats) {
 	if (!core || !model || !entries || !stats) {
 		return;
 	}
@@ -1117,7 +1274,7 @@ static void flutter_scan_functions(RCore *core, FlutterAnalModel *model, Flutter
 			continue;
 		}
 		ht_up_insert (seen_fcns, fcn->addr, fcn);
-		flutter_scan_function (core, model, pp_strings, fcn, stats);
+		flutter_scan_function (core, model, pp_strings, pp_refs, fcn, stats);
 	}
 	ht_up_free (seen_fcns);
 }
@@ -1147,9 +1304,13 @@ bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 	flutter_pp_string_map_init (&pp_strings);
 	flutter_pp_string_map_load (&app->dctx, NULL, &pp_strings);
 
+	FlutterPpRefMap pp_refs;
+	flutter_pp_ref_map_init (&pp_refs);
+	flutter_pp_ref_map_load (&app->dctx, &pp_refs);
+
 	RVecFlutterEntry *entries = flutter_collect_entries (core, app, &model);
 	flutter_ensure_functions (core, entries);
-	flutter_scan_functions (core, &model, &pp_strings, entries, &stats);
+	flutter_scan_functions (core, &model, &pp_strings, &pp_refs, entries, &stats);
 
 	if (!quiet) {
 		R_LOG_INFO ("Flutter analysis: %d functions, %d calls, %d fields, %d classes, %d types, %d strings, %d PP refs",
@@ -1164,6 +1325,7 @@ bool r2flutter_analysis_run(RCore *core, DartCtx *dctx, bool quiet) {
 
 	RVecFlutterEntry_free (entries);
 	flutter_pp_string_map_fini (&pp_strings);
+	flutter_pp_ref_map_fini (&pp_refs);
 	flutter_model_fini (&model);
 	dart_app_free (app);
 	return true;

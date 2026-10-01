@@ -1,0 +1,41 @@
+NAME=r2-pp-slot-function-resolve-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF2
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -AAA
+CC.@0xf63c
+EOF2
+EXPECT=<<EOF2
+dart: PP slot +0x15e0 function method.Native._anon_closure
+EOF2
+RUN
+
+NAME=r2-pp-slot-function-xref-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF2
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -AAA
+axf @ 0xf63c
+EOF2
+EXPECT=<<EOF2
+DATA 0xf6e4 method.Native._anon_closure
+EOF2
+RUN
+
+NAME=r2-pp-slot-function-resolve-authpass
+FILE=bins/ios/AuthPass.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF2
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -AAA
+CC.@0xfe88
+EOF2
+EXPECT=<<EOF2
+dart: PP slot +0xecb0 function method.MapBase._anon_closure
+EOF2
+RUN

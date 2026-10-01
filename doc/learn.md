@@ -1633,3 +1633,32 @@ they are: a second function with an already used name cannot be renamed by
 `afs`, so it keeps no signature while the type of the first one is replaced;
 and prototypes whose name contains `:` are parsed as a label, giving them a
 shortened type name and a garbled return type.
+
+## PP-slot comments: resolve inline and add xrefs
+
+Task: after `r2flutter -AAA`, the disassembler showed many bare
+`dart: PP slot +0x..` comments. Those slots resolve fine with `r2flutter -O
+pp+0x..` by hand, so the analysis should inline what the slot holds (and add a
+real xref) instead of leaving a hacky offset.
+
+Reproduction (`test/bins/ios/.../App`, Dart 3.13, cws=8): `r2flutter -AAA` then
+`CC*`. Before: string slots were inlined, but tens of thousands of slots stayed
+as bare `dart: PP slot +0x..`. Decoding a sample with `-O` showed ~23% were
+`code`/`function` refs (navigable!), the rest `canonical_set`/`instance`/
+`type_arguments`/`array`/`native_function`/..., and ~1% strings whose bytes are
+unrecoverable (`complete=false`, which `-O` cannot show either).
+
+Root cause: `flutter_process_pp_load` only consulted the string-only
+`pp_strings` map, so any non-string slot fell through to the bare comment, even
+though the `-O` decode engine (`modern_resolve_pool_entry`) resolves every kind.
+Fix: the new `modern_collect_direct_pool_refs` walks the pool once and reports
+each entry's `{kind, name, cid, code_index, value_addr}`. The analysis builds a
+pp_off->ref map plus a `code_index -> entrypoint` map from the instruction
+table, then:
+- string slot: inline the value (unchanged),
+- function/code slot: comment with the resolved name and add an xref to the
+  entrypoint (CALL for `blr`, DATA otherwise),
+- any other slot: label it with its kind so no slot is left as a bare offset.
+
+Tested in `test/db/cmd/pp-slot-resolve-ios` against the committed Runner and
+AuthPass App binaries.
