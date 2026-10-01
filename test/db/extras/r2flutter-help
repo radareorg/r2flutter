@@ -9,7 +9,9 @@ r2flutter
 EOF
 EXPECT=<<EOF
 Usage: r2flutter [qjr*] <action>
-| r2flutter -A[AA]   analyze dart snapshot and apply flags/comments
+| r2flutter -A       apply flags, function names and signatures
+| r2flutter -AA      also seed anal.gp and apply ObjectPool xrefs
+| r2flutter -AAA     also run the full register-tracking scan (slow)
 | r2flutter -c[jr*]  dump classes
 | r2flutter -C       apply Dart classes, fields, methods and types
 | r2flutter -D prof  override Dart snapshot profile by hash or version
@@ -35,7 +37,9 @@ Usage: r2flutter [qjr*] <action>
 Modifiers: q=quiet, j=json, r/*=r2 commands
 ===
 Usage: r2flutter [qjr*] <action>
-| r2flutter -A[AA]   analyze dart snapshot and apply flags/comments
+| r2flutter -A       apply flags, function names and signatures
+| r2flutter -AA      also seed anal.gp and apply ObjectPool xrefs
+| r2flutter -AAA     also run the full register-tracking scan (slow)
 | r2flutter -c[jr*]  dump classes
 | r2flutter -C       apply Dart classes, fields, methods and types
 | r2flutter -D prof  override Dart snapshot profile by hash or version
