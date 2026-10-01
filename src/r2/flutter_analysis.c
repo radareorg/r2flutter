@@ -483,12 +483,16 @@ static void flutter_pp_string_map_load(DartCtx *ctx, HtUP *wanted, FlutterPpStri
 	if (!ctx || !map || find_snapshots (ctx) != 0) {
 		return;
 	}
+	// When we init the layout here it may live in layout_tmp (a stack buffer)
+	// with dart_ctx_init_layout returning NULL. We must still clear ctx->layout
+	// on the way out, or a later consumer would dereference a dangling pointer.
 	DartVerLayout layout_tmp;
-	DartVerLayout *layout_owned = ctx->layout? NULL: dart_ctx_init_layout (ctx, &layout_tmp);
+	bool layout_ours = !ctx->layout;
+	DartVerLayout *layout_owned = layout_ours? dart_ctx_init_layout (ctx, &layout_tmp): NULL;
 	if (!flutter_collect_pp_strings_from_snapshot (ctx, ctx->iso_data, wanted, map)) {
 		flutter_collect_pp_strings_from_snapshot (ctx, ctx->vm_data, wanted, map);
 	}
-	if (layout_owned) {
+	if (layout_ours) {
 		dart_ctx_fini_layout (ctx, layout_owned);
 	}
 }
