@@ -80,6 +80,8 @@ typedef struct {
 	HtUP *by_pp_off; // pp_off -> FlutterPpRef
 	HtUP *addr_by_code_index; // code_index -> normalized code address
 	ut64 pp_base; // ObjectPool base address, so a [PP, off] load can xref pp_base+off
+	bool is_x64; // x86-64 keeps the heap tag in r15, so a [r15, off] offset is one
+	// less than the arm64/collector offset; add it back before lookup/xref.
 } FlutterPpRefMap;
 
 typedef struct {
@@ -690,6 +692,9 @@ static void flutter_pp_ref_map_load(DartCtx *ctx, FlutterPpRefMap *map) {
 	// pp_base + off. r2flutter_setup_pp_gp already resolved it into anal.gp.
 	if (ctx->core) {
 		map->pp_base = (ut64)r_config_get_i (ctx->core->config, "anal.gp");
+		const char *arch = r_config_get (ctx->core->config, "asm.arch");
+		const int bits = (int)r_config_get_i (ctx->core->config, "asm.bits");
+		map->is_x64 = arch && bits == 64 && (!strcmp (arch, "x86") || !strcmp (arch, "x64"));
 	}
 	if (layout_ours) {
 		dart_ctx_fini_layout (ctx, layout_owned);
@@ -1166,20 +1171,24 @@ static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, Flutte
 		}
 		pp_off = state->regs[base].pp_off + (ut64)info->mem_disp;
 	}
+	// On x86-64 the heap tag is carried in r15, so the instruction offset is one
+	// less than the collector/arm64 slot offset. Add it back to get the
+	// canonical offset used for resolution maps and the slot address.
+	const ut64 slot_off = pp_off + (pp_refs && pp_refs->is_x64? 1: 0);
 	// The destination now holds the pool OBJECT at pp_off, not a PP pointer.
 	// Marking it has_pp_off would make a later [dst, field] load look like a
 	// bogus pool slot (e.g. a Code entry-point deref read as PP+off+7).
 	memset (&state->regs[dst], 0, sizeof (state->regs[dst]));
 	state->regs[dst].has_pp_slot = true;
-	state->regs[dst].pp_slot = pp_off;
+	state->regs[dst].pp_slot = slot_off;
 	// Link the instruction to the ObjectPool slot it reads (pp_base + off), so
 	// `axt` on the slot shows the loading code; the slot's own ref to its value
 	// (applied by -AA) then chains through to the string/object. Works on any
 	// arch since pp_base + off is the slot address regardless of index scheme.
 	if (pp_refs && pp_refs->pp_base) {
-		flutter_add_ref (core, at, pp_refs->pp_base + pp_off, R_ANAL_REF_TYPE_DATA | R_ANAL_REF_TYPE_READ);
+		flutter_add_ref (core, at, pp_refs->pp_base + slot_off, R_ANAL_REF_TYPE_DATA | R_ANAL_REF_TYPE_READ);
 	}
-	const FlutterPpStringRef *string_ref = flutter_pp_string_map_get (pp_strings, pp_off);
+	const FlutterPpStringRef *string_ref = flutter_pp_string_map_get (pp_strings, slot_off);
 	if (string_ref) {
 		flutter_set_flag (core, "dart.str", string_ref->string_value, string_ref->string_addr, (ut32)strlen (string_ref->string_value), true);
 		flutter_add_ref (core, at, string_ref->string_addr, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
@@ -1189,10 +1198,10 @@ static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, Flutte
 		flutter_append_comment (core, at, msg, stats);
 		free (msg);
 		free (escaped);
-	} else if (!flutter_annotate_pp_ref (core, pp_refs, at, pp_off, false, stats)) {
+	} else if (!flutter_annotate_pp_ref (core, pp_refs, at, slot_off, false, stats)) {
 		char *msg = r_str_newf ("dart: "
 			"PP slot +0x%" PFMT64x,
-			pp_off);
+			slot_off);
 		flutter_append_comment (core, at, msg, stats);
 		free (msg);
 	}
