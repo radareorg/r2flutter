@@ -167,6 +167,28 @@ static bool flutter_reg_is_null(const char *name) {
 #define DART_NULL_TRUE_OFFSET 0x20
 #define DART_NULL_FALSE_OFFSET 0x30
 
+// Map an x86-64 general-purpose register name (64/32-bit) to a stable slot. Dart
+// AOT on x64 uses the same tracker; names never collide with arm64 (x/w vs
+// r/rXX), and a single binary is one arch, so sharing the 0..15 slot space is
+// safe.
+static int flutter_x64_reg_index(const char *name) {
+	static const char *const names[16] = {
+		"rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
+		"r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
+	};
+	static const char *const names32[16] = {
+		"eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
+		"r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d"
+	};
+	int i;
+	for (i = 0; i < 16; i++) {
+		if (!strcmp (name, names[i]) || !strcmp (name, names32[i])) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 static int flutter_reg_index(const char *name) {
 	if (R_STR_ISEMPTY (name)) {
 		return -1;
@@ -182,6 +204,9 @@ static int flutter_reg_index(const char *name) {
 		if (idx >= 0 && idx < DART_ANALYSIS_MAX_REGS) {
 			return idx;
 		}
+	}
+	if (name[0] == 'r' || name[0] == 'e') {
+		return flutter_x64_reg_index (name);
 	}
 	return -1;
 }
@@ -334,7 +359,8 @@ static void flutter_parse_mem_operand(const char *line, FlutterOpInfo *info) {
 	while (isspace ((ut8)*p)) {
 		p++;
 	}
-	if (*p != ',') {
+	// arm64 writes `[x27, 0x610]`, x86-64 writes `[r15 + 0x610]`.
+	if (*p != ',' && *p != '+') {
 		return;
 	}
 	p++;
