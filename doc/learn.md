@@ -1762,3 +1762,38 @@ matches and only stops the `-zz` carving early (`ctx->str_scan_limit`) when no
 filter is set; otherwise the scan would stop before reaching the matches.
 Careful: `r_regex_check` returns `r_regex_exec` as-is, i.e. **false on match**;
 compare `r_regex_exec (rx, s, 0, NULL, 0) == 0` explicitly.
+
+## x86-64 Dart AOT support in the register scan
+
+A Flutter app built for Android x86_64 ships an ELF with `e_machine = x86-64`,
+and its Dart AOT code is x64, not arm64. The register-tracking scan was
+arm64-only, so on x64 it found 0 PP refs: `axt` on a string showed only the
+data-image ref applied by -AA, never the code that loads it.
+
+The x64 Dart ABI differs: PP is `r15` (not x27), THR is `r14`, there is no
+NULL_REG (the x22 true/false/null trick is arm64-only), r2 types a memory
+`mov` as MOV rather than LOAD/STORE, and - the subtle part - `r15` carries the
+heap tag, so a `[r15, off]` instruction offset is one less than the
+collector/arm64 slot offset (`sr->source_addr = pp_base + pp_off` uses the
+collector offset). Changes:
+- `flutter_reg_index` maps x64 register names; `flutter_reg_is_pp` adds r15.
+- the mem-operand parser accepts `[r15 + off]` alongside `[x27, off]`.
+- x64 `mov reg,[mem]` / `mov [mem],reg` are reclassified to LOAD/STORE via an
+  effective op type so the pool-load logic runs.
+- the `(pp_off & 7)` alignment guard is dropped: it assumed arm64's even PP
+  base and rejected x64's tagged-base odd offsets; the has_pp_slot fix already
+  prevents the field-deref it guarded against.
+- every pool load emits a code->pool-slot xref (pp_base + off), the "link code
+  to the PP table" that was missing on both arches.
+- on x64 the heap tag (+1) is added back to get the canonical slot offset, so
+  the code xref lands on the same slot the string ref targets, pool strings
+  resolve inline, and a real code->string xref is emitted.
+- `anal.gpseed`/`anal.roregs` are seeded with r15 on x64, x27 on arm64.
+
+Result on an Android x86_64 app: 0 -> 36467 PP refs, and `axt 0x76a97` shows
+`method.DioManager.initParams ... mov rax, [r15 + str.https:__pss.aakredit.in_]`
+with the value inlined. arm64 is unchanged (27388 PP refs on w0rdle, 0
+misaligned). Not yet handled: the x64 ObjectPool *slot* decoder (`-O pp+off`)
+still misreads compressed pool pointers, so a slot that the collector did not
+already resolve stays a bare offset; and there is no committed x86_64 test
+fixture.
