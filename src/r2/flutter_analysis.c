@@ -1450,11 +1450,18 @@ void r2flutter_setup_pp_gp(RCore *core, DartCtx *dctx) {
 	DartCtx probe = *dctx;
 	probe.rmem = NULL;
 	probe.layout = NULL;
+	// Dart's PP register is x27 on arm64 and r15 on x86-64.
+	const char *arch = r_config_get (core->config, "asm.arch");
+	const int bits = (int)r_config_get_i (core->config, "asm.bits");
+	const bool is_x64 = arch && bits == 64 && (!strcmp (arch, "x86") || !strcmp (arch, "x64"));
+	const char *pp_reg = is_x64? "r15": "x27";
 	DartPpInfo pp = { 0 };
 	if (dart_resolve_pp_info (&probe, &pp) && pp.base) {
+		char roregs[32];
+		snprintf (roregs, sizeof (roregs), "%s,gp,zero", pp_reg);
 		r_config_set_i (core->config, "anal.gp", pp.base);
-		r_config_set (core->config, "anal.gpseed", "x27");
-		r_config_set (core->config, "anal.roregs", "x27,gp,zero");
+		r_config_set (core->config, "anal.gpseed", pp_reg);
+		r_config_set (core->config, "anal.roregs", roregs);
 		r_flag_set (core->flags, "PP", pp.base, 1);
 	}
 	dart_pp_info_fini (&pp);
