@@ -19,7 +19,7 @@ CMDS=<<EOF2
 L ../src/r2/core_flutter.so
 L ../src/r2/core_flutter.dylib
 r2flutter -AAA
-axf @ 0xf63c
+axf @ 0xf63c~method.Native._anon_closure
 EOF2
 EXPECT=<<EOF2
 DATA 0xf6e4 method.Native._anon_closure

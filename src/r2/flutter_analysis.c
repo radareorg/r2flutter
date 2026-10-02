@@ -43,6 +43,7 @@ typedef struct {
 	ut64 imm;
 	bool has_mem;
 	bool has_imm;
+	int etype; // effective op type (x86-64 `mov reg,[mem]` reclassified as LOAD/STORE)
 } FlutterOpInfo;
 
 typedef struct {
@@ -78,6 +79,7 @@ typedef struct {
 typedef struct {
 	HtUP *by_pp_off; // pp_off -> FlutterPpRef
 	HtUP *addr_by_code_index; // code_index -> normalized code address
+	ut64 pp_base; // ObjectPool base address, so a [PP, off] load can xref pp_base+off
 } FlutterPpRefMap;
 
 typedef struct {
@@ -150,8 +152,9 @@ static bool flutter_reg_is_stack(const char *name) {
 	return !strcmp (name, "x15") || !strcmp (name, "sp") || !strcmp (name, "x29") || !strcmp (name, "fp");
 }
 
+// Dart's pool pointer (PP): x27 on arm64, r15 on x86-64.
 static bool flutter_reg_is_pp(const char *name) {
-	return !strcmp (name, "x27");
+	return !strcmp (name, "x27") || !strcmp (name, "r15");
 }
 
 // x22 is Dart AOT's NULL_REG: it caches Object::null() for the whole program.
@@ -401,7 +404,18 @@ static bool flutter_parse_opinfo(const RAnalOp *op, FlutterOpInfo *info) {
 		return false;
 	}
 	memset (info, 0, sizeof (*info));
-	const int type = op->type & R_ANAL_OP_TYPE_MASK;
+	int type = op->type & R_ANAL_OP_TYPE_MASK;
+	// x86-64 types a memory load/store as MOV; reclassify `mov reg, [mem]` as a
+	// LOAD and `mov [mem], reg` as a STORE by where the brackets sit relative to
+	// the operand separator, so the arm64-shaped load/store logic applies.
+	if (type == R_ANAL_OP_TYPE_MOV && R_STR_ISNOTEMPTY (op->mnemonic)) {
+		const char *br = strchr (op->mnemonic, '[');
+		const char *comma = strchr (op->mnemonic, ',');
+		if (br && comma) {
+			type = br > comma? R_ANAL_OP_TYPE_LOAD: R_ANAL_OP_TYPE_STORE;
+		}
+	}
+	info->etype = type;
 	const RArchValue *value = RVecRArchValue_at (&op->dsts, 0);
 	if (type != R_ANAL_OP_TYPE_STORE) {
 		flutter_opinfo_add_value (info, value, true);
@@ -671,6 +685,11 @@ static void flutter_pp_ref_map_load(DartCtx *ctx, FlutterPpRefMap *map) {
 			ht_up_update (map->addr_by_code_index, entry->code_index, (void *)addr);
 		}
 		dart_instruction_table_list_free (entries);
+	}
+	// The ObjectPool base, so a [PP, off] load can xref the pool slot at
+	// pp_base + off. r2flutter_setup_pp_gp already resolved it into anal.gp.
+	if (ctx->core) {
+		map->pp_base = (ut64)r_config_get_i (ctx->core->config, "anal.gp");
 	}
 	if (layout_ours) {
 		dart_ctx_fini_layout (ctx, layout_owned);
@@ -1147,20 +1166,19 @@ static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, Flutte
 		}
 		pp_off = state->regs[base].pp_off + (ut64)info->mem_disp;
 	}
-	// Real ObjectPool slots live at (index + 2) * word_size, so a valid pp_off
-	// is always a multiple of the 8-byte target word. A misaligned result means
-	// the base register holds a tagged object (not a PP pointer) and this is a
-	// field/unbox deref, e.g. `ldur x0, [x16, 7]` - reject it rather than emit a
-	// bogus slot comment.
-	if ((pp_off & 7) != 0) {
-		return false;
-	}
 	// The destination now holds the pool OBJECT at pp_off, not a PP pointer.
 	// Marking it has_pp_off would make a later [dst, field] load look like a
 	// bogus pool slot (e.g. a Code entry-point deref read as PP+off+7).
 	memset (&state->regs[dst], 0, sizeof (state->regs[dst]));
 	state->regs[dst].has_pp_slot = true;
 	state->regs[dst].pp_slot = pp_off;
+	// Link the instruction to the ObjectPool slot it reads (pp_base + off), so
+	// `axt` on the slot shows the loading code; the slot's own ref to its value
+	// (applied by -AA) then chains through to the string/object. Works on any
+	// arch since pp_base + off is the slot address regardless of index scheme.
+	if (pp_refs && pp_refs->pp_base) {
+		flutter_add_ref (core, at, pp_refs->pp_base + pp_off, R_ANAL_REF_TYPE_DATA | R_ANAL_REF_TYPE_READ);
+	}
 	const FlutterPpStringRef *string_ref = flutter_pp_string_map_get (pp_strings, pp_off);
 	if (string_ref) {
 		flutter_set_flag (core, "dart.str", string_ref->string_value, string_ref->string_addr, (ut32)strlen (string_ref->string_value), true);
@@ -1330,7 +1348,9 @@ static void flutter_scan_function(RCore *core, FlutterAnalModel *model, FlutterP
 				flutter_annotate_null_reg (core, at, op->type & R_ANAL_OP_TYPE_MASK, &info, stats);
 			}
 
-			switch (op->type & R_ANAL_OP_TYPE_MASK) {
+			// Use the effective type so x86-64 memory MOVs dispatch as LOAD/STORE.
+			int etype = has_info? info.etype: (int)(op->type & R_ANAL_OP_TYPE_MASK);
+			switch (etype) {
 			case R_ANAL_OP_TYPE_MOV:
 				if (!flutter_process_mov (&state, &info) && has_info && info.n_regs > 0) {
 					int dst = flutter_reg_index (info.regs[0]);
