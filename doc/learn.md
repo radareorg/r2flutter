@@ -1815,3 +1815,36 @@ rest of the fill stream. Keep the old rule only before 2.19; with the corrected
 rule the ObjectPool reaches cluster 652, `-p` reconstructs 44955 entries, and
 `r2flutter -AAA` applies 11560 graph xrefs, including an `axt` result for
 0x31903.
+
+## Code xrefs need discarded instructions and correctly shifted PP offsets
+
+The Dart 2.19 sample above has 29622 instruction-table entries, but only 7545
+retained `Code` objects. `first_entry_with_code=22077` separates instructions
+whose `Code` metadata was discarded from entries with retained metadata; it
+does not separate non-executable stubs from application code. The VM writer
+in `runtime/vm/app_snapshot.cc` orders discarded Code objects first. Both URL
+loaders are in that prefix (IT indices 14623 and 15109).
+
+An unlimited instruction-table extraction must use the table header's length,
+not the clustered header's retained Code count. `-AAA` must collect all table
+entrypoints in addition to named methods so these functions get basic blocks
+and their PP loads are scanned. `has_code` still controls Code-index metadata
+lookups; it must not decide whether instructions can be analyzed.
+
+ARM64 decoders can return an already shifted `RArchValue.imm` for
+`add x17, x27, 0x46, lsl 12`. Applying the text's shift to that value again
+produces `0x46000000`, breaking the subsequent pool lookup. Read the unshifted
+immediate from the instruction text and apply the shift exactly once.
+
+Verified with `/tmp/mal/libapp.so` (identical to `libapp.so.noxrefs`):
+
+- `0x85b028` in `fcn.0085afb0` loads `PP+0x46200` and now has a direct string
+  xref to `0x73986` (`https://reg.gptreg0706.xyz`).
+- `0x836f98` in `fcn.00836f4c` loads `PP+0x4e6c8` and now has a direct string
+  xref to `0x31903` (`https://www.game250522linecfg.xyz`).
+
+The unaligned `0x20022d` and `0x2086f5` sources are synthetic pool slots in
+the serialized snapshot address range, not executable use sites. `-AA` keeps
+those pool links; `-AAA` adds the instruction-to-string links. Regression tests
+cover a cached discarded-Code table on Android, and real shifted PP loads on
+Android w0rdle and iOS Runner without depending on the private samples.

@@ -302,6 +302,22 @@ static bool flutter_parse_shifted_imm(const char *line, ut64 *imm) {
 	if (!lsl) {
 		return false;
 	}
+	// RArchValue.imm may already include the shift (depending on the ARM
+	// decoder). Read the unshifted third operand before applying it once.
+	const char *arg = strchr (line, ',');
+	arg = arg? strchr (arg + 1, ','): NULL;
+	if (!arg || arg >= lsl) {
+		return false;
+	}
+	arg++;
+	while (isspace ((ut8)*arg) || *arg == '#') {
+		arg++;
+	}
+	char *end;
+	ut64 value = strtoull (arg, &end, 0);
+	if (end == arg) {
+		return false;
+	}
 	const char *p = lsl + 3;
 	while (isspace ((ut8)*p)) {
 		p++;
@@ -312,11 +328,11 @@ static bool flutter_parse_shifted_imm(const char *line, ut64 *imm) {
 	if (!isdigit ((ut8)*p)) {
 		return false;
 	}
-	int shift = atoi (p);
-	if (shift <= 0 || shift >= 63) {
+	ut64 shift = strtoull (p, NULL, 0);
+	if (shift >= 64) {
 		return false;
 	}
-	*imm <<= shift;
+	*imm = value << shift;
 	return true;
 }
 
@@ -440,7 +456,7 @@ static bool flutter_parse_opinfo(const RAnalOp *op, FlutterOpInfo *info) {
 	if (info->n_regs == 0 && (type == R_ANAL_OP_TYPE_RCALL || type == R_ANAL_OP_TYPE_UCALL || type == R_ANAL_OP_TYPE_ICALL || type == R_ANAL_OP_TYPE_IRCALL)) {
 		flutter_parse_first_operand_reg (op->mnemonic, info);
 	}
-	if (info->has_imm && R_STR_ISNOTEMPTY (op->mnemonic)) {
+	if (type == R_ANAL_OP_TYPE_ADD && info->has_imm && R_STR_ISNOTEMPTY (op->mnemonic)) {
 		(void)flutter_parse_shifted_imm (op->mnemonic, &info->imm);
 	}
 	return info->n_regs > 0 || info->has_mem || info->has_imm;
@@ -539,7 +555,7 @@ static bool flutter_model_load(FlutterAnalModel *model, RCore *core, DartCtx *dc
 	}
 	DartCtx ctx = *dctx;
 	ctx.core = core;
-	dart_recovery_model_load (&ctx, model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_CLASS_FIELDS | DART_RECOVERY_METHOD_INDEX);
+	dart_recovery_model_load (&ctx, model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_CLASS_FIELDS | DART_RECOVERY_METHOD_INDEX | DART_RECOVERY_IT);
 	if (!model->strings || !model->classes) {
 		flutter_model_fini (model);
 		return false;
@@ -873,6 +889,17 @@ static RVecFlutterEntry *flutter_collect_entries(RCore *core, const DartApp *app
 	flutter_collect_entries_from_flags (seen, entries, core);
 	flutter_collect_entries_from_app (seen, entries, app);
 	flutter_collect_entries_from_model (seen, entries, model);
+	// Entries before first_entry_with_code still contain executable Dart code;
+	// only their Code objects were discarded by the precompiler.
+	if (model->it_entries) {
+		DartInstructionTableEntry *entry;
+		R_VEC_FOREACH (model->it_entries, entry) {
+			if (entry->address && !ht_up_find (seen, entry->address, NULL)) {
+				RVecFlutterEntry_push_back (entries, &entry->address);
+				ht_up_insert (seen, entry->address, entries);
+			}
+		}
+	}
 	ht_up_free (seen);
 	return entries;
 }

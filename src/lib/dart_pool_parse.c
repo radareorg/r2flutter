@@ -460,7 +460,9 @@ static int decode_pool_and_emit(DartItEmitRequest *req) {
 		goto cleanup;
 	}
 	const ut64 layout_cap = ctx->layout && ctx->layout->it_cap? ctx->layout->it_cap: 20000;
-	const ut64 max_entries = req->max_entries > 0? req->max_entries: (req->on_it? itlen: layout_cap);
+	// itlen counts retained Code objects, not instructions whose Code metadata
+	// was discarded. Let the table header bound an unlimited IT extraction.
+	const ut64 max_entries = req->max_entries > 0? req->max_entries: (req->on_it? 0: layout_cap);
 	req->data_image_base = data_image_base;
 	req->data_image_end = data_image_end;
 	req->itlen = itlen;
