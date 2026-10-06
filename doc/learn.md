@@ -1797,3 +1797,21 @@ misaligned). Not yet handled: the x64 ObjectPool *slot* decoder (`-O pp+off`)
 still misreads compressed pool pointers, so a slot that the collector did not
 already resolve stays a bare offset; and there is no committed x86_64 test
 fixture.
+
+## Dart 2.19 Type fill must not consume the legacy combined byte
+
+The Flutter 3.7.12/Dart 2.19.0 snapshot hash
+`adb4292f3ec25074ca70abcd2d5c7251` exposed a one-byte fill-stream drift:
+`r2flutter -HHH` stopped after the `TypeArguments` cluster and reported the
+later ObjectPool as `fill_not_parsed`. Consequently `-AAA` could not build the
+synthetic PP image or apply ObjectPool string xrefs; `axt 0x31903` for
+`https://www.game250522linecfg.xyz` was empty.
+
+The cause was treating all Dart 2.x `Type::ReadFill` records alike. Through
+2.18 their three references are followed by `ReadUnsigned(type_class_id)` and
+a one-byte combined nullability/type-state field. Dart 2.19 replaces that pair
+with one `ReadUnsigned(flags)`. Consuming the obsolete byte desynchronizes the
+rest of the fill stream. Keep the old rule only before 2.19; with the corrected
+rule the ObjectPool reaches cluster 652, `-p` reconstructs 44955 entries, and
+`r2flutter -AAA` applies 11560 graph xrefs, including an `axt` result for
+0x31903.

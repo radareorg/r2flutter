@@ -392,6 +392,7 @@ typedef struct {
 	// handful of clusters. Their readers are gated on this flag; everything
 	// else is shared.
 	bool legacy_format;
+	bool legacy_type_combined_byte;
 	bool shift1_format;
 	bool closure_variable;
 	// every CID this layout defines, indexed by kind; -1 when the kind is absent
@@ -468,6 +469,7 @@ static ModernCidCache modern_cid_cache_init(const DartVerLayout *layout) {
 		.typed_data_internal_limit = dart_cid_typed_data_limit (layout),
 		.typed_data_stride = dart_cid_typed_data_stride (layout),
 		.legacy_format = modern_layout_is_legacy (layout),
+		.legacy_type_combined_byte = layout && dart_version_compare (layout->dart_version, "2.19.0") == -1,
 		.shift1_format = layout && layout->tag_style == DART_TAG_STYLE_CID_SHIFT1,
 		.closure_variable = layout && layout->closure_variable,
 };
@@ -1077,14 +1079,26 @@ static ModernFillSpec modern_get_fill_spec(const ModernCidCache *cids, int cid) 
 	static const ModernFillSpecRule legacy_rules[] = {
 		// FfiTrampolineData: ReadFromTo (4) + ReadUnsigned (callback_id).
 		{ DART_CID_FFI_TRAMPOLINE_DATA, MODERN_FILL_REFS, 4, -1, -1, 1, { MODERN_SCALAR_UNSIGNED } },
-		// Type: ReadFromTo (3) + ReadUnsigned (type_class_id) + Read<uint8_t>.
-		{ DART_CID_TYPE, MODERN_FILL_REFS, 3, -1, -1, 2, { MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_UINT8 } },
 		// TypeParameter: ReadFromTo (3) + Read<int32_t> + 3x Read<uint8_t>.
 		{ DART_CID_TYPE_PARAMETER, MODERN_FILL_REFS, 3, -1, -1, 4, { MODERN_SCALAR_TAGGED32, MODERN_SCALAR_UINT8, MODERN_SCALAR_UINT8, MODERN_SCALAR_UINT8 } },
 		// SubtypeTestCache::ReadFill reads only the cache_ ref.
 		{ DART_CID_SUBTYPE_TEST_CACHE, MODERN_FILL_REFS, 1, -1, -1, 0, { 0 } },
 };
 	if (cids->legacy_format) {
+		if (modern_cid_eq (cid, cids->type) && cids->legacy_type_combined_byte) {
+			// Through Dart 2.18 Type::ReadFill has type_class_id followed by a
+			// combined nullability/type-state byte. Dart 2.19 replaced those with
+			// a single flags ReadUnsigned. Keeping the old byte for 2.19 shifts
+			// every following fill cluster and makes the ObjectPool unreachable.
+			return modern_fill_spec (&(ModernFillSpecRule){
+				.kind = MODERN_FILL_REFS,
+				.num_refs = 3,
+				.name_idx = -1,
+				.owner_idx = -1,
+				.scalar_count = 2,
+				.scalars = { MODERN_SCALAR_UNSIGNED, MODERN_SCALAR_UINT8 },
+			});
+		}
 		for (size_t i = 0; i < R_ARRAY_SIZE (legacy_rules); i++) {
 			if (modern_cid_of_kind (cids, legacy_rules[i].cid_kind) == cid) {
 				return modern_fill_spec (&legacy_rules[i]);
