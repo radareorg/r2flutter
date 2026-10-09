@@ -1848,3 +1848,14 @@ the serialized snapshot address range, not executable use sites. `-AA` keeps
 those pool links; `-AAA` adds the instruction-to-string links. Regression tests
 cover a cached discarded-Code table on Android, and real shifted PP loads on
 Android w0rdle and iOS Runner without depending on the private samples.
+
+## Dart 2.19 class metadata uses the modern fill walker
+
+`-c` printed ~280 `size=0` classes for a Dart 2.19 Android sample because
+`modern_can_extract_classes` only accepted `OBJECT_HEADER` (3.4+) snapshots.
+The legacy class parser then failed on the first (unified `String`) cluster
+and the string heuristic took over. The modern walker already handles
+`CID_SHIFT1` (2.14-3.3) for `-H`, pools and xrefs, and the Class fill layout
+(13 refs: name=0, library=7, super_type=9) matches 2.19 product snapshots.
+Gating on `modern_supported` recovers 6914 classes, 1515 fields and 7398
+methods on that sample.

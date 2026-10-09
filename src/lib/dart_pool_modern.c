@@ -4464,7 +4464,7 @@ static bool modern_load_vm_base_strings(DartCtx *ctx, char **strings_by_ref, ut6
 }
 
 static bool modern_can_extract_classes(DartCtx *ctx) {
-	if (!ctx || !ctx->layout || ctx->layout->tag_style != DART_TAG_STYLE_OBJECT_HEADER) {
+	if (!modern_supported (ctx)) {
 		return false;
 	}
 	// Both pointer widths are supported: the class/field fill readers decode
