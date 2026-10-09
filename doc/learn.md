@@ -1874,3 +1874,12 @@ methods in the discarded range through `dart_app_merge_class_methods`.
 InstructionTable names stay authoritative there: `dedup_instructions` makes
 several methods share one body, so class-derived names only replace
 placeholder (`func.*`, `method.fn_*`) names.
+
+## Signed 64-bit varints use the 192 end-byte marker
+
+`cs_read_tagged64` decoded the final varint byte as `raw - 64` instead of
+`raw - 192` (`ReadStream::Read<T>` uses `kEndByteMarker`), adding
+`128 << shift` to every Mint/Smi. Field offsets (`host_offset_or_field_id`)
+came out as 128 + words, e.g. `_Closure._context` at `+0x428` instead of
+`+0x28` on 64-bit, and the `SemanticsAction` const map key `tap` decoded as
+129 instead of 1. `cs_read_tagged32` was already correct.

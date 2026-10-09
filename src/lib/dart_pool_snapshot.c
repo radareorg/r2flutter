@@ -483,33 +483,24 @@ bool cs_read_tagged32(ClusterStream *s, ut32 *out) {
 	return false;
 }
 
+// ReadStream::Read<int64_t>: 7-bit groups, then a final byte holding a signed
+// value in [-64, 63] biased by kEndByteMarker (192).
 bool cs_read_tagged64(ClusterStream *s, int64_t *out) {
-	ut8 raw = 0;
-	if (!cs_read_u8 (s, &raw)) {
-		return false;
-	}
-	int8_t b = (int8_t)raw;
-	if (b < 0) {
-		if (out) {
-			*out = (int64_t)b + 192;
-		}
-		return true;
-	}
-	int64_t v = (int64_t)raw;
-	int shift = 7;
-	for (int i = 1; i < 10; i++) {
+	ut64 v = 0;
+	int shift = 0;
+	for (int i = 0; i < 10; i++) {
+		ut8 raw = 0;
 		if (!cs_read_u8 (s, &raw)) {
 			return false;
 		}
-		b = (int8_t)raw;
-		if (b < 0) {
-			v |= ((int64_t)b + 192) << shift;
+		if (raw > 0x7f) {
+			v |= (ut64) ((int64_t)raw - 192) << shift;
 			if (out) {
-				*out = v;
+				*out = (int64_t)v;
 			}
 			return true;
 		}
-		v |= ((int64_t)raw) << shift;
+		v |= (ut64)raw << shift;
 		shift += 7;
 	}
 	return false;
