@@ -265,6 +265,9 @@ static int dart_function_cmp(const DartFunction *fa, const DartFunction *fb) {
 	return 0;
 }
 
+// Above placeholder names (func.*, method.fn_*) but below any resolved name.
+#define DART_CLASS_METHOD_NAME_QUALITY 20
+
 static int dart_function_name_quality(const char *name) {
 	if (R_STR_ISEMPTY (name)) {
 		return 0;
@@ -476,14 +479,17 @@ static char *dart_format_method_full_name(const DartClassInfo *ci, const DartMet
 	if (!mi || R_STR_ISEMPTY (mi->name)) {
 		return NULL;
 	}
-	char *lib = dart_sanitize_component (ci && ci->library_name? ci->library_name: "app", true);
+	// Without a library name use the InstructionTable form (method.Owner.leaf)
+	// so both sources agree on the name of the same entry.
+	char *lib = ci && ci->library_name? dart_sanitize_component (ci->library_name, true): NULL;
 	char *owner = dart_sanitize_component (ci && ci->name? ci->name: mi->owner_name, false);
 	char *leaf = dart_format_method_leaf_name (ci? ci->name: mi->owner_name, mi);
+	const char *name = leaf? leaf: mi->name;
 	char *out = NULL;
 	if (R_STR_ISNOTEMPTY (owner)) {
-		out = r_str_newf ("method.%s.%s.%s", lib, owner, leaf? leaf: mi->name);
+		out = lib? r_str_newf ("method.%s.%s.%s", lib, owner, name): r_str_newf ("method.%s.%s", owner, name);
 	} else {
-		out = r_str_newf ("method.%s..%s", lib, leaf? leaf: mi->name);
+		out = lib? r_str_newf ("method.%s..%s", lib, name): r_str_newf ("method.%s", name);
 	}
 	r_name_filter (out, 0);
 	free (lib);
@@ -533,11 +539,14 @@ static void dart_app_merge_class_methods(DartApp *app) {
 				continue;
 			}
 			char *fullname = dart_format_method_full_name (ci, mi);
+			// InstructionTable names stay authoritative: deduplicated code is
+			// shared by several methods, so class metadata only fills the
+			// placeholder names the table could not resolve.
 			dart_app_add_or_update_fn (app,
 				fullname? fullname: mi->name,
 				dart_normalize_code_addr (mi->entry_point),
 				0,
-				dart_function_name_quality (fullname? fullname: mi->name),
+				R_MIN (dart_function_name_quality (fullname? fullname: mi->name), DART_CLASS_METHOD_NAME_QUALITY),
 				mi->signature);
 			free (fullname);
 		}

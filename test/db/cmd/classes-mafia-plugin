@@ -33,14 +33,14 @@ ic dart_Future
 EOF
 EXPECT=<<EOF
 class dart_Future
-0x00000000 method dart_Future sC   Future_error
-0x00000000 method dart_Future sC   Future_
-0x00000000 method dart_Future s    _anonymous_closure_
-0x00000000 method dart_Future sC   Future_value
-0x00000000 method dart_Future s    wait
-0x00000000 method dart_Future s    handleError
-0x00000000 method dart_Future sC   Future_delayed
-0x00000000 method dart_Future sC   Future_microtask
-0x00000000 method dart_Future sC   Future_sync
+0x005d4f54 method dart_Future sC   Future_error
+0x005d70cc method dart_Future sC   Future_
+0x005d71b8 method dart_Future s    _anonymous_closure_
+0x005e4a98 method dart_Future sC   Future_value
+0x0060d7d4 method dart_Future s    wait
+0x0060dfac method dart_Future s    handleError
+0x0062edcc method dart_Future sC   Future_delayed
+0x006d5018 method dart_Future sC   Future_microtask
+0x00943c08 method dart_Future sC   Future_sync
 EOF
 RUN

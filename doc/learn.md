@@ -1859,3 +1859,18 @@ and the string heuristic took over. The modern walker already handles
 (13 refs: name=0, library=7, super_type=9) matches 2.19 product snapshots.
 Gating on `modern_supported` recovers 6914 classes, 1515 fields and 7398
 methods on that sample.
+
+## Class methods resolve entry points from InstructionTable slots
+
+`Function` fills only carry a code index; `DartMethodInfo.entry_point` was
+never set, so every class method printed `0x00000000` on all versions. The
+index is the raw InstructionTable slot, not the `first_entry_with_code`
+relative `DartInstructionTableEntry.code_index`. Slots below
+`first_entry_with_code` belong to functions whose Code object was discarded
+(`dwarf_stack_traces_mode`), but they still own real instructions, so they are
+mapped too. On the 2.19 sample 22077 of 29622 slots are like that; `-f` used
+to list only the 7545 Code-backed ones and now also gets the 4614 named
+methods in the discarded range through `dart_app_merge_class_methods`.
+InstructionTable names stay authoritative there: `dedup_instructions` makes
+several methods share one body, so class-derived names only replace
+placeholder (`func.*`, `method.fn_*`) names.

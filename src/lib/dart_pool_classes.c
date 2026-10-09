@@ -1488,6 +1488,46 @@ static void resolve_class_and_field_names(DartCtx *ctx, RList *class_list, RList
 	}
 }
 
+// Function fills only carry an InstructionTable slot; decode the table once
+// and turn each method's slot into its entry address.
+static void resolve_method_entry_points(DartCtx *ctx, RList *class_list) {
+	const int dump_snapshot_json = ctx->dump_snapshot_json;
+	const int dump_fns_limit = ctx->dump_fns_limit;
+	ctx->dump_snapshot_json = 0;
+	ctx->dump_fns_limit = 0;
+	RVecDartInstructionTableEntry *it = dart_pool_extract_instruction_table (ctx);
+	ctx->dump_snapshot_json = dump_snapshot_json;
+	ctx->dump_fns_limit = dump_fns_limit;
+	if (!it) {
+		return;
+	}
+	ut64 count = 0;
+	DartInstructionTableEntry *ie;
+	R_VEC_FOREACH (it, ie) {
+		count = R_MAX (count, ie->index + 1);
+	}
+	// Function::code_index is the raw InstructionTable slot, not the
+	// first_entry_with_code-relative index kept in ie->code_index. Slots below
+	// first_entry_with_code lost their Code object (discarded in AOT) but
+	// still own real instructions, so map them too.
+	ut64 *addr_by_code_index = calloc (count + 1, sizeof (ut64));
+	R_VEC_FOREACH (it, ie) {
+		addr_by_code_index[ie->index] = ie->address;
+	}
+	RListIter *iter, *miter;
+	DartClassInfo *ci;
+	DartMethodInfo *mi;
+	r_list_foreach (class_list, iter, ci) {
+		r_list_foreach (ci->methods, miter, mi) {
+			if (!mi->entry_point && mi->code_index < count) {
+				mi->entry_point = addr_by_code_index[mi->code_index];
+			}
+		}
+	}
+	free (addr_by_code_index);
+	dart_instruction_table_list_free (it);
+}
+
 RList *dart_pool_extract_classes(DartCtx *ctx) {
 	if (!ctx || !ctx->core) {
 		return NULL;
@@ -1693,6 +1733,9 @@ RList *dart_pool_extract_classes(DartCtx *ctx) {
 		}
 	}
 	dart_ctx_fini_layout (ctx, layout_owned);
+	if (modern_classes) {
+		resolve_method_entry_points (ctx, class_list);
+	}
 	return class_list;
 }
 

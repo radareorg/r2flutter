@@ -8,8 +8,8 @@ EOF
 EXPECT=<<EOF
 metadata class.name class Pointer [ref=36652] -> string Pointer [ref=151] @ 0x1b24d0
 metadata class.library class Pointer [ref=36652] -> library library#41733 [ref=41733]
-metadata method.owner method Pointer.get:hashCode [ref=31064] -> class Pointer [ref=36652]
-metadata method.name method Pointer.get:hashCode [ref=31064] -> string get:hashCode [ref=7217] @ 0x2b0230
+metadata method.owner method Pointer.get:hashCode [ref=31064] @ 0x115f2c -> class Pointer [ref=36652]
+metadata method.name method Pointer.get:hashCode [ref=31064] @ 0x115f2c -> string get:hashCode [ref=7217] @ 0x2b0230
 EOF
 RUN
 
@@ -21,7 +21,7 @@ L ../src/r2/core_flutter.so
 r2flutter -j -l 3 -x
 EOF
 EXPECT=<<EOF
-[{"kind":"class.name","origin":"metadata","src":{"type":"class","name":"Pointer","ref":36652},"dst":{"type":"string","name":"Pointer","ref":151,"addr":1778896}},{"kind":"class.library","origin":"metadata","src":{"type":"class","name":"Pointer","ref":36652},"dst":{"type":"library","name":"library#41733","ref":41733}},{"kind":"method.owner","origin":"metadata","src":{"type":"method","name":"Pointer.get:hashCode","ref":31064},"dst":{"type":"class","name":"Pointer","ref":36652}}]
+[{"kind":"class.name","origin":"metadata","src":{"type":"class","name":"Pointer","ref":36652},"dst":{"type":"string","name":"Pointer","ref":151,"addr":1778896}},{"kind":"class.library","origin":"metadata","src":{"type":"class","name":"Pointer","ref":36652},"dst":{"type":"library","name":"library#41733","ref":41733}},{"kind":"method.owner","origin":"metadata","src":{"type":"method","name":"Pointer.get:hashCode","ref":31064,"addr":1138476},"dst":{"type":"class","name":"Pointer","ref":36652}}]
 EOF
 RUN
 

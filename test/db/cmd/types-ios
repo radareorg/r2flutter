@@ -10,8 +10,8 @@ EXPECT=<<EOF
 # class Pointer (size=32)
 #   type_params: 1
 "td struct dart_Pointer { };"
-#   method 0x00000000 get:hashCode (GetterFunction)
-#   method 0x00000000 == (RegularFunction)
+#   method 0x00115f2c get:hashCode (GetterFunction)
+#   method 0x001299fc == (RegularFunction)
 # class NativeType (size=16)
 EOF
 RUN
