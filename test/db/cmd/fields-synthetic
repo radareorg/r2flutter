@@ -117,7 +117,7 @@ dart
 0x00000020 dart    field   2      genericItems
 0x00000028 dart    field   3      callback
 0x00000000 [0x00000000 - 0x00000000]      0 dart class 1 dart_TestInterface
-pf [16].qppp fieldA items genericItems callback
+'pf [16].qppp fieldA items genericItems callback
 EOF
 RUN
 
