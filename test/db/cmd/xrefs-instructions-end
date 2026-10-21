@@ -1,0 +1,15 @@
+NAME=xrefs-instructions-end
+FILE=bins/android/w0rdle/libapp.so
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true -e io.cache=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+# Load the same PP string in the last function and just outside the image.
+wx 602f40f9 @ 0x3f8814
+wx 602f40f9 @ 0x3f8870
+r2flutter -q -x~0x3f8814,0x3f8870~0x23a0b
+EOF
+EXPECT=<<EOF
+code code.string 0x3f8814 -> 0x23a0b
+EOF
+RUN

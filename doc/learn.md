@@ -2027,3 +2027,28 @@ whose second field is an `XmlAttributeType` instance. Synthetic compressed and
 uncompressed snapshots cover nested Records, named shapes, empty Records,
 cycles, truncation, and a malformed field count. Existing iOS graph tests
 continue to cover arrays, maps, and sets; those fixtures have no Record cluster.
+
+## Standalone xrefs scan full instruction-table payloads
+
+The `-x` ObjectPool-use scanner used to ignore entries without retained Code
+metadata, stop after 4096 functions by default, and inspect at most 96
+instructions per function. This missed real instructions in the discarded-Code
+prefix and PP references late in a function or instruction table.
+
+The scanner now visits every instruction-table entry with an address and scans
+to the next distinct entry address. The last payload ends at the instructions
+image size recorded in its header, checked against its IO mapping. Instruction
+sizes must fit inside that range. Table extraction is unlimited even when
+`-l` caps emitted xrefs, so an output limit cannot remove the boundary needed
+for a scanned function. PP-use buckets use a hash lookup to keep the expanded
+scan practical. Instruction addresses identify visited use sites directly,
+avoiding collisions from the previous XOR of address and PP offset.
+
+Android w0rdle now includes the string load at `0x1b675c`, instruction 389 of
+IT entry 808 (`Base64Codec.normalize`), and the load at `0x3f4908` in entry
+10906. iOS Runner includes `0x929d0`, instruction 107 of entry 2642
+(`TextPainter.layout`), and `0xea070` in entry 4235 (`Layer.dispose`).
+Regressions also mark the Android table entries as lacking Code metadata and
+place matching PP loads in the last function and outside the image to check
+coverage and bounds. This expands instruction coverage; operand decoding
+continues to use the existing standalone scanner.

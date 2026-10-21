@@ -33,7 +33,7 @@ typedef struct {
 
 typedef struct {
 	DartCtx *ctx;
-	RList *buckets;
+	HtUP *buckets;
 	RList *xrefs;
 	ut64 *count;
 	ut64 limit;
@@ -498,30 +498,20 @@ static const char *xref_pool_flag_kind(const char *name, const char **dst_type, 
 	return NULL;
 }
 
-static bool xref_pool_use_seen(HtUP *seen, ut64 at, ut64 pp_off) {
-	ut64 key = at ^ (pp_off << 8) ^ (pp_off >> 8);
-	if (ht_up_find (seen, key, NULL)) {
+static bool xref_pool_use_seen(HtUP *seen, ut64 at) {
+	// Each instruction contributes at most one PP use. Key by its address so
+	// distinct sites cannot collide through a lossy address/offset combination.
+	if (ht_up_find (seen, at, NULL)) {
 		return true;
 	}
-	ht_up_insert (seen, key, (void *)1);
+	ht_up_insert (seen, at, (void *)1);
 	return false;
 }
 
-#define DART_XREF_MAX_OPS 96
-
-// `end_addr` is the next entry's address, or 0 when unknown. Without it the
-// scan disassembles a fixed window that runs past short functions into their
-// neighbours, crediting those neighbours' pool references to this entry.
+// `end_addr` is the next entry's address, or the instructions-image end for
+// the last entry. Scan the whole payload without crossing into its neighbour.
 static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTableEntry *entry, ut64 end_addr, RList *uses, HtUP *seen) {
-	if (!ctx || !ctx->core || !entry || !entry->address || !uses || !seen) {
-		return;
-	}
-	ut64 nops = DART_XREF_MAX_OPS;
-	if (end_addr > entry->address) {
-		const ut64 avail = (end_addr - entry->address) / 4;
-		nops = R_MIN (avail, (ut64)DART_XREF_MAX_OPS);
-	}
-	if (!nops) {
+	if (!ctx || !ctx->core || !entry || !entry->address || end_addr <= entry->address || !uses || !seen) {
 		return;
 	}
 	// Decode the function's instructions one at a time via r_core_anal_op and
@@ -531,9 +521,9 @@ static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTabl
 	bool reg_valid[31] = { false };
 	ut64 reg_off[31] = { 0 };
 	ut64 at = entry->address;
-	for (ut64 i = 0; i < nops; i++) {
+	while (at < end_addr) {
 		RAnalOp *op = r_core_anal_op (ctx->core, at, R_ARCH_OP_MASK_BASIC | R_ARCH_OP_MASK_DISASM);
-		if (!op || op->size <= 0 || R_STR_ISEMPTY (op->mnemonic)) {
+		if (!op || op->size <= 0 || (ut64)op->size > end_addr - at || R_STR_ISEMPTY (op->mnemonic)) {
 			r_anal_op_free (op);
 			break;
 		}
@@ -541,7 +531,7 @@ static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTabl
 		ut64 pp_off = 0;
 		bool have_pp = xref_parse_pp_offset (m, &pp_off) ||
 			xref_parse_mem_pp_offset (m, reg_valid, reg_off, &pp_off);
-		if (have_pp && !xref_pool_use_seen (seen, at, pp_off)) {
+		if (have_pp && !xref_pool_use_seen (seen, at)) {
 			DartPoolUseInfo *ui = R_NEW0 (DartPoolUseInfo);
 			ui->at = at;
 			ui->fn_index = entry->index;
@@ -565,35 +555,40 @@ static void collect_pool_uses_from_entry(DartCtx *ctx, const DartInstructionTabl
 	}
 }
 
-static RList *collect_pool_uses(DartCtx *ctx, RVecDartInstructionTableEntry *entries, ut64 limit) {
+static ut64 xref_instructions_end(DartCtx *ctx) {
+	ut64 size = 0;
+	if (find_snapshots (ctx) != 0 || !ctx->iso_instr || !read_u64_at (ctx, ctx->iso_instr, &size) || size < DART_IMAGE_ALIGNMENT || size > UT64_MAX - ctx->iso_instr) {
+		return 0;
+	}
+	const ut64 end = ctx->iso_instr + size;
+	RIOMap *map = r_io_map_get_at (ctx->core->io, ctx->iso_instr);
+	return map && end - 1 <= r_io_map_to (map)? end: 0;
+}
+
+static RList *collect_pool_uses(DartCtx *ctx, RVecDartInstructionTableEntry *entries) {
 	RList *uses = r_list_newf (dart_pool_use_info_free);
 	if (!ctx || !entries || RVecDartInstructionTableEntry_length (entries) == 0) {
 		return uses;
 	}
 	HtUP *seen = ht_up_new0 ();
-	ut64 scanned = 0;
-	ut64 scan_limit = limit > 0? limit: 4096;
+	const ut64 image_end = xref_instructions_end (ctx);
 	const ut64 nentries = RVecDartInstructionTableEntry_length (entries);
 	for (ut64 i = 0; i < nentries; i++) {
 		const DartInstructionTableEntry *entry = RVecDartInstructionTableEntry_at (entries, i);
-		if (!entry || !entry->has_code || !entry->address) {
+		if (!entry || !entry->address) {
 			continue;
 		}
-		if (scan_limit > 0 && scanned >= scan_limit) {
-			break;
-		}
 		// Entries are emitted in ascending address order, so the next one with
-		// code bounds this one.
-		ut64 end_addr = 0;
+		// a distinct address bounds this one, including discarded-Code entries.
+		ut64 end_addr = image_end;
 		for (ut64 k = i + 1; k < nentries; k++) {
 			const DartInstructionTableEntry *nx = RVecDartInstructionTableEntry_at (entries, k);
 			if (nx && nx->address > entry->address) {
-				end_addr = nx->address;
+				end_addr = image_end? R_MIN (image_end, nx->address): nx->address;
 				break;
 			}
 		}
 		collect_pool_uses_from_entry (ctx, entry, end_addr, uses, seen);
-		scanned++;
 	}
 	ht_up_free (seen);
 	return uses;
@@ -653,17 +648,6 @@ static bool resolve_pool_entry_xref(DartCtx *ctx, DartRecoveryModel *model, RLis
 	return false;
 }
 
-static DartPpUseBucket *xref_bucket_by_pp(RList *buckets, ut64 pp_off) {
-	RListIter *it;
-	DartPpUseBucket *bucket;
-	r_list_foreach (buckets, it, bucket) {
-		if (bucket && bucket->pp_off == pp_off) {
-			return bucket;
-		}
-	}
-	return NULL;
-}
-
 static void xref_serialized_pool_string_cb(const ModernPoolStrRef *info, void *user) {
 	DartSerializedPoolXrefCtx *ux = (DartSerializedPoolXrefCtx *)user;
 	if (!info || !ux || !ux->buckets || !ux->xrefs || !ux->count || xref_limit_reached (*ux->count, ux->limit)) {
@@ -672,7 +656,7 @@ static void xref_serialized_pool_string_cb(const ModernPoolStrRef *info, void *u
 	if (!info->string_addr || R_STR_ISEMPTY (info->string_value)) {
 		return;
 	}
-	DartPpUseBucket *bucket = xref_bucket_by_pp (ux->buckets, info->pp_offset);
+	DartPpUseBucket *bucket = ht_up_find (ux->buckets, info->pp_offset, NULL);
 	if (!bucket || !bucket->uses) {
 		return;
 	}
@@ -701,13 +685,13 @@ static bool collect_serialized_object_pool_xrefs(DartCtx *ctx, RList *uses, RLis
 		if (!use) {
 			continue;
 		}
-		DartPpUseBucket *bucket = xref_bucket_by_pp (buckets, use->pp_off);
+		DartPpUseBucket *bucket = ht_up_find (wanted, use->pp_off, NULL);
 		if (!bucket) {
 			bucket = R_NEW0 (DartPpUseBucket);
 			bucket->pp_off = use->pp_off;
 			bucket->uses = r_list_new ();
 			r_list_append (buckets, bucket);
-			ht_up_insert (wanted, use->pp_off, (void *)1);
+			ht_up_insert (wanted, use->pp_off, bucket);
 		}
 		r_list_append (bucket->uses, use);
 	}
@@ -715,7 +699,7 @@ static bool collect_serialized_object_pool_xrefs(DartCtx *ctx, RList *uses, RLis
 	DartVerLayout *layout_owned = ctx->layout? NULL: dart_ctx_init_layout (ctx, &layout_tmp);
 	DartSerializedPoolXrefCtx ux = {
 		.ctx = ctx,
-		.buckets = buckets,
+		.buckets = wanted,
 		.xrefs = xrefs,
 		.count = count,
 		.limit = limit,
@@ -752,7 +736,7 @@ static void collect_object_pool_xrefs(DartCtx *ctx, DartRecoveryModel *model, RL
 	if (!ctx || !ctx->core || !model || !model->it_entries || !xrefs || xref_limit_reached (*count, limit)) {
 		return;
 	}
-	RList *uses = collect_pool_uses (ctx, model->it_entries, limit);
+	RList *uses = collect_pool_uses (ctx, model->it_entries);
 	(void)collect_serialized_object_pool_xrefs (ctx, uses, xrefs, count, limit);
 	ut64 pool_base = xref_object_pool_base (ctx);
 	if (!pool_base) {
@@ -784,7 +768,11 @@ static RList *dart_pool_extract_xrefs(DartCtx *ctx) {
 	const ut64 limit = ctx->dump_fns_limit > 0? (ut64)ctx->dump_fns_limit: 0;
 	ut64 count = 0;
 	DartRecoveryModel model = { 0 };
-	dart_recovery_model_load (ctx, &model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_CLASS_FIELDS | DART_RECOVERY_IT);
+	dart_recovery_model_load (ctx, &model, DART_RECOVERY_STRINGS | DART_RECOVERY_CLASSES | DART_RECOVERY_CLASS_FIELDS);
+	// Even limited output needs the full table to bound every scanned payload.
+	DartCtx work = *ctx;
+	work.dump_fns_limit = 0;
+	model.it_entries = dart_pool_extract_instruction_table (&work);
 	RList *classes = model.classes;
 	RVecDartInstructionTableEntry *it_entries = model.it_entries;
 	if (classes) {

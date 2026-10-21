@@ -1,0 +1,15 @@
+NAME=xrefs-full-coverage-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+# Instruction 107 in IT entry 2642, followed by IT entry 4235.
+r2flutter -q -x~0x929d0~0x2a1600
+r2flutter -q -x~0xea070~0x2a1600
+EOF
+EXPECT=<<EOF
+code code.string 0x929d0 -> 0x2a1600
+code code.string 0xea070 -> 0x2a1600
+EOF
+RUN

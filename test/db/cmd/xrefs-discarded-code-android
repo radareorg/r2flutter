@@ -1,0 +1,14 @@
+NAME=xrefs-discarded-code-android
+FILE=bins/android/w0rdle/libapp.so
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true -e io.cache=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+# Mark all table rows as lacking retained Code metadata; instructions remain.
+wv4 11017 @ 0x12c998
+r2flutter -q -x~0x1b675c~0xc7b
+EOF
+EXPECT=<<EOF
+code code.string 0x1b675c -> 0xc7b
+EOF
+RUN
