@@ -1,0 +1,21 @@
+NAME=pp-field-resolve-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -j -O pp+0x120~{pp_slot.resolved_kind}
+r2flutter -q -O pp+0x120
+r2flutter -q -j -O ref:40563~{snapshot.name}
+r2flutter -q -j -HHH -l 500~{snapshots[1].clusters[320].object_pools[0].entries[34].resolved_name}
+r2flutter -q -AAA
+CC. @ 0xfb3c
+EOF
+EXPECT=<<EOF
+field
+Zone._current@4048458
+Zone._current@4048458
+Zone._current@4048458
+dart: PP slot +0x120 field Zone._current@4048458
+EOF
+RUN

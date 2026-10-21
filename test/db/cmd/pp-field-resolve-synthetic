@@ -1,0 +1,30 @@
+NAME=pp-field-resolve-patched-owner-and-missing-metadata
+FILE=malloc://0xbc
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+wx 50414421f5f5dcdcb4000000000000000200000000000000333063303531636239313932663664363831326265336630623837613633353670726f647563742061726d363420636f6d707265737365642d706f696e746572730082898580800020d7838888900020c180810040c1810060c2830060c5818388666e5f3188666e5f3090746f704c6576656c8380808080808080808080808048c1c4c4c0c0c0c080868084878080c08085808080c080bf868080c0808311881189118a
+r2flutter -q -j -O pp+0x10~{pp_slot.resolved_kind}
+r2flutter -q -O pp+0x10
+r2flutter -q -j -O ref:8~{snapshot.name}
+r2flutter -q -O pp+0x18
+r2flutter -q -O pp+0x20
+r2flutter -q -j -O pp+0x20~{=}~resolved_name~?
+wx 87 @ 0xa1
+r2flutter -q -O pp+0x10
+wx 86 @ 0xa1
+r2flutter -q -O pp+0x10 -m custom/obf-map.txt
+r2flutter -q -j -O ref:8 -m custom/obf-map.txt~{snapshot.name}
+EOF
+EXPECT=<<EOF
+field
+fn_1.fn_0
+fn_1.fn_0
+topLevel
+field
+0
+fn_0
+build.initState
+build.initState
+EOF
+RUN

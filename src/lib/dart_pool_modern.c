@@ -120,6 +120,8 @@ typedef struct {
 	ut64 *function_name_ref;
 	ut64 *function_owner_ref;
 	ut64 *function_code_index;
+	ut64 *field_name_ref;
+	ut64 *field_owner_ref;
 } ModernRefResolver;
 
 typedef struct {
@@ -1971,6 +1973,8 @@ static void modern_ref_resolver_fini(ModernRefResolver *resolver) {
 	free (resolver->function_name_ref);
 	free (resolver->function_owner_ref);
 	free (resolver->function_code_index);
+	free (resolver->field_name_ref);
+	free (resolver->field_owner_ref);
 	memset (resolver, 0, sizeof (*resolver));
 }
 
@@ -2030,6 +2034,37 @@ static bool modern_resolver_read_function_fill(ModernWalk *w, ClusterStream *s, 
 			resolver->function_name_ref[ref] = name_ref;
 			resolver->function_owner_ref[ref] = owner_ref;
 			resolver->function_code_index[ref] = code_index? code_index - 1: UT64_MAX;
+		}
+	}
+	return true;
+}
+
+static bool modern_resolver_read_field_fill(ModernWalk *w, ClusterStream *s, const ModernClusterMeta *meta) {
+	ModernRefResolver *resolver = w->user;
+	const ModernFillSpec spec = modern_get_fill_spec (&w->cids, meta->cid);
+	for (ut64 j = 0; j < meta->count; j++) {
+		ut64 name_ref = 0;
+		ut64 owner_ref = 0;
+		for (int k = 0; k < spec.num_refs; k++) {
+			ut64 ref = 0;
+			if (!cs_read_ref_id (s, &ref)) {
+				return false;
+			}
+			if (k == spec.name_idx) {
+				name_ref = ref;
+			} else if (k == spec.owner_idx) {
+				owner_ref = ref;
+			}
+		}
+		for (int k = 0; k < spec.scalar_count; k++) {
+			if (!modern_skip_scalar (s, spec.scalars[k])) {
+				return false;
+			}
+		}
+		const ut64 ref = meta->start_ref + j;
+		if (ref < resolver->refs_count) {
+			resolver->field_name_ref[ref] = name_ref;
+			resolver->field_owner_ref[ref] = owner_ref;
 		}
 	}
 	return true;
@@ -2123,6 +2158,7 @@ static bool modern_direct_resolver_read_strings(ModernWalk *w, ClusterStream *s,
 static const ModernFillHandler modern_resolver_fill_handlers[] = {
 	{ DART_CID_CLASS, modern_resolver_read_class_fill },
 	{ DART_CID_FUNCTION, modern_resolver_read_function_fill },
+	{ DART_CID_FIELD, modern_resolver_read_field_fill },
 	{ DART_CID_LIBRARY, modern_resolver_read_library_fill },
 	{ DART_CID_PATCH_CLASS, modern_resolver_read_patch_class_fill },
 	{ 0, NULL },
@@ -2149,7 +2185,9 @@ static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, 
 	resolver->function_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->function_owner_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
 	resolver->function_code_index = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
-	if (!resolver->cluster_by_ref || !resolver->strings_by_ref || !resolver->string_addr_by_ref || !resolver->string_flags_by_ref || !resolver->class_name_ref || !resolver->class_id_by_ref || !resolver->library_name_ref || !resolver->patch_wrapped_ref || !resolver->function_name_ref || !resolver->function_owner_ref || !resolver->function_code_index) {
+	resolver->field_name_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	resolver->field_owner_ref = (ut64 *)calloc ((size_t)resolver->refs_count, sizeof (ut64));
+	if (!resolver->cluster_by_ref || !resolver->strings_by_ref || !resolver->string_addr_by_ref || !resolver->string_flags_by_ref || !resolver->class_name_ref || !resolver->class_id_by_ref || !resolver->library_name_ref || !resolver->patch_wrapped_ref || !resolver->function_name_ref || !resolver->function_owner_ref || !resolver->function_code_index || !resolver->field_name_ref || !resolver->field_owner_ref) {
 		modern_ref_resolver_fini (resolver);
 		return false;
 	}
@@ -2173,6 +2211,16 @@ static bool modern_ref_resolver_init(ModernRefResolver *resolver, DartCtx *ctx, 
 	w.on_string_fill = modern_resolver_read_strings;
 	w.user = resolver;
 	modern_walk_fill_recorded (&w, meta, num_clusters);
+	// Uncompressed snapshots keep field and owner names in the data image.
+	const ut64 bases[] = { ctx->iso_data, ctx->vm_data };
+	for (size_t i = 0; i < R_ARRAY_SIZE (bases); i++) {
+		DartSnapshotHeader sh = { 0 };
+		ut64 base = bases[i];
+		if (base && dart_snapshot_header_read (ctx, base, &sh) && sh.ok && sh.cluster_start == meta[0].tag_offset) {
+			modern_load_rodata_strings (ctx, meta, num_clusters, base, sh.total_len, resolver->strings_by_ref, resolver->string_addr_by_ref, resolver->refs_count);
+			break;
+		}
+	}
 	return true;
 }
 
@@ -2222,6 +2270,9 @@ static const char *modern_ref_kind_for_meta(const ModernCidCache *cids, const Mo
 	if (modern_cid_eq (meta->cid, cids->function)) {
 		return "function";
 	}
+	if (modern_cid_eq (meta->cid, cids->field)) {
+		return "field";
+	}
 	if (modern_cid_eq (meta->cid, cids->library)) {
 		return "library";
 	}
@@ -2232,6 +2283,22 @@ static const char *modern_ref_kind_for_meta(const ModernCidCache *cids, const Mo
 		return "object_pool";
 	}
 	return modern_alloc_kind_name (meta->alloc_kind);
+}
+
+static char *modern_build_field_name(DartCtx *ctx, const char *owner, const char *name) {
+	if (R_STR_ISEMPTY (name)) {
+		return NULL;
+	}
+	char *owner_name = owner? strdup (owner): NULL;
+	char *field_name = strdup (name);
+	dart_obf_apply (ctx, &owner_name);
+	dart_obf_apply (ctx, &field_name);
+	char *full = R_STR_ISNOTEMPTY (owner_name) && strcmp (owner_name, "::")
+		? r_str_newf ("%s.%s", owner_name, field_name)
+		: strdup (field_name);
+	free (owner_name);
+	free (field_name);
+	return full;
 }
 
 static void modern_ref_resolver_resolve(ModernRefResolver *resolver, const ModernCidCache *cids, ut64 ref, ModernResolvedRef *resolved) {
@@ -2269,20 +2336,27 @@ static void modern_ref_resolver_resolve(ModernRefResolver *resolver, const Moder
 		}
 		return;
 	}
+	const ModernRefNameMap names = {
+		.strings_by_ref = resolver->strings_by_ref,
+		.class_name_ref = resolver->class_name_ref,
+		.library_name_ref = resolver->library_name_ref,
+		.patch_wrapped_ref = resolver->patch_wrapped_ref,
+		.function_name_ref = resolver->function_name_ref,
+		.refs_count = resolver->refs_count,
+};
 	if (!strcmp (resolved->kind, "function")) {
 		ut64 name_ref = resolver->function_name_ref[ref];
 		const char *method_name = name_ref < resolver->refs_count? resolver->strings_by_ref[name_ref]: NULL;
-		const ModernRefNameMap names = {
-			.strings_by_ref = resolver->strings_by_ref,
-			.class_name_ref = resolver->class_name_ref,
-			.library_name_ref = resolver->library_name_ref,
-			.patch_wrapped_ref = resolver->patch_wrapped_ref,
-			.function_name_ref = resolver->function_name_ref,
-			.refs_count = resolver->refs_count,
-};
 		const char *owner_name = modern_resolve_ref_name (&names, resolver->function_owner_ref[ref], 0);
 		resolved->name = modern_build_full_name (resolver->ctx, owner_name, method_name);
 		resolved->code_index = resolver->function_code_index[ref];
+		return;
+	}
+	if (!strcmp (resolved->kind, "field")) {
+		ut64 name_ref = resolver->field_name_ref[ref];
+		const char *field_name = name_ref < resolver->refs_count? resolver->strings_by_ref[name_ref]: NULL;
+		const char *owner_name = modern_resolve_ref_name (&names, resolver->field_owner_ref[ref], 0);
+		resolved->name = modern_build_field_name (resolver->ctx, owner_name, field_name);
 		return;
 	}
 	if (!strcmp (resolved->kind, "library")) {
@@ -3158,6 +3232,10 @@ static ModernValueNode *modern_value_graph_node(ModernValueGraph *graph, ut64 re
 	}
 	if (!strcmp (node->kind, "instance")) {
 		node->name = modern_value_class_name (graph, meta->cid);
+	} else if (!strcmp (node->kind, "field")) {
+		ModernResolvedRef resolved;
+		modern_ref_resolver_resolve (&graph->resolver, &graph->cids, ref, &resolved);
+		node->name = resolved.name;
 	}
 	if (meta->fill_kind == MODERN_FILL_NONE) {
 		node->complete = true;
@@ -3197,15 +3275,7 @@ ModernValueGraph *modern_value_graph_new(const ModernReq *req, ut64 root_ref) {
 	for (ut64 i = 0; i < req->num_clusters; i++) {
 		graph->valid_refs_count = R_MAX (graph->valid_refs_count, graph->meta[i].start_ref + graph->meta[i].count);
 	}
-	const ut64 snapshot_bases[] = { ctx->iso_data, ctx->vm_data };
-	for (size_t i = 0; i < R_ARRAY_SIZE (snapshot_bases); i++) {
-		DartSnapshotHeader sh = { 0 };
-		const ut64 base = snapshot_bases[i];
-		if (base && dart_snapshot_header_read (ctx, base, &sh) && sh.ok && sh.cluster_start == req->cluster_start) {
-			modern_load_rodata_strings (ctx, graph->meta, req->num_clusters, base, sh.total_len, graph->resolver.strings_by_ref, graph->resolver.string_addr_by_ref, graph->resolver.refs_count);
-			break;
-		}
-	}
+
 	graph->nodes = (ModernValueNode **)calloc ((size_t)graph->resolver.refs_count, sizeof (ModernValueNode *));
 	if (!graph->nodes) {
 		modern_value_graph_free (graph);
@@ -3800,15 +3870,7 @@ static bool modern_collect_pool_strrefs_internal(const ModernReq *req, HtUP *pp_
 		modern_cluster_meta_free (meta, req->num_clusters);
 		return false;
 	}
-	const ut64 snapshot_bases[] = { ctx->iso_data, ctx->vm_data };
-	for (size_t i = 0; i < R_ARRAY_SIZE (snapshot_bases); i++) {
-		DartSnapshotHeader sh = { 0 };
-		const ut64 base = snapshot_bases[i];
-		if (base && dart_snapshot_header_read (ctx, base, &sh) && sh.ok && sh.cluster_start == req->cluster_start) {
-			modern_load_rodata_strings (ctx, meta, req->num_clusters, base, sh.total_len, resolver.strings_by_ref, resolver.string_addr_by_ref, resolver.refs_count);
-			break;
-		}
-	}
+
 	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
 	for (ut64 i = 0; i < req->num_clusters; i++) {
 		ModernClusterMeta *m = &meta[i];

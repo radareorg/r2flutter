@@ -1,0 +1,21 @@
+NAME=pp-field-resolve-android
+FILE=bins/android/w0rdle/libapp.so
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -j -O pp+0x60~{pp_slot.resolved_kind}
+r2flutter -q -O pp+0x60
+r2flutter -q -j -O ref:52876~{snapshot.name}
+r2flutter -q -j -HHH -l 500~{snapshots[1].clusters[365].object_pools[0].entries[10].resolved_name}
+r2flutter -q -AAA
+CC. @ 0x1eee60
+EOF
+EXPECT=<<EOF
+field
+Platform.isAndroid
+Platform.isAndroid
+Platform.isAndroid
+dart: PP slot +0x60 field Platform.isAndroid
+EOF
+RUN

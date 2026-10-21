@@ -1954,3 +1954,25 @@ and records their immediate leaf kind/index. `-AA` links their pool slots;
 `-AAA` adds instruction xrefs and `contains string` comments while retaining
 the collection's original kind. Regression fixtures cover both platforms and
 cyclic arrays with shared elements behind mutable/const map and set storage.
+
+## Field ObjectPool entries resolve their owner and name
+
+W0rdle `PP+0x60` references Field object 52876 (`Platform.isAndroid`). The
+field fill was decoded for class extraction but the PP resolver classified
+Field by its generic allocation kind (`simple`) and retained no name/owner
+references. iOS Runner `PP+0x120` similarly references
+`Zone._current@4048458` (object 40563).
+
+The shared resolver now records Field name/owner references while walking
+fills and resolves owners through Class, Library, or bounded PatchClass
+chains. Field labels use `Owner.name`, preserve private-name suffixes, and
+apply the obfuscation map to both parts. Missing owners leave the field name
+alone; missing names leave a `field` kind without a fabricated label. PP
+inspection, cluster summaries, reference inspection, and analysis comments
+share that resolution.
+
+Uncompressed isolate field names are ROData strings. Loading those strings
+in the shared resolver enables field labels on iOS as well as compressed
+Android snapshots and replaces duplicate ROData loading in value graphs and
+string collection. Regression fixtures cover both platforms, patched and
+cyclic owners, missing names/owners, and deobfuscation.
