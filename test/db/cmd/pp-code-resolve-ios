@@ -1,0 +1,18 @@
+NAME=pp-code-resolve-ios
+FILE=bins/ios/AuthPass.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -j -O pp+0x68~{pp_slot.resolved_kind}
+r2flutter -q -j -O pp+0x68~{pp_slot.resolved_code_index}
+r2flutter -q -j -O pp+0x70~{pp_slot.resolved_code_index}
+r2flutter -q -j -HHH -l 1100~{snapshots[1].clusters[1028].object_pools[0].entries[11].resolved_code_index}
+EOF
+EXPECT=<<EOF
+code
+36399
+36400
+36399
+EOF
+RUN

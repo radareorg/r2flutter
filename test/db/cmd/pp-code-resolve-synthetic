@@ -1,0 +1,23 @@
+NAME=pp-code-resolve-main-discarded-and-deferred
+FILE=malloc://0x8c
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+# Main Code refs include a discarded entry; the last Code is deferred.
+wx 50414421f5f5dcdc84000000000000000200000000000000333063303531636239313932663664363831326265336630623837613633353670726f647563742061726d363420636f6d707265737365642d706f696e746572730082878283800040c483c0c8c081c00060c5818480808080808080808080808080808080808080808080841183118411851186
+r2flutter -q -j -O pp+0x10~{pp_slot.resolved_kind}
+r2flutter -q -j -O pp+0x10~{pp_slot.resolved_code_index}
+r2flutter -q -j -O pp+0x18~{pp_slot.resolved_code_index}
+r2flutter -q -j -O pp+0x20~{pp_slot.resolved_code_index}
+r2flutter -q -j -O pp+0x28~{pp_slot.resolved_kind}
+r2flutter -q -j -O pp+0x28~{=}~resolved_code_index~?
+EOF
+EXPECT=<<EOF
+code
+0
+1
+2
+code
+0
+EOF
+RUN

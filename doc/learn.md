@@ -1976,3 +1976,28 @@ in the shared resolver enables field labels on iOS as well as compressed
 Android snapshots and replaces duplicate ROData loading in value graphs and
 string collection. Regression fixtures cover both platforms, patched and
 cyclic owners, missing names/owners, and deobfuscation.
+
+## Direct Code pool references use Code allocation indices
+
+ObjectPool resolution recognized Code objects but only assigned a target index
+for Function references. Code-slot loads and indirect calls therefore had a
+`code` annotation without a navigable instruction target.
+
+The main Code allocation range has the same order as the Code-backed part of
+the InstructionTable. Its zero-based index is `ref - cluster.start_ref`, which
+matches `DartInstructionTableEntry.code_index`; the table extractor handles
+`first_entry_with_code` when mapping that index to a payload address. Do not
+reuse the serialized Function index here: that index is biased by one and
+refers to the whole table. Deferred Code objects follow the main allocation
+range but have no instructions in this loading unit, so they keep an unresolved
+target. A discarded record in older Code clusters still occupies its ordinal.
+
+On Android w0rdle, `PP+0x40` holds ref 33249 in the Code cluster starting at
+22433, so it resolves to index 10816 and table address `0x3f1074`. Analysis now
+adds a CALL xref from `blr x0` at `0x3f28cc`, preserving the PP association
+through the Code entry-point load. `PP+0x48` resolves to the following index.
+On iOS AuthPass, `PP+0x68` holds ref 168520 in the Code cluster starting at
+132121, yielding index 36399 and table address `0x6d9620`. The synthetic
+regression checks index zero, a discarded record, the following main record,
+and an unresolved deferred record. These targets use the existing table
+payload-address convention described above.

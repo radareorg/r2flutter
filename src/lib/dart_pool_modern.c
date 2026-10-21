@@ -2336,6 +2336,15 @@ static void modern_ref_resolver_resolve(ModernRefResolver *resolver, const Moder
 		}
 		return;
 	}
+	if (!strcmp (resolved->kind, "code")) {
+		// Instruction-table code indices follow the main Code allocation order.
+		// Deferred objects have no instructions in this loading unit's table.
+		ut64 index = ref - meta->start_ref;
+		if (index < meta->main_count) {
+			resolved->code_index = index;
+		}
+		return;
+	}
 	const ModernRefNameMap names = {
 		.strings_by_ref = resolver->strings_by_ref,
 		.class_name_ref = resolver->class_name_ref,
