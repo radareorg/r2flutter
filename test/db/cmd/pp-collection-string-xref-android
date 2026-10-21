@@ -1,0 +1,28 @@
+NAME=pp-collection-string-xref-android
+FILE=bins/android/w0rdle/libapp.so
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -AA
+axtq @ 0x42ad3~0xdb177
+axtq @ 0x4d912~0xdb177
+r2flutter -q -AAA
+CC. @ 0x19c21c~PP slot +0x5d0 array~?
+CC. @ 0x19c21c~contains string "cancel"~?
+CC. @ 0x19c21c~contains string "hover"~?
+axtq @ 0x42ad3~0x19c21c
+axtq @ 0x4d912~0x19c21c
+r2flutter -q -r -xz~0x42ad3 0xdb177
+EOF
+EXPECT=<<EOF
+0xdb177
+0xdb177
+1
+1
+1
+0x19c21c
+0x19c21c
+ax 0x42ad3 0xdb177
+EOF
+RUN

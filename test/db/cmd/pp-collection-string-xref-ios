@@ -1,0 +1,28 @@
+NAME=pp-collection-string-xref-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -AA
+axtq @ 0x2ab3a0~0x22d6a1
+axtq @ 0x2bbf30~0x22d6a1
+r2flutter -q -AAA
+CC. @ 0x15f4c~PP slot +0x3d0 array~?
+CC. @ 0x15f4c~contains string "cancel"~?
+CC. @ 0x15f4c~contains string "hover"~?
+axtq @ 0x2ab3a0~0x15f4c
+axtq @ 0x2bbf30~0x15f4c
+r2flutter -q -r -xz~0x2ab3a0 0x22d6a1
+EOF
+EXPECT=<<EOF
+0x22d6a1
+0x22d6a1
+1
+1
+1
+0x15f4c
+0x15f4c
+ax 0x2ab3a0 0x22d6a1
+EOF
+RUN

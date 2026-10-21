@@ -1932,3 +1932,25 @@ pass redundant; `-AA` now applies the references from the extracted strings.
 Regression cases cover the instance-only `AppLifecycleState.detached` name on
 Android w0rdle and iOS Runner, plus a name (`dark`) reachable both directly and
 through an instance to check that it is emitted once.
+
+## Collection values propagate their strings into PP analysis
+
+Android w0rdle `PP+0x5d0` and iOS Runner `PP+0x3d0` hold the ten
+`PointerChange` enum instances. The value inspector decoded their names, but
+the analysis collector rejected every collection before inspecting its
+contents. The same restriction missed strings in map/set backing arrays.
+
+The value collector now follows arrays, weak arrays, growable arrays, maps,
+sets, and instances, while excluding Class/Function/type metadata. Map/set
+storage adds an extra hop, so value traversal allows eight edges of depth
+and at most 4096 reference visits per pool entry. Per-entry visited depths
+stop cycles and allow revisiting a shared object reached by a shorter path.
+Null references count toward the visit budget too.
+
+Array and reference-object fill offsets are indexed once per cluster, as
+instance offsets already were, to avoid repeatedly scanning array prefixes.
+`-xz` marks strings reached through collections as `object_pool.collection`
+and records their immediate leaf kind/index. `-AA` links their pool slots;
+`-AAA` adds instruction xrefs and `contains string` comments while retaining
+the collection's original kind. Regression fixtures cover both platforms and
+cyclic arrays with shared elements behind mutable/const map and set storage.

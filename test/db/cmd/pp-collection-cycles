@@ -1,0 +1,24 @@
+NAME=pp-collection-cycles-and-map-set-storage
+FILE=malloc://0xb4
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+wx 50414421f5f5dcdcac000000000000000200000000000000333063303531636239313932663664363831326265336630623837613633353670726f647563742061726d363420636f6d707265737365642d706f696e746572730082878780800020d781a00040d681840040d5810060d5810000d6810020d6810060c58185a0636f6c6c656374696f6e2d6379636c6584808483838580808480808080848080808084808080808480808511841185118611871188
+r2flutter -q -j -xz~{[0].value}
+r2flutter -q -j -xz~{[0].refs[0].name}
+r2flutter -q -j -xz~{[0].refs[1].name}
+r2flutter -q -j -xz~{[0].refs[2].name}
+r2flutter -q -j -xz~{[0].refs[3].name}
+r2flutter -q -j -xz~{[0].refs[4].name}
+r2flutter -q -j -xz~{[0].refs[4].kind}
+EOF
+EXPECT=<<EOF
+collection-cycle
+pool=9 index=0 entry=0 pp_off=0x10 leaf=array[1]
+pool=9 index=0 entry=1 pp_off=0x18 leaf=array[1]
+pool=9 index=0 entry=2 pp_off=0x20 leaf=array[1]
+pool=9 index=0 entry=3 pp_off=0x28 leaf=array[1]
+pool=9 index=0 entry=4 pp_off=0x30 leaf=array[1]
+object_pool.collection
+EOF
+RUN

@@ -179,6 +179,7 @@ typedef struct {
 	ut64 string_ref;
 	ut64 string_addr;
 	ut32 string_flags;
+	bool via_collection;
 	const char *string_value;
 } ModernPoolStrRef;
 
