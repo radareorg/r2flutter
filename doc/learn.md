@@ -1883,3 +1883,35 @@ placeholder (`func.*`, `method.fn_*`) names.
 came out as 128 + words, e.g. `_Closure._context` at `+0x428` instead of
 `+0x28` on 64-bit, and the `SemanticsAction` const map key `tap` decoded as
 129 instead of 1. `cs_read_tagged32` was already correct.
+
+## ObjectPool instances can carry strings through their fields
+
+`t/libapp_1.so` loads `PP+0x17200` at `0xfb4ae8`. The slot references
+snapshot object 165628, a `Ubb` instance derived from `_Enum`; its string field
+references object 33665 (`privilegedAccess`, payload `0xbcedf`). Blutter's
+`pp.txt` confirms enum index 9 and the name at instance offset `0x10`.
+A direct-String-only PP lookup consequently misses this use.
+
+Analysis now collects direct strings and immediate string fields of pool
+instances. `-AA` links the synthetic pool slot (`0x30a1b0` in this sample) to
+the string, and `-AAA` links the loading instruction and adds a `contains
+string` comment while retaining the `instance` label. Each slot can contain
+multiple strings; they must not collapse to its first string field. This
+analysis path stops at immediate fields rather than traversing metadata or
+arbitrary object graphs.
+
+Instance field counts include an eight-byte header expressed in compressed
+words: two words on compressed Android snapshots, one on uncompressed iOS.
+Using a fixed two-word header skips the enum name on iOS. The collector also
+loads ROData strings for uncompressed snapshots and preserves VM base-object
+strings. Regression tests use `Brightness.dark` in Android w0rdle and iOS
+Runner to cover both layouts, pool xrefs, and instruction comments/xrefs.
+
+PP resolution can initialize `ctx->layout` from a local stack buffer. Callers
+that need to continue parsing after it returns must keep their own live
+layout across resolution and free it afterward; otherwise the field-string
+collector can silently miss all slots on either platform.
+
+Instance fill offsets are indexed once per cluster while collecting strings.
+Rescanning a cluster prefix for each PP slot makes large const collections
+quadratic, even when only immediate fields are read.

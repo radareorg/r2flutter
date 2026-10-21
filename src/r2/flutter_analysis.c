@@ -60,6 +60,7 @@ typedef struct {
 typedef struct {
 	ut64 string_addr;
 	char *string_value;
+	bool indirect;
 } FlutterPpStringRef;
 
 typedef struct {
@@ -93,15 +94,19 @@ static void flutter_stack_slot_free(void *p) {
 	free (p);
 }
 
-static void flutter_pp_string_ref_free(HtUPKv *kv) {
-	FlutterPpStringRef *ref = kv->value;
+static void flutter_pp_string_ref_free(void *p) {
+	FlutterPpStringRef *ref = p;
 	free (ref->string_value);
 	free (ref);
 }
 
+static void flutter_pp_string_bucket_free(HtUPKv *kv) {
+	r_list_free (kv->value);
+}
+
 static void flutter_pp_string_map_init(FlutterPpStringMap *map) {
 	memset (map, 0, sizeof (*map));
-	map->by_pp_off = ht_up_new (NULL, flutter_pp_string_ref_free, NULL);
+	map->by_pp_off = ht_up_new (NULL, flutter_pp_string_bucket_free, NULL);
 }
 
 static void flutter_pp_string_map_fini(FlutterPpStringMap *map) {
@@ -567,13 +572,23 @@ static void flutter_pp_string_map_add(FlutterPpStringMap *map, const ModernPoolS
 	if (!map || !map->by_pp_off || !info || R_STR_ISEMPTY (info->string_value) || !info->string_addr) {
 		return;
 	}
-	if (ht_up_find (map->by_pp_off, info->pp_offset, NULL)) {
-		return;
+	RList *refs = ht_up_find (map->by_pp_off, info->pp_offset, NULL);
+	if (!refs) {
+		refs = r_list_newf (flutter_pp_string_ref_free);
+		ht_up_insert (map->by_pp_off, info->pp_offset, refs);
+	}
+	RListIter *it;
+	FlutterPpStringRef *existing;
+	r_list_foreach (refs, it, existing) {
+		if (existing->string_addr == info->string_addr) {
+			return;
+		}
 	}
 	FlutterPpStringRef *ref = R_NEW0 (FlutterPpStringRef);
 	ref->string_addr = info->string_addr;
 	ref->string_value = strdup (info->string_value);
-	ht_up_insert (map->by_pp_off, info->pp_offset, ref);
+	ref->indirect = strcmp (info->target_kind, "object_pool.entry") != 0;
+	r_list_append (refs, ref);
 }
 
 static void flutter_pp_string_ref_cb(const ModernPoolStrRef *info, void *user) {
@@ -595,7 +610,7 @@ static bool flutter_collect_pp_strings_from_snapshot(DartCtx *ctx, ut64 snapshot
 		.num_clusters = sh.nc,
 		.num_base_objects = sh.nb,
 };
-	return modern_collect_direct_pool_strrefs (&req, wanted, flutter_pp_string_ref_cb, map);
+	return modern_collect_pool_value_strrefs (&req, wanted, flutter_pp_string_ref_cb, map);
 }
 
 static void flutter_pp_string_map_load(DartCtx *ctx, HtUP *wanted, FlutterPpStringMap *map) {
@@ -616,7 +631,7 @@ static void flutter_pp_string_map_load(DartCtx *ctx, HtUP *wanted, FlutterPpStri
 	}
 }
 
-static const FlutterPpStringRef *flutter_pp_string_map_get(FlutterPpStringMap *map, ut64 pp_off) {
+static RList *flutter_pp_string_map_get(FlutterPpStringMap *map, ut64 pp_off) {
 	return map && map->by_pp_off? ht_up_find (map->by_pp_off, pp_off, NULL): NULL;
 }
 
@@ -1215,22 +1230,26 @@ static bool flutter_process_pp_load(RCore *core, FlutterAnalState *state, Flutte
 	if (pp_refs && pp_refs->pp_base) {
 		flutter_add_ref (core, at, pp_refs->pp_base + slot_off, R_ANAL_REF_TYPE_DATA | R_ANAL_REF_TYPE_READ);
 	}
-	const FlutterPpStringRef *string_ref = flutter_pp_string_map_get (pp_strings, slot_off);
-	if (string_ref) {
+	RList *strings = flutter_pp_string_map_get (pp_strings, slot_off);
+	FlutterPpStringRef *first = strings? r_list_first (strings): NULL;
+	if (!first || first->indirect) {
+		if (!flutter_annotate_pp_ref (core, pp_refs, at, slot_off, false, stats)) {
+			char *msg = r_str_newf ("dart: PP slot +0x%" PFMT64x, slot_off);
+			flutter_append_comment (core, at, msg, stats);
+			free (msg);
+		}
+	}
+	RListIter *it;
+	FlutterPpStringRef *string_ref;
+	r_list_foreach (strings, it, string_ref) {
 		flutter_set_flag (core, "dart.str", string_ref->string_value, string_ref->string_addr, (ut32)strlen (string_ref->string_value), true);
 		flutter_add_ref (core, at, string_ref->string_addr, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
 		stats->string_refs++;
 		char *escaped = r_str_escape_utf8 (string_ref->string_value, false, true);
-		char *msg = r_str_newf ("dart: PP slot +0x%" PFMT64x " string \"%s\"", pp_off, escaped);
+		char *msg = r_str_newf ("dart: PP slot +0x%" PFMT64x " %sstring \"%s\"", pp_off, string_ref->indirect? "contains ": "", escaped);
 		flutter_append_comment (core, at, msg, stats);
 		free (msg);
 		free (escaped);
-	} else if (!flutter_annotate_pp_ref (core, pp_refs, at, slot_off, false, stats)) {
-		char *msg = r_str_newf ("dart: "
-			"PP slot +0x%" PFMT64x,
-			slot_off);
-		flutter_append_comment (core, at, msg, stats);
-		free (msg);
 	}
 	stats->pp_refs++;
 	return true;

@@ -1,0 +1,21 @@
+NAME=r2-pp-analysis-discarded-code-android
+FILE=bins/android/first/libapp.so
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true -e io.cache=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+# Simulate fewer retained Code objects than instruction entries, with all
+# entries before first_entry_with_code. Patches stay in the IO cache.
+wx 1e8a @ 0x8f7f
+wv4 1311 @ 0x1f558
+r2flutter -q -i~?
+r2flutter -q -l 2 -i~?
+r2flutter -q -AAA
+axtq @ 0x2710
+EOF
+EXPECT=<<EOF
+1311
+2
+0x8b914
+EOF
+RUN

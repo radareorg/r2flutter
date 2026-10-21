@@ -1,0 +1,18 @@
+NAME=r2-pp-instance-string-xref-android
+FILE=bins/android/w0rdle/libapp.so
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -AA
+axtq @ 0x3d29e~0xdb87f
+r2flutter -q -AAA
+CC. @ 0x19d630
+axtq @ 0x3d29e~0x19d630
+EOF
+EXPECT=<<EOF
+0xdb87f
+dart: PP slot +0xcd8 instance | dart: PP slot +0xcd8 contains string "dark"
+0x19d630
+EOF
+RUN

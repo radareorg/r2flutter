@@ -1,0 +1,15 @@
+NAME=r2-pp-shifted-string-xref-android
+FILE=bins/android/w0rdle/libapp.so
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -AAA
+CC. @ 0x178c70
+axtq @ 0x51746~0x178c70
+EOF
+EXPECT=<<EOF
+dart: PP slot +0xb5f8 string "Unexpected state: "
+0x178c70
+EOF
+RUN

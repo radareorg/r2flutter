@@ -1,0 +1,18 @@
+NAME=r2-pp-instance-string-xref-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -AA
+axtq @ 0x2a3300~0x22dd19
+r2flutter -q -AAA
+CC. @ 0x330ac
+axtq @ 0x2a3300~0x330ac
+EOF
+EXPECT=<<EOF
+0x22dd19
+dart: PP slot +0xa48 instance | dart: PP slot +0xa48 contains string "dark"
+0x330ac
+EOF
+RUN

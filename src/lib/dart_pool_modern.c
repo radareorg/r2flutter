@@ -3501,6 +3501,8 @@ typedef struct {
 	ut64 pool_ref;
 	ut64 pool_index;
 	ut64 entry_index;
+	bool instance_fields_only;
+	ut64 *instance_offsets;
 } ModernPoolStringRefCollector;
 
 static void modern_emit_pool_string_ref(ModernPoolStringRefCollector *collector, ut64 target_ref, const char *target_kind, ut64 field_index, ut64 string_ref) {
@@ -3654,36 +3656,49 @@ static bool modern_collect_instance_strings(ModernPoolStringRefCollector *collec
 	if (!cs_read_unsigned (&s, &bitmap)) {
 		return false;
 	}
-	int header_words = 2;
-	int num_fields = meta->next_field_offset_words - header_words;
-	if (num_fields < 0) {
-		num_fields = 0;
-	}
-	ut64 target_index = target_ref - meta->start_ref;
-	for (ut64 i = 0; i < meta->count; i++) {
-		for (int j = 0; j < num_fields; j++) {
-			int field_word_idx = header_words + j;
-			bool is_unboxed = ((bitmap >> field_word_idx) & 1ULL) != 0;
-			if (is_unboxed) {
+	const int word_size = resolver->ctx->compressed_word_size? resolver->ctx->compressed_word_size: 4;
+	const int header_words = 8 / word_size;
+	const int num_fields = R_MAX (meta->next_field_offset_words - header_words, 0);
+	// Index the cluster once. Rescanning its prefix for every pool slot is
+	// quadratic for large collections of const instances such as icons.
+	if (!collector->instance_offsets[meta->start_ref]) {
+		for (ut64 i = 0; i < meta->count; i++) {
+			collector->instance_offsets[meta->start_ref + i] = s.cursor;
+			for (int j = 0; j < num_fields; j++) {
+				const int field_word = header_words + j;
+				const bool unboxed = field_word < 64 && ((bitmap >> field_word) & 1ULL);
 				ut32 tmp32 = 0;
-				if (!cs_read_tagged32 (&s, &tmp32) || !cs_read_tagged32 (&s, &tmp32)) {
-					return false;
-				}
-			} else {
 				ut64 ref = 0;
-				if (!cs_read_ref_id (&s, &ref)) {
+				if (unboxed) {
+					if (!cs_read_tagged32 (&s, &tmp32) || !cs_read_tagged32 (&s, &tmp32)) {
+						collector->instance_offsets[meta->start_ref] = 0;
+						return false;
+					}
+				} else if (!cs_read_ref_id (&s, &ref)) {
+					collector->instance_offsets[meta->start_ref] = 0;
 					return false;
-				}
-				if (i == target_index) {
-					(void)modern_collect_ref_strings (collector, ref, "instance", (ut64)j, depth + 1);
 				}
 			}
 		}
-		if (i == target_index) {
-			return true;
+	}
+	s.cursor = collector->instance_offsets[target_ref];
+	for (int j = 0; j < num_fields; j++) {
+		const int field_word = header_words + j;
+		const bool unboxed = field_word < 64 && ((bitmap >> field_word) & 1ULL);
+		if (unboxed) {
+			ut32 tmp32 = 0;
+			if (!cs_read_tagged32 (&s, &tmp32) || !cs_read_tagged32 (&s, &tmp32)) {
+				return false;
+			}
+		} else {
+			ut64 ref = 0;
+			if (!cs_read_ref_id (&s, &ref)) {
+				return false;
+			}
+			(void)modern_collect_ref_strings (collector, ref, "instance", (ut64)j, depth + 1);
 		}
 	}
-	return false;
+	return true;
 }
 
 static bool modern_collect_ref_strings(ModernPoolStringRefCollector *collector, ut64 target_ref, const char *target_kind, ut64 field_index, int depth) {
@@ -3698,6 +3713,11 @@ static bool modern_collect_ref_strings(ModernPoolStringRefCollector *collector, 
 	if (collector->seen) {
 		ht_up_insert (collector->seen, seen_key, (void *)1);
 	}
+	// Isolate base objects can include VM strings without a local cluster.
+	if (R_STR_ISNOTEMPTY (resolver->strings_by_ref[target_ref])) {
+		modern_emit_pool_string_ref (collector, target_ref, target_kind, field_index, target_ref);
+		return true;
+	}
 	const ModernClusterMeta *meta = modern_resolver_cluster_for_ref (resolver, target_ref);
 	if (!meta) {
 		return false;
@@ -3707,6 +3727,9 @@ static bool modern_collect_ref_strings(ModernPoolStringRefCollector *collector, 
 		return true;
 	}
 	if (!meta->fill_parsed || !meta->fill_ok || meta->fill_offset >= meta->fill_end || !meta->count) {
+		return false;
+	}
+	if (collector->instance_fields_only && (depth > 0 || meta->fill_kind != MODERN_FILL_INSTANCE)) {
 		return false;
 	}
 	if (modern_is_array_cid (collector->cids, meta->cid)) {
@@ -3729,7 +3752,7 @@ static bool modern_collect_ref_strings(ModernPoolStringRefCollector *collector, 
 	return false;
 }
 
-bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offsets, ModernPoolStrRefCb cb, void *user) {
+static bool modern_collect_pool_strrefs_internal(const ModernReq *req, HtUP *pp_offsets, ModernPoolStrRefCb cb, void *user, bool instance_fields_only) {
 	DartCtx *ctx = req? req->ctx: NULL;
 	if (!ctx || !cb || !modern_supported (ctx)) {
 		return false;
@@ -3743,6 +3766,21 @@ bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offsets, ModernP
 	if (!ok) {
 		modern_cluster_meta_free (meta, req->num_clusters);
 		return false;
+	}
+	ut64 *instance_offsets = (ut64 *)calloc ((size_t)resolver.refs_count, sizeof (ut64));
+	if (!instance_offsets) {
+		modern_ref_resolver_fini (&resolver);
+		modern_cluster_meta_free (meta, req->num_clusters);
+		return false;
+	}
+	const ut64 snapshot_bases[] = { ctx->iso_data, ctx->vm_data };
+	for (size_t i = 0; i < R_ARRAY_SIZE (snapshot_bases); i++) {
+		DartSnapshotHeader sh = { 0 };
+		const ut64 base = snapshot_bases[i];
+		if (base && dart_snapshot_header_read (ctx, base, &sh) && sh.ok && sh.cluster_start == req->cluster_start) {
+			modern_load_rodata_strings (ctx, meta, req->num_clusters, base, sh.total_len, resolver.strings_by_ref, resolver.string_addr_by_ref, resolver.refs_count);
+			break;
+		}
 	}
 	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
 	for (ut64 i = 0; i < req->num_clusters; i++) {
@@ -3785,6 +3823,8 @@ bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offsets, ModernP
 					.pool_ref = m->start_ref + pool_index,
 					.pool_index = pool_index,
 					.entry_index = entry_index,
+					.instance_fields_only = instance_fields_only,
+					.instance_offsets = instance_offsets,
 };
 				(void)modern_collect_ref_strings (&collector, entry.ref, "object_pool.entry", entry_index, 0);
 				ht_up_free (seen);
@@ -3797,9 +3837,20 @@ bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offsets, ModernP
 			break;
 		}
 	}
+	free (instance_offsets);
 	modern_ref_resolver_fini (&resolver);
 	modern_cluster_meta_free (meta, req->num_clusters);
 	return ok;
+}
+
+bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offsets, ModernPoolStrRefCb cb, void *user) {
+	return modern_collect_pool_strrefs_internal (req, pp_offsets, cb, user, false);
+}
+
+// Include immediate string fields of instances (notably _Enum._name) without
+// walking unrelated metadata graphs or treating the instance as a String.
+bool modern_collect_pool_value_strrefs(const ModernReq *req, HtUP *pp_offsets, ModernPoolStrRefCb cb, void *user) {
+	return modern_collect_pool_strrefs_internal (req, pp_offsets, cb, user, true);
 }
 
 static ut64 modern_find_sb(const ModernReq *req) {

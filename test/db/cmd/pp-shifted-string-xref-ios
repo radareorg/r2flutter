@@ -1,0 +1,15 @@
+NAME=r2-pp-shifted-string-xref-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -AAA
+CC. @ 0x44604
+axtq @ 0x27af40~0x44604
+EOF
+EXPECT=<<EOF
+dart: PP slot +0xa590 string "callOnHover"
+0x44604
+EOF
+RUN

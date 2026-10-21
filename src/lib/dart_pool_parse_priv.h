@@ -291,6 +291,7 @@ const char *modern_value_graph_root_kind(ModernValueGraph *graph);
 bool modern_collect_direct_pool_strrefs(const ModernReq *req, HtUP *pp_offs, ModernPoolStrRefCb cb, void *user);
 bool modern_collect_direct_pool_refs(const ModernReq *req, ModernPoolRefCb cb, void *user);
 bool modern_collect_pool_strrefs(const ModernReq *req, HtUP *pp_offs, ModernPoolStrRefCb cb, void *user);
+bool modern_collect_pool_value_strrefs(const ModernReq *req, HtUP *pp_offs, ModernPoolStrRefCb cb, void *user);
 bool modern_extract_pool_strings(const ModernReq *req, RList *strings, HtUP *seen, ut64 *next_ref);
 bool modern_scan_names(DartCtx *ctx, ut64 start, ut64 end, ut64 nclusters, ut64 itlen);
 bool modern_extract_classes(const ModernReq *req, RList *classes);
