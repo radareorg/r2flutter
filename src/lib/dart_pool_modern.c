@@ -3498,6 +3498,7 @@ typedef struct {
 	void *user;
 	HtUP *seen;
 	ut64 pp_offset;
+	ut64 pp_base;
 	ut64 pool_ref;
 	ut64 pool_index;
 	ut64 entry_index;
@@ -3512,6 +3513,7 @@ static void modern_emit_pool_string_ref(ModernPoolStringRefCollector *collector,
 	}
 	ModernPoolStrRef info = {
 		.pp_offset = collector->pp_offset,
+		.pp_base = collector->pp_base,
 		.pool_ref = collector->pool_ref,
 		.pool_index = collector->pool_index,
 		.entry_index = collector->entry_index,
@@ -3520,6 +3522,7 @@ static void modern_emit_pool_string_ref(ModernPoolStringRefCollector *collector,
 		.field_index = field_index,
 		.string_ref = string_ref,
 		.string_addr = resolver->string_addr_by_ref[string_ref],
+		.string_flags = resolver->string_flags_by_ref[string_ref],
 		.string_value = resolver->strings_by_ref[string_ref],
 };
 	collector->cb (&info, collector->user);
@@ -3794,6 +3797,9 @@ static bool modern_collect_pool_strrefs_internal(const ModernReq *req, HtUP *pp_
 			.end = m->fill_end,
 };
 		for (ut64 pool_index = 0; pool_index < m->count; pool_index++) {
+			ut64 pool_paddr = s.cursor;
+			bool has_paddr = modern_vaddr_to_paddr (ctx, s.cursor, &pool_paddr);
+			ut64 pp_base = modern_pp_vaddr_from_paddr (ctx, pool_paddr, has_paddr);
 			ut64 length = 0;
 			if (!cs_read_unsigned (&s, &length)) {
 				ok = false;
@@ -3820,6 +3826,7 @@ static bool modern_collect_pool_strrefs_internal(const ModernReq *req, HtUP *pp_
 					.user = user,
 					.seen = seen,
 					.pp_offset = pp_offset,
+					.pp_base = pp_base,
 					.pool_ref = m->start_ref + pool_index,
 					.pool_index = pool_index,
 					.entry_index = entry_index,
@@ -3946,118 +3953,66 @@ bool modern_collect_direct_pool_strrefs(const ModernReq *req, HtUP *pp_offsets, 
 	return ok && found_pool;
 }
 
-static bool modern_object_pool_string_ref_exists(RList *refs, ut64 pool_ref, ut64 entry_index) {
-	if (!refs) {
-		return false;
-	}
+static bool modern_object_pool_string_ref_exists(RList *refs, const ModernPoolStrRef *info, const char *kind) {
 	RListIter *it;
 	DartStringRef *sr;
 	r_list_foreach (refs, it, sr) {
-		if (sr && sr->object_ref == pool_ref && sr->field_offset == (ut32)entry_index && R_STR_ISNOTEMPTY (sr->kind) && !strcmp (sr->kind, "object_pool.entry")) {
+		if (sr && sr->object_ref == info->pool_ref && sr->field_offset == (ut32)info->entry_index && sr->kind && !strcmp (sr->kind, kind)) {
 			return true;
 		}
 	}
 	return false;
 }
 
-static void modern_add_object_pool_string_ref(DartStringInfo *si, ut64 pool_ref, ut64 pool_index, ut64 entry_index, ut64 pp_base, ut64 pp_off) {
-	if (!si || !si->references || modern_object_pool_string_ref_exists (si->references, pool_ref, entry_index)) {
+static void modern_add_object_pool_string_ref(DartStringInfo *si, const ModernPoolStrRef *info) {
+	bool indirect = strcmp (info->target_kind, "object_pool.entry") != 0;
+	const char *kind = indirect? "object_pool.instance_field": "object_pool.entry";
+	if (modern_object_pool_string_ref_exists (si->references, info, kind)) {
 		return;
 	}
 	DartStringRef *sr = R_NEW0 (DartStringRef);
-	sr->object_ref = pool_ref;
-	sr->source_addr = pp_base + pp_off;
+	sr->object_ref = info->pool_ref;
+	sr->source_addr = info->pp_base + info->pp_offset;
 	sr->object_type = DART_REF_OTHER;
-	sr->field_offset = (ut32)entry_index;
-	sr->kind = strdup ("object_pool.entry");
-	sr->object_name = r_str_newf ("pool=%" PRIu64 " index=%" PRIu64 " entry=%" PRIu64 " pp_off=0x%" PFMT64x, (uint64_t)pool_ref, (uint64_t)pool_index, (uint64_t)entry_index, (ut64)pp_off);
+	sr->field_offset = (ut32)info->entry_index;
+	sr->kind = strdup (kind);
+	sr->object_name = r_str_newf ("pool=%" PRIu64 " index=%" PRIu64 " entry=%" PRIu64 " pp_off=0x%" PFMT64x, (uint64_t)info->pool_ref, (uint64_t)info->pool_index, (uint64_t)info->entry_index, info->pp_offset);
+	if (indirect) {
+		sr->object_name = r_str_appendf (sr->object_name, " field=%" PRIu64, (uint64_t)info->field_index);
+	}
 	r_list_append (si->references, sr);
 }
 
-static void modern_append_object_pool_string(RList *strings, HtUP *seen_refs, ut64 *ref_counter, const ModernRefResolver *resolver, const ModernEmitCtx *emit, const ModernPoolEntry *entry) {
-	const ut64 string_ref = entry? entry->ref: UT64_MAX;
-	if (!strings || !seen_refs || !resolver || !emit || !entry || string_ref >= resolver->refs_count || R_STR_ISEMPTY (resolver->strings_by_ref[string_ref])) {
-		return;
-	}
-	DartStringInfo *si = ht_up_find (seen_refs, string_ref, NULL);
+typedef struct {
+	RList *strings;
+	HtUP *seen_refs;
+	ut64 *next_ref;
+} ModernPoolStringExtractCtx;
+
+static void modern_append_object_pool_string(const ModernPoolStrRef *info, void *user) {
+	ModernPoolStringExtractCtx *ux = user;
+	DartStringInfo *si = ht_up_find (ux->seen_refs, info->string_ref, NULL);
 	if (!si) {
 		si = R_NEW0 (DartStringInfo);
-		si->ref_id = ref_counter? (*ref_counter)++: 0;
-		si->value = strdup (resolver->strings_by_ref[string_ref]);
+		si->ref_id = ux->next_ref? (*ux->next_ref)++: 0;
+		si->value = strdup (info->string_value);
 		si->length = (ut32)strlen (si->value);
-		si->flags = resolver->string_flags_by_ref[string_ref] | DART_STRING_CANONICAL | DART_STRING_OBJECT_POOL;
-		si->address = resolver->string_addr_by_ref[string_ref];
+		si->flags = info->string_flags | DART_STRING_CANONICAL | DART_STRING_OBJECT_POOL;
+		si->address = info->string_addr;
 		si->category = dart_string_classify_value (si->value);
 		si->references = r_list_newf ((RListFree)dart_string_ref_free);
-		r_list_append (strings, si);
-		ht_up_insert (seen_refs, string_ref, si);
+		r_list_append (ux->strings, si);
+		ht_up_insert (ux->seen_refs, info->string_ref, si);
 	}
-	modern_add_object_pool_string_ref (si, emit->pool_ref, emit->pool_index, entry->index, emit->pp_base, modern_pool_entry_pp_offset (resolver->ctx, entry->index));
+	modern_add_object_pool_string_ref (si, info);
 }
 
 bool modern_extract_pool_strings(const ModernReq *req, RList *strings, HtUP *seen, ut64 *next_ref) {
-	DartCtx *ctx = req? req->ctx: NULL;
-	if (!ctx || !strings || !seen || !modern_supported (ctx)) {
+	if (!strings || !seen) {
 		return false;
 	}
-	ModernClusterMeta *meta = modern_parse_cluster_meta (ctx, req->cluster_start, req->cluster_end, req->num_clusters, req->num_base_objects);
-	if (!meta) {
-		return false;
-	}
-	ModernRefResolver resolver = { 0 };
-	bool ok = modern_ref_resolver_init (&resolver, ctx, meta, req->num_clusters, req->num_base_objects);
-	if (!ok) {
-		modern_cluster_meta_free (meta, req->num_clusters);
-		return false;
-	}
-	const ModernCidCache cids = modern_cid_cache_init (ctx->layout);
-	ModernEmitCtx emit = { .ctx = ctx };
-	for (ut64 i = 0; i < req->num_clusters; i++) {
-		ModernClusterMeta *m = &meta[i];
-		if (m->fill_kind != MODERN_FILL_OBJECT_POOL || !m->fill_parsed || !m->fill_ok || m->fill_offset >= m->fill_end || !m->count) {
-			continue;
-		}
-		ClusterStream s = {
-			.ctx = ctx,
-			.cursor = m->fill_offset,
-			.end = m->fill_end,
-};
-		for (ut64 pool_index = 0; pool_index < m->count; pool_index++) {
-			emit.pool_index = pool_index;
-			emit.pool_ref = m->start_ref + pool_index;
-			ut64 pool_paddr = s.cursor;
-			bool has_paddr = modern_vaddr_to_paddr (ctx, s.cursor, &pool_paddr);
-			emit.pp_base = modern_pp_vaddr_from_paddr (ctx, pool_paddr, has_paddr);
-			ut64 length = 0;
-			if (!cs_read_unsigned (&s, &length)) {
-				ok = false;
-				break;
-			}
-			for (ut64 entry_index = 0; entry_index < length; entry_index++) {
-				ModernPoolEntry entry;
-				if (!modern_read_pool_entry (&s, ctx, entry_index, &entry)) {
-					ok = false;
-					break;
-				}
-				if (entry.behavior != 0 || entry.type != 1 || entry.ref >= resolver.refs_count) {
-					continue;
-				}
-				const ModernClusterMeta *target = modern_resolver_cluster_for_ref (&resolver, entry.ref);
-				if (target && modern_is_string_cid (&cids, target->cid)) {
-					modern_append_object_pool_string (strings, seen, next_ref, &resolver, &emit, &entry);
-				}
-			}
-			if (!ok) {
-				break;
-			}
-		}
-		if (!ok) {
-			break;
-		}
-	}
-	modern_ref_resolver_fini (&resolver);
-	modern_cluster_meta_free (meta, req->num_clusters);
-	return ok;
+	ModernPoolStringExtractCtx ux = { strings, seen, next_ref };
+	return modern_collect_pool_value_strrefs (req, NULL, modern_append_object_pool_string, &ux);
 }
 
 // Walk every direct (tagged, snapshotable) ObjectPool entry once and hand the

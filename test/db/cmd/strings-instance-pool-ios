@@ -1,0 +1,18 @@
+NAME=strings-instance-pool-ios
+FILE=bins/ios/Runner.app/Frameworks/App.framework/App
+ARGS=-NN -e scr.color=0 -e bin.relocs.apply=true
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -z~^detached$
+r2flutter -q -z~^dark$
+r2flutter -xz~object_pool.instance_field~pp_off=0x38b8
+r2flutter -q -r -xz~0x26fa30 0x230b89
+EOF
+EXPECT=<<EOF
+detached
+dark
+#     object_pool.instance_field other pool=41741 index=0 entry=1813 pp_off=0x38b8 field=1 [ref=41741] @ 0x230b89
+ax 0x26fa30 0x230b89
+EOF
+RUN

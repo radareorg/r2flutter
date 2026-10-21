@@ -169,6 +169,7 @@ typedef struct {
 
 typedef struct {
 	ut64 pp_offset;
+	ut64 pp_base;
 	ut64 pool_ref;
 	ut64 pool_index;
 	ut64 entry_index;
@@ -177,6 +178,7 @@ typedef struct {
 	ut64 field_index;
 	ut64 string_ref;
 	ut64 string_addr;
+	ut32 string_flags;
 	const char *string_value;
 } ModernPoolStrRef;
 

@@ -1915,3 +1915,20 @@ collector can silently miss all slots on either platform.
 Instance fill offsets are indexed once per cluster while collecting strings.
 Rescanning a cluster prefix for each PP slot makes large const collections
 quadratic, even when only immediate fields are read.
+
+## Reliable string extraction shares the PP instance-field collector
+
+`-z` previously accepted only direct String ObjectPool entries, so it omitted
+`privilegedAccess` even after analysis could recover its enum instance field.
+Reliable extraction now uses the same direct-string and immediate-instance-field
+collector as PP analysis. This also resolves uncompressed iOS ROData strings
+and VM base-object strings through that collector.
+
+Strings remain deduplicated by snapshot string reference. `-xz` distinguishes
+`object_pool.entry` from `object_pool.instance_field`, recording the containing
+pool entry and field index. Both reference kinds use the synthetic PP slot as
+the xref source. The shared extraction makes the separate instance-field xref
+pass redundant; `-AA` now applies the references from the extracted strings.
+Regression cases cover the instance-only `AppLifecycleState.detached` name on
+Android w0rdle and iOS Runner, plus a name (`dark`) reachable both directly and
+through an instance to check that it is emitted once.

@@ -1016,47 +1016,6 @@ char *dart_pool_dump_xrefs(DartCtx *ctx, int fmt) {
 	return out;
 }
 
-typedef struct {
-	RCore *core;
-	ut64 pp_base;
-	int applied;
-} DartPoolValueXrefCtx;
-
-static void xref_pool_value_string_cb(const ModernPoolStrRef *info, void *user) {
-	DartPoolValueXrefCtx *ux = user;
-	if (!info->string_addr || !strcmp (info->target_kind, "object_pool.entry")) {
-		return;
-	}
-	r_anal_xrefs_set (ux->core->anal, ux->pp_base + info->pp_offset, info->string_addr, R_ANAL_REF_TYPE_STRN | R_ANAL_REF_TYPE_READ);
-	ux->applied++;
-}
-
-static int apply_pool_value_xrefs(DartCtx *ctx) {
-	if (find_snapshots (ctx) != 0) {
-		return 0;
-	}
-	// Keep a live layout across PP resolution: its fallback layout can otherwise
-	// point at dart_resolve_pp_info's temporary stack buffer on return.
-	DartVerLayout layout_tmp;
-	bool layout_ours = !ctx->layout;
-	DartVerLayout *layout_owned = layout_ours? dart_ctx_init_layout (ctx, &layout_tmp): NULL;
-	DartPpInfo pp = { 0 };
-	DartPoolValueXrefCtx ux = { .core = ctx->core };
-	if (dart_resolve_pp_info (ctx, &pp)) {
-		ux.pp_base = pp.base;
-		DartSnapshotHeader sh = { 0 };
-		if (dart_snapshot_header_read (ctx, pp.snapshot_base, &sh) && sh.ok) {
-			const ModernReq req = { ctx, sh.cluster_start, pp.snapshot_base + sh.total_len, sh.nc, sh.nb };
-			modern_collect_pool_value_strrefs (&req, NULL, xref_pool_value_string_cb, &ux);
-		}
-	}
-	dart_pp_info_fini (&pp);
-	if (layout_ours) {
-		dart_ctx_fini_layout (ctx, layout_owned);
-	}
-	return ux.applied;
-}
-
 // Apply the recovered xref graph to the RCore as real r2 xrefs. Unlike the
 // analysis disassembly scan, which only sees loads inside functions, this also
 // surfaces references that live in the data image (e.g. a const object in
@@ -1093,5 +1052,5 @@ int dart_pool_apply_xrefs(DartCtx *ctx) {
 		}
 	}
 	dart_string_list_free (strings);
-	return applied + apply_pool_value_xrefs (ctx);
+	return applied;
 }
