@@ -1,0 +1,34 @@
+NAME=record-values-synthetic
+FILE=malloc://0xfd
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+wx 50414421f5f5dcdcf5000000000000000200000000000000333063303531636239313932663664363831326265336630623837613633353670726f647563742061726d363420636f6d707265737365642d706f696e746572730082898280800020cf82c1be0060d08580828281018180828384020084868381880181838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383
+r2flutter -q -j -O ref:5~{snapshot.complete}
+r2flutter -q -j -O ref:5~{snapshot.length}
+r2flutter -q -j -O ref:6~{snapshot.fields[0].value.value}
+r2flutter -q -j -O ref:6~{snapshot.fields[1].value.value}
+r2flutter -q -j -O ref:7~{snapshot.shape}
+r2flutter -q -j -O ref:7~{snapshot.field_names_index}
+r2flutter -q -j -O ref:7~{snapshot.fields[0].value.fields[1].value.value}
+r2flutter -q -j -O ref:8~{snapshot.fields[0].value.cycle}
+r2flutter -q -j -O ref:9~{snapshot.length}
+r2flutter -q -j -O ref:9~{snapshot.values_truncated}
+r2flutter -q -j -O ref:9~{snapshot.fields[127].value.value}
+r2flutter -q -j -O ref:9~{=}~name = ~?
+EOF
+EXPECT=<<EOF
+true
+0
+1
+-2
+65538
+1
+-2
+true
+129
+true
+1
+128
+EOF
+RUN

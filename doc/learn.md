@@ -2001,3 +2001,29 @@ On iOS AuthPass, `PP+0x68` holds ref 168520 in the Code cluster starting at
 regression checks index zero, a discarded record, the following main record,
 and an unresolved deferred record. These targets use the existing table
 payload-address convention described above.
+
+## Record inspection decodes the shape and field references
+
+Record fills contain `ReadUnsigned (shape)` followed by one reference per
+field. `RecordShape::NumFieldsBitField` in the VM is the low 16 bits; the upper
+bits identify the registered array of named field names. Allocation records
+separately store each Record's field count. Retain those counts and check each
+fill against its own allocation instead of accepting only matching cluster
+minimum, maximum, and total counts.
+
+The value graph now decodes Record fields into the same bounded edges used by
+other objects. JSON includes `shape`, `field_names_index`, `length`, and
+`fields`; text output prints the shape, length, and child values. Labels remain
+ordinal (`field_0`, etc.); the shape's named-field table index is preserved
+rather than treated as a reference or used to invent names. Empty Records
+report length zero. Cycles, depth limits, and the 128-child display limit use
+the existing graph handling. An unreadable or inconsistent Record fill stays
+`complete: false`.
+
+In `t/libapp_1.so`, ref 146422 has shape 2 and fields referring to base object
+996 and instance 164557; that instance exposes the string `DOUBLE_QUOTE`.
+The public Android mafia fixture has the equivalent Record at ref 158051,
+whose second field is an `XmlAttributeType` instance. Synthetic compressed and
+uncompressed snapshots cover nested Records, named shapes, empty Records,
+cycles, truncation, and a malformed field count. Existing iOS graph tests
+continue to cover arrays, maps, and sets; those fixtures have no Record cluster.

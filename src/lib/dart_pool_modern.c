@@ -760,7 +760,7 @@ static bool modern_skip_alloc(ClusterStream *s, const ModernCidCache *cids, int 
 			return false;
 		}
 		meta->count = count;
-		if (kind == MODERN_ALLOC_VARIABLE && count) {
+		if ((kind == MODERN_ALLOC_VARIABLE || kind == MODERN_ALLOC_RECORD) && count) {
 			meta->alloc_items = (ut64 *)calloc ((size_t)count, sizeof (ut64));
 			if (!meta->alloc_items) {
 				return false;
@@ -1303,6 +1303,9 @@ static bool modern_skip_fill_record(ClusterStream *s, const ModernClusterMeta *m
 			return false;
 		}
 		ut64 fields = shape & 0xffffULL;
+		if (meta->alloc_items && fields != meta->alloc_items[i]) {
+			return false;
+		}
 		if (meta->alloc_items_count == meta->count && fields > meta->alloc_items_max) {
 			return false;
 		}
@@ -2982,10 +2985,12 @@ typedef struct {
 	bool edges_truncated;
 	bool has_type_arguments;
 	bool has_scalar;
+	bool has_shape;
 	ut64 ref;
 	ut64 count;
 	ut64 type_arguments_ref;
 	ut64 scalar;
+	ut64 shape;
 	int cid;
 	const char *kind;
 	char *name;
@@ -3076,6 +3081,46 @@ static bool modern_value_read_array(ModernValueGraph *graph, ModernValueNode *no
 			}
 		}
 		for (ut64 j = 0; j < length; j++) {
+			ut64 ref = 0;
+			if (!cs_read_ref_id (&s, &ref)) {
+				return false;
+			}
+			if (i == target && j < node->edge_count) {
+				node->edges[j].index = j;
+				node->edges[j].ref = ref;
+			}
+		}
+		if (i == target) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool modern_value_read_record(ModernValueGraph *graph, ModernValueNode *node, const ModernClusterMeta *meta) {
+	ClusterStream s = {
+		.ctx = graph->ctx,
+		.cursor = meta->fill_offset,
+		.end = meta->fill_end,
+};
+	const ut64 target = node->ref - meta->start_ref;
+	for (ut64 i = 0; i < meta->count; i++) {
+		ut64 shape = 0;
+		if (!cs_read_unsigned (&s, &shape)) {
+			return false;
+		}
+		const ut64 fields = shape & 0xffffULL;
+		if (!meta->alloc_items || fields != meta->alloc_items[i]) {
+			return false;
+		}
+		if (i == target) {
+			node->has_shape = true;
+			node->shape = shape;
+			if (!modern_value_edges_alloc (node, fields)) {
+				return false;
+			}
+		}
+		for (ut64 j = 0; j < fields; j++) {
 			ut64 ref = 0;
 			if (!cs_read_ref_id (&s, &ref)) {
 				return false;
@@ -3255,6 +3300,8 @@ static ModernValueNode *modern_value_graph_node(ModernValueGraph *graph, ut64 re
 	}
 	if (!strcmp (node->kind, "array")) {
 		node->complete = modern_value_read_array (graph, node, meta);
+	} else if (meta->fill_kind == MODERN_FILL_RECORD) {
+		node->complete = modern_value_read_record (graph, node, meta);
 	} else if (meta->fill_kind == MODERN_FILL_REFS) {
 		node->complete = modern_value_read_refs (graph, node, meta);
 	} else if (!strcmp (node->kind, "instance")) {
@@ -3358,7 +3405,11 @@ static void modern_value_json_node(PJ *pj, ModernValueGraph *graph, ut64 ref, in
 	if (node->has_type_arguments) {
 		pj_kn (pj, "type_arguments_ref", node->type_arguments_ref);
 	}
-	if (node->count || node->edges) {
+	if (node->has_shape) {
+		pj_kn (pj, "shape", node->shape);
+		pj_kn (pj, "field_names_index", node->shape >> 16);
+	}
+	if (node->count || node->edges || node->has_shape) {
 		pj_kn (pj, "length", node->count);
 		pj_kb (pj, "values_truncated", node->edges_truncated);
 	}
@@ -3424,6 +3475,9 @@ static void modern_value_text_node(RStrBuf *sb, ModernValueGraph *graph, ut64 re
 	}
 	if (node->has_scalar) {
 		r_strbuf_appendf (sb, " value=%" PFMT64d, (st64)node->scalar);
+	}
+	if (node->has_shape) {
+		r_strbuf_appendf (sb, " shape=%" PRIu64 " length=%" PRIu64, (uint64_t)node->shape, (uint64_t)node->count);
 	}
 	r_strbuf_appendf (sb, " complete=%s\n", r_str_bool (node->complete));
 	if (modern_value_path_contains (path, path_count, ref) || depth >= MODERN_VALUE_MAX_DEPTH) {

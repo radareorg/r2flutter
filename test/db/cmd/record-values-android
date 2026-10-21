@@ -1,0 +1,23 @@
+NAME=record-values-android
+FILE=bins/android/mafia/libapp.so
+CMDS=<<EOF
+L ../src/r2/core_flutter.so
+L ../src/r2/core_flutter.dylib
+r2flutter -q -j -O ref:158051~{snapshot.kind}
+r2flutter -q -j -O ref:158051~{snapshot.complete}
+r2flutter -q -j -O ref:158051~{snapshot.shape}
+r2flutter -q -j -O ref:158051~{snapshot.length}
+r2flutter -q -j -O ref:158051~{snapshot.fields[0].ref}
+r2flutter -q -j -O ref:158051~{snapshot.fields[1].value.name}
+r2flutter -q -j -O ref:158051~{snapshot.fields[1].value.fields[2].value.value}
+EOF
+EXPECT=<<EOF
+record
+true
+2
+2
+1001
+XmlAttributeType
+DOUBLE_QUOTE
+EOF
+RUN
